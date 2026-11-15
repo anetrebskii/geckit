@@ -4,6 +4,8 @@ import { isDeepStrictEqual } from 'node:util'
 import log from 'electron-log'
 
 import type { SessionMessage, Shortcut, ShortcutDraft } from '../shared/api'
+import type { ShortcutRuns } from './shortcut-runs'
+import { shortcutDestinationError } from '../shared/shortcut-destination-validation'
 import type { Employee } from '../shared/employees'
 import { assistantsIn } from '../shared/api'
 import { isRemote } from '../shared/hosts'
@@ -16,6 +18,7 @@ import { getSettings, setSettings } from './store'
 const LOOK_EVERY = 20_000
 
 export interface ShortcutDeps {
+  readonly runs?: Pick<ShortcutRuns, 'start'>
   readonly start: (message: SessionMessage) => Promise<string>
   readonly manager?: (shortcut: Shortcut, request: string) => Promise<string>
   readonly rename: (id: string, title: string) => void
@@ -91,6 +94,7 @@ async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<stri
   const settings = getSettings()
   const one = settings.shortcuts.find((shortcut) => shortcut.id === id)
   if (one === undefined || deps === undefined) return undefined
+  const given = deps
   if (ownerArchived(one)) {
     log.info(`Shortcut "${one.name}" did not run: its employee is archived`)
     return undefined
@@ -104,27 +108,33 @@ async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<stri
   // Counted before the conversation starts, so the next look does not start it again; a run by hand leaves the timetable where it was.
   try {
     put(id, { lastRun: now, ...(by === 'timetable' ? { since: now } : {}) })
+    const destinationError = shortcutDestinationError(one.destination)
+    if (destinationError !== undefined) throw new Error(destinationError)
+    if (one.destination !== undefined && deps.runs === undefined) throw new Error('Shortcut destination delivery is unavailable.')
     if (one.target === 'manager') {
-      const session = await deps.manager?.(one, `shortcut:${one.id}:${randomUUID()}`)
+      const session = one.destination === undefined ? await deps.manager?.(one, `shortcut:${one.id}:${randomUUID()}`) : await deps.runs!.start({ ...one, destination: one.destination }, () => Promise.reject(new Error('Manager starts through its run context.')))
       if (session !== undefined && getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
       return session
     }
-    const session = await deps.start({
-      root: one.root,
-      mode: one.mode,
-      text: one.prompt,
-      provider,
-      ...(owner === undefined ? {} : { employeeId: owner.id }),
-      ...(isCodexProvider(provider) && one.goal ? { goal: one.goal } : {}),
-      ...(one.model === undefined ? {} : { model: one.model }),
-      ...(!isCodexProvider(provider) || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
-    })
-    deps.rename(session, one.name)
-    if (getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
-    if (provider === 'claude' && one.goal !== undefined && one.goal !== '') {
-      await deps.start({ session, root: one.root, mode: one.mode, text: `/goal ${one.goal}` })
+    const start = async (): Promise<string> => {
+      const session = await given.start({
+        root: one.root,
+        mode: one.mode,
+        text: one.prompt,
+        provider,
+        ...(owner === undefined ? {} : { employeeId: owner.id }),
+        ...(isCodexProvider(provider) && one.goal ? { goal: one.goal } : {}),
+        ...(one.model === undefined ? {} : { model: one.model }),
+        ...(!isCodexProvider(provider) || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
+      })
+      given.rename(session, one.name)
+      if (getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
+      if (provider === 'claude' && one.goal !== undefined && one.goal !== '') {
+        await given.start({ session, root: one.root, mode: one.mode, text: `/goal ${one.goal}` })
+      }
+      return session
     }
-    return session
+    return one.destination === undefined ? await start() : await deps.runs!.start({ ...one, destination: one.destination }, start)
   } catch (error) {
     log.warn(`Shortcut "${one.name}" did not start: ${error instanceof Error ? error.message : String(error)}`)
     return undefined
@@ -132,6 +142,8 @@ async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<stri
 }
 
 export function saveShortcut(draft: ShortcutDraft): Shortcut {
+  const destinationError = shortcutDestinationError(draft.destination)
+  if (destinationError !== undefined) throw new Error(destinationError)
   const now = Date.now()
   const all = getSettings().shortcuts
   const was = all.find((one) => one.id === draft.id)
@@ -153,6 +165,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
   const since = was === undefined || was.cron !== draft.cron || was.startWindowMinutes !== draft.startWindowMinutes || !isDeepStrictEqual(was.recurrence, draft.recurrence) || (!was.on && draft.on) ? now : was.since
   const saved: Shortcut = {
     ...(draft.target === undefined ? {} : { target: draft.target }),
+    ...(draft.destination === undefined ? {} : { destination: draft.destination }),
     id: was?.id ?? randomUUID(),
     name: draft.name,
     root: draft.root,

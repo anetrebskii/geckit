@@ -8,6 +8,7 @@ import type { When } from '../../../shared/schedule'
 import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceError } from '../../../shared/recurrence'
 import { saveShortcut } from '../../../shared/shortcut-save'
 import { CustomRecurrence } from './CustomRecurrence'
+import { destinationSummary, ShortcutDelivery, ShortcutDestinationFields, useShortcutDestination, useShortcutRuns } from './ShortcutDestinations'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { EmployeeBadge } from '../employees/Employees'
@@ -49,6 +50,7 @@ export function PhoneShortcuts({
   readonly onBack: () => void
   readonly onEdit: (draft: ShortcutDraft) => void
 }): React.JSX.Element {
+  const lastRuns = useShortcutRuns(chat.settings)
   const [now, setNow] = useState(Date.now)
   const [running, setRunning] = useState<string | undefined>()
   const [runError, setRunError] = useState('')
@@ -108,8 +110,10 @@ export function PhoneShortcuts({
                   {when(one, chat, now, employee?.archived === true)}
                 </span>
                 <span className="phone-row-said">{one.prompt}</span>
+                {one.destination === undefined ? null : <span className="shortcut-destination-summary">{destinationSummary(one.destination)}</span>}
               </button>
               <div className="phone-shortcut-side">
+                <ShortcutDelivery run={lastRuns.get(one.id)} />
                 <button type="button" className="phone-pill" disabled={running === one.id || employee?.archived === true} onClick={() => run(one)}>
                   {running === one.id ? <Icon name="spinner" size={14} /> : 'Run'}
                 </button>
@@ -140,6 +144,10 @@ const MODE_LABEL = (mode: SessionMode): string => SESSION_MODES.find((one) => on
 /** One shortcut, new or kept, with every field the Mac's editor has. */
 export function ShortcutSheet({ chat, given, onClose }: { readonly chat: ShortcutChat; readonly given: ShortcutDraft; readonly onClose: () => void }): React.JSX.Element {
   const [draft, setDraft] = useState<ShortcutDraft>(given)
+  const destination = useShortcutDestination(chat.settings, draft.destination, (destination) => {
+    const { destination: _destination, ...rest } = draft
+    setDraft(destination === undefined ? rest : { ...rest, destination })
+  })
   const manager = draft.target === 'manager'
   const [windowMinutes, setWindowMinutes] = useState(() => String(given.startWindowMinutes ?? 30))
   const [repeats, setRepeats] = useState<Repeats>(() => given.recurrence !== undefined ? 'custom' : given.cron === undefined ? 'never' : whenOf(given.cron).kind)
@@ -167,7 +175,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
     return nextTimed({ cron: draft.cron, startWindowMinutes: draft.startWindowMinutes, id: keptId, on: true, since }, now, zone)
   }, [draft.recurrence, draft.cron, draft.startWindowMinutes, keptId, since, now, zone])
   const name = draft.name.trim() || (draft.prompt.trim().split('\n')[0] ?? '').slice(0, 60)
-  const ready = !saving && windowError === undefined && name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.recurrence !== undefined ? ruleError === undefined : draft.cron === undefined || next !== undefined)
+  const ready = destination.valid && !saving && windowError === undefined && name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.recurrence !== undefined ? ruleError === undefined : draft.cron === undefined || next !== undefined)
   const owner = draft.employeeId === undefined ? undefined : chat.employees.find((one) => one.id === draft.employeeId)
 
   const save = (): void => {
@@ -194,7 +202,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
     <>
       <FullSheet title={given.id === undefined ? 'New shortcut' : given.name} action={saving ? 'Saving...' : 'Save'} ready={ready} onAction={save} onClose={onClose}>
         <div className="phone-task-label">Name</div>
-        <input className="phone-task-goal" value={draft.name} placeholder={name === '' ? 'Morning check' : name} onChange={(event) => change({ name: event.target.value })} />
+        <input className="phone-task-goal" autoFocus aria-label="Name" value={draft.name} placeholder={name === '' ? 'Morning check' : name} onChange={(event) => change({ name: event.target.value })} />
         <div className="phone-task-label">Prompt</div>
         <textarea className="phone-task-text" value={draft.prompt} placeholder="What to ask each time" onChange={(event) => change({ prompt: event.target.value })} />
         {manager ? null : <>
@@ -215,6 +223,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
           {manager ? null : <Cell label="Mode" value={MODE_LABEL(draft.mode)} onPress={() => setPicking('mode')} />}
           {manager || chat.employees.length === 0 && draft.employeeId === undefined ? null : <Cell label="Employee" value={owner?.name ?? 'None'} says={owner === undefined ? 'Runs start unassigned' : owner.archived ? 'Paused while archived' : 'Runs start assigned to them'} onPress={() => setPicking('employee')} />}
         </div>
+        <ShortcutDestinationFields editor={destination} phone />
         <div className="phone-group phone-form-group">
           <Cell label="Repeats" value={REPEATS.find((one) => one.value === repeats)?.label} onPress={() => { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setPicking('repeats') }} />
           {repeats === 'custom' ? <Cell label="Edit recurrence" says={draft.recurrence === undefined ? '' : describeRecurrence(draft.recurrence)} onPress={() => { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setCustom(true) }} /> : repeats === 'never' ? null : shape.kind === 'hour' ? (

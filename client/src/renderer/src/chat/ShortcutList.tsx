@@ -10,6 +10,7 @@ import type { When } from '../../../shared/schedule'
 import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceError } from '../../../shared/recurrence'
 import { saveShortcut } from '../../../shared/shortcut-save'
 import { CustomRecurrence } from './CustomRecurrence'
+import { destinationSummary, ShortcutDelivery, ShortcutDestinationFields, useShortcutDestination, useShortcutRuns } from './ShortcutDestinations'
 import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 import { MOD } from '../ui/Shortcuts'
@@ -104,6 +105,12 @@ export function ShortcutList({
     typeof start !== 'string' ? start : start === 'new' ? blank() : shortcuts.find((one) => one.id === start),
   )
   // "Next today at 9:00" goes on being true for a minute at most.
+  const opener = useRef(document.activeElement)
+  const returnTo = useRef<string | undefined>(undefined)
+  const rowButtons = useRef(new Map<string, HTMLButtonElement>())
+  useEffect(() => () => { if (opener.current instanceof HTMLElement && opener.current.isConnected) opener.current.focus() }, [])
+  useEffect(() => { if (editing === undefined && returnTo.current !== undefined) rowButtons.current.get(returnTo.current)?.focus() }, [editing])
+  const lastRuns = useShortcutRuns(chat.settings)
   const [search, setSearch] = useState('')
   const [runError, setRunError] = useState('')
   const [runningId, setRunningId] = useState<string>()
@@ -161,7 +168,7 @@ export function ShortcutList({
               return (
                 <div key={one.id} className={`shortcut-row${running ? ' running' : ''}`}>
                   <span className={`shortcut-mark${timed && !paused ? ' timed' : ''}`} style={tint(projectColor(one.root, chat.settings))} aria-hidden="true"><Icon name={timed ? 'refresh' : 'bolt'} size={13} /></span>
-                  <button type="button" className="shortcut-text" title="Edit" onClick={() => setEditing(one)}>
+                  <button type="button" className="shortcut-text" title="Edit" ref={(node) => { if (node === null) rowButtons.current.delete(one.id); else rowButtons.current.set(one.id, node) }} onClick={() => { returnTo.current = one.id; setEditing(one) }}>
                     <span className="shortcut-title-line">
                       <span className="shortcut-name">{one.name}</span>
                       {timed ? <span className={`shortcut-chip${paused ? ' paused' : ''}`} title={timetable}>{paused ? employee?.archived === true ? 'Paused while archived' : 'Timetable paused' : timetable}</span> : null}
@@ -181,8 +188,10 @@ export function ShortcutList({
                       )}
                     </span>
                     <span className="shortcut-prompt">{one.prompt}</span>
+                    {one.destination === undefined ? null : <span className="shortcut-destination-summary">{destinationSummary(one.destination)}</span>}
                   </button>
                   <span className="shortcut-actions">
+                    <ShortcutDelivery run={lastRuns.get(one.id)} />
                     {one.lastSession === undefined ? null : (
                       <button
                         type="button"
@@ -235,6 +244,10 @@ function Editor({
   readonly onDone: () => void
 }): React.JSX.Element {
   const [draft, setDraft] = useState<ShortcutDraft>(given)
+  const destination = useShortcutDestination(chat.settings, draft.destination, (destination) => {
+    const { destination: _destination, ...rest } = draft
+    setDraft(destination === undefined ? rest : { ...rest, destination })
+  })
   const [windowMinutes, setWindowMinutes] = useState(() => String(given.startWindowMinutes ?? 30))
   const manager = draft.target === 'manager'
   const provider = draft.provider ?? 'claude'
@@ -299,7 +312,7 @@ function Editor({
   const reasoningLabel = reasoningChoices.find((one) => one.value === reasoning)?.label ?? reasoning
 
   const name = draft.name.trim() || (draft.prompt.trim().split('\n')[0] ?? '').slice(0, 60)
-  const ready = !saving && windowError === undefined && name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.recurrence !== undefined ? ruleError === undefined : draft.cron === undefined || next !== undefined)
+  const ready = destination.valid && !saving && windowError === undefined && name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.recurrence !== undefined ? ruleError === undefined : draft.cron === undefined || next !== undefined)
   const save = (): void => {
     if (!ready) return
     setSaving(true)
@@ -351,6 +364,7 @@ function Editor({
         <span className="shortcut-kicker">{given.id === undefined ? 'New shortcut' : 'Shortcut'}</span>
         <input
           className="shortcut-title"
+          autoFocus={given.id !== undefined || given.prompt !== ''}
           type="text"
           aria-label="Name"
           value={draft.name}
@@ -481,6 +495,7 @@ function Editor({
           {scheduled && draft.mode === 'manual' ? <span className="shortcut-next">Manual stops at the first question and waits for you.</span> : null}
           </>}
 
+          <ShortcutDestinationFields editor={destination} />
           <div className="shortcut-when-block">
             <div className="views shortcut-runs" role="radiogroup" aria-label="Runs">
               <button type="button" role="radio" aria-checked={!scheduled} className={!scheduled ? 'on' : ''} onClick={() => pickRepeats('never')}>By hand</button>

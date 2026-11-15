@@ -16569,3 +16569,67 @@ html.phone .secret-form .secret-form-label { text-align: start; }
     height: 94vh;
   }
 }
+
+.shortcut-destination-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-destination-summary {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-delivery {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 210px;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-delivery a {
+  color: var(--accent);
+}
+
+.phone-shortcut .shortcut-delivery {
+  max-width: 120px;
+  font-size: 13px;
+}
+
+.phone .shortcut-destination-summary {
+  font-size: 13px;
+}
+
+.shortcut-destination-control .select > span,
+.shortcut-destinations .phone-cell-value,
+.menu-item:has(.shortcut-destination-choice),
+.shortcut-destination-choice {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-destinations .phone-cell-value {
+  text-align: end;
+}
+
+.shortcut-destination-control .select {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.shortcut-destination-control .select > .shortcut-destination-choice {
+  flex: 1;
+  min-width: 0;
+}
+
+.shortcut-destinations .phone-cell-value {
+  min-width: 0;
+  flex-shrink: 1;
+}

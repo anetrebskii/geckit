@@ -8,6 +8,7 @@ import type { DiscordInspect, DiscordPerson, DiscordServer, DiscordSetupView } f
 import { DISCORD_INVITE_PERMISSIONS } from '../../shared/discord'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule, ChannelSetupContext, Json, ManagerQuotedReply, ManagerReplyOrigin } from './channel-api'
 import { StatusMessage } from '../manager-status'
+import { ChannelShortcutError } from './channel-api'
 import { heard as speechOf, localeSpeech, say } from '../manager-voice'
 import { containsSecret } from '../../shared/channel-safety'
 
@@ -275,7 +276,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
   const strings = (value: Json | undefined): readonly string[] => Array.isArray(value) ? value.filter((one): one is string => typeof one === 'string') : []
   const pending = (key: string): readonly Pending[] => list(`decisions:${key}`, (one) => typeof one['id'] === 'string' ? { id: one['id'], title: typeof one['title'] === 'string' ? one['title'] : '', values: strings(one['values']), labels: strings(one['labels']) } : undefined)
   const prompts = (key: string): readonly Prompt[] => list(`prompts:${key}`, (one) => typeof one['decision'] === 'string' && typeof one['message'] === 'string' ? { decision: one['decision'], message: one['message'], title: typeof one['title'] === 'string' ? one['title'] : 'Question' } : undefined)
-  const places = (): readonly Place[] => list('threads', (one) => typeof one['key'] === 'string' && typeof one['channel'] === 'string' ? { key: one['key'], channel: one['channel'] } : undefined)
+  const places = (): readonly Place[] => [...new Map(['threads', 'shortcut-threads'].flatMap((storage) => list(storage, (one) => typeof one['key'] === 'string' && typeof one['channel'] === 'string' ? { key: one['key'], channel: one['channel'] } : undefined)).map((one) => [one.key, one] as const)).values()]
   const boundary = (key: string): string | undefined => context.conversations.historyBoundary?.(key)?.revision
   const cutoff = (key: string): string | undefined => { const at = context.conversations.historyBoundary?.(key)?.at; return at === undefined ? undefined : snowflakeOf(at) }
 
@@ -367,6 +368,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         watching.get(thread)?.(); watching.delete(thread)
         if (event.change.action === 'delete') {
           context.store.set('threads', places().filter((one) => one.key !== key))
+          context.store.set('shortcut-threads', places().filter((one) => one.key !== key))
           context.store.set(`thread:${key}`, undefined)
         } else follow(thread, channel, key)
         return
@@ -595,7 +597,54 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     })
   }
 
+  const native = async <T>(path: string, body: object, beforeSend?: () => void): Promise<T> => {
+    beforeSend?.()
+    if (stopped) throw new ChannelShortcutError(false, 'Discord is stopped.')
+    let response: Response
+    try { response = await transport.fetch(`${API}${path}`, { method: 'POST', headers: { authorization: `Bot ${token()}`, 'content-type': 'application/json' }, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(30_000) }) } catch { throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: connection failed after submitting a write.') }
+    if (response.status >= 500) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: server failed after submitting a write.')
+    if (!response.ok) throw new ChannelShortcutError(false, `Discord refused result delivery (${String(response.status)}).`)
+    try { return await response.json() as T } catch { throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: no native receipt.') }
+  }
+
   return {
+    destinations: async () => {
+      const guilds: Pick<DiscordServer, 'id' | 'name'>[] = []
+      let after: string | undefined
+      do {
+        const page = await api<readonly Pick<DiscordServer, 'id' | 'name'>[]>('GET', `/users/@me/guilds?limit=200${after === undefined ? '' : `&after=${after}`}`)
+        guilds.push(...page)
+        const next = page.length === 200 ? page.at(-1)?.id : undefined
+        if (next !== undefined && next === after) throw new Error('Discord destination discovery did not advance.')
+        after = next
+      } while (after !== undefined)
+      const choices = await Promise.all(guilds.map(async (guild) => {
+        const available = await api<readonly DiscordChannelInfo[]>('GET', `/guilds/${guild.id}/channels`)
+        return available.filter((one) => one.type === 0).map((one) => ({ id: one.id, name: `${guild.name} / #${one.name ?? one.id} (${one.id})`, model: 'thread' as const }))
+      }))
+      return choices.flat()
+    },
+    publishShortcut: async (input) => {
+      const parent = await api<DiscordChannelInfo>('GET', `/channels/${input.destination}`).catch((error: Error) => { throw new ChannelShortcutError(false, said(error)) })
+      if (parent.id !== input.destination || parent.type !== 0 || parent.guild_id === undefined) throw new ChannelShortcutError(false, 'Discord destination must be an accessible server text channel.')
+      const opened = await native<DiscordChannelInfo>(`/channels/${parent.id}/threads`, { name: (input.title?.trim() || 'Scheduled result').slice(0, 100), type: 11, auto_archive_duration: 1440 }, input.beforeSend)
+      if (typeof opened.id !== 'string' || !/^\d+$/.test(opened.id) || opened.parent_id !== parent.id || opened.type !== 11) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: thread receipt does not match destination.')
+      channels.set(opened.id, opened)
+      const link = `https://discord.com/channels/${parent.guild_id}/${opened.id}`
+      const thread = input.bind({ key: opened.id, ...(input.title === undefined ? {} : { title: input.title }), link, labels: { guild: parent.guild_id, channel: parent.id, thread: opened.id } })
+      context.store.set(`thread:${opened.id}`, true)
+      context.store.set('shortcut-threads', [...places().filter((one) => one.key !== opened.id), { key: opened.id, channel: opened.id }])
+      follow(thread, opened.id, opened.id)
+      let message: string | undefined
+      for (const content of chunks(input.text)) {
+        const receipt = await native<DiscordMessage>(`/channels/${opened.id}/messages`, { content, allowed_mentions: { parse: [] } }, input.beforeSend)
+        if (typeof receipt.id !== 'string' || receipt.id === '' || receipt.channel_id !== opened.id) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: message receipt does not match thread.')
+        message = receipt.id
+        context.store.set(`seen:${opened.id}`, receipt.id)
+      }
+      if (message === undefined) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: result was empty.')
+      return { destination: parent.id, thread: opened.id, message, link }
+    },
     start: async () => {
       context.status('starting', 'Connecting to Discord')
       const bot = await api<DiscordUser>('GET', '/users/@me')

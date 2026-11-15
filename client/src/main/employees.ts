@@ -1,3 +1,4 @@
+import { shortcutDestinationError } from '../shared/shortcut-destination-validation'
 import { randomUUID } from 'node:crypto'
 import { configuration, setConfiguration } from '../core/configuration'
 
@@ -87,7 +88,7 @@ function options(args: readonly string[], allowed: readonly string[]): { readonl
   return { words, flags }
 }
 
-const SHORTCUT_FLAGS = ['--target', '--name', '--project', '--prompt', '--goal', '--every', '--cron', '--start-window-minutes', '--provider', '--model', '--reasoning', '--mode']
+const SHORTCUT_FLAGS = ['--destination', '--target', '--name', '--project', '--prompt', '--goal', '--every', '--cron', '--start-window-minutes', '--provider', '--model', '--reasoning', '--mode']
 const quoted = (text: string): string => `"${text}"`
 const brief = (text: string): string => (text.length > 200 ? `${text.slice(0, 199)}...` : text).replace(/\s+/g, ' ')
 const scheduled = (one: Shortcut): boolean => one.on && (one.cron !== undefined || one.recurrence !== undefined)
@@ -373,7 +374,11 @@ export class Employees {
     const [action, said, ...rest] = args
     if (action === 'add' || action === 'edit') {
       const { words, flags } = options(rest, SHORTCUT_FLAGS)
-      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--goal <text>] [--every <when>|--cron <expr>] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --name, --project, --prompt, --prompt-file, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning, --mode.')
+      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--destination <JSON|none>] [--goal <text>] [--every <when>|--cron <expr>] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --destination, --name, --project, --prompt, --prompt-file, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning, --mode.')
+      const destinationSaid = flags.get('--destination')
+      const destination = destinationSaid === undefined || destinationSaid === 'none' ? undefined : JSON.parse(destinationSaid) as NonNullable<Shortcut['destination']>
+      const destinationError = shortcutDestinationError(destination)
+      if (destinationError !== undefined) throw new Error(destinationError)
       const was = action === 'edit' ? this.#shortcut(team, said) : undefined
       const target = flags.get('--target')
       if (target !== undefined && target !== 'manager' && target !== 'task') throw new Error('Use --target manager or task.')
@@ -414,13 +419,14 @@ export class Employees {
       const root = project === undefined ? was?.root : team.project(project)
       if (reasoning !== undefined && !isCodexProvider(provider ?? was?.provider ?? assistantFor(team.settings(), root))) throw new Error('--reasoning is for Codex shortcuts only. Claude Code takes its effort from the model.')
       if (action === 'add' && (name === undefined || root === undefined || prompt === undefined)) throw new Error('A shortcut needs --name, --project and --prompt or --prompt-file.')
-      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --name, --project, --prompt, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning or --mode.')
+      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --destination, --name, --project, --prompt, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning or --mode.')
       const where = root === undefined ? '' : team.projectName(root)
       const when = timed === undefined ? undefined : timed === '' ? 'By hand' : describeCron(timed)
       const title = name ?? was?.name ?? ''
       const lines = was === undefined
         ? [`Add shortcut ${quoted(title)} ${owner === undefined ? 'with no employee' : `to ${owner.name}`}`, `${when ?? 'By hand'} in ${where}`, `Prompt: ${brief(prompt ?? '')}`, ...(goal === undefined || goal === '' ? [] : [`Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
         : [`Change shortcut ${quoted(was.name)}${name === undefined || name === was.name ? '' : `: name to ${quoted(name)}`}`, ...(when === undefined && project === undefined ? [] : [`${when ?? this.#shortcutWhen(was)} in ${where}`]), ...(prompt === undefined ? [] : [`Prompt: ${brief(prompt)}`]), ...(goal === undefined ? [] : [goal === '' ? 'Goal: none' : `Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
+      if (destinationSaid !== undefined) lines.push(destination === undefined ? 'Result destination: none' : `Result destination: ${destination.channel} / ${destination.label ?? destination.destination}`)
       if (target !== undefined) lines.push(`Target: ${manager ? 'Manager' : 'New task'}`)
       if (windowSaid !== undefined || timed !== undefined && window.startWindowMinutes !== undefined) lines.push(window.startWindowMinutes === undefined ? 'Start window: none' : describeStartWindow(window))
       return {
@@ -438,8 +444,10 @@ export class Employees {
           const { target: _target, ...taskBase } = base
           const { employeeId: _employee, ...unassigned } = taskBase
           const selectedBase = manager ? { ...unassigned, target: 'manager' as const } : target === 'task' ? taskBase : base
+          const { destination: _destination, ...withoutDestination } = selectedBase
+          const destinationBase = destinationSaid === undefined ? selectedBase : destination === undefined ? withoutDestination : { ...withoutDestination, destination }
           const saved = team.saveShortcut({
-            ...selectedBase,
+            ...destinationBase,
             ...(current === undefined ? {} : { id: current.id }),
             ...(name === undefined ? {} : { name }),
             ...(root === undefined ? {} : { root }),

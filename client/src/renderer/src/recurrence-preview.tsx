@@ -22,6 +22,9 @@ let notify: ((one: Shortcut) => void) | undefined
 let saveCalls = 0
 let countSaveCalls: ((count: number) => void) | undefined
 const shortcuts: Geckit['shortcuts'] = {
+  onRun: () => () => undefined,
+  destinations: async () => [],
+  runs: async () => [],
   save: async (draft) => {
     countSaveCalls?.(++saveCalls)
     await new Promise((resolve) => setTimeout(resolve, 350))

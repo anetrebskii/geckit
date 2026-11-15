@@ -1,3 +1,4 @@
+import { ShortcutRuns } from '../main/shortcut-runs'
 import { providerSettings } from '../main/provider-settings'
 import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
@@ -63,6 +64,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
   const directory = dataDirectory()
   const notes = notesStore()
   let sessions: Sessions | undefined
+  let shortcutRuns: ShortcutRuns | undefined
   let manager: Manager | undefined
   const routes = createCoreHosts({
     folder: join(directory, 'hosts'),
@@ -157,6 +159,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     manager?.dispose()
     sessions?.dispose()
     routes.forwards.dispose()
+    shortcutRuns?.dispose()
     routes.hosts.dispose()
     await Promise.all([routes.runs.flush(), guideWrites, stopFindModelDownload(), stopCamoufoxPreparation()])
   }
@@ -175,6 +178,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         all = changed
         for (const conversation of changed) registerProjectBrowserConversation(conversation, getSettings().projects)
         manager?.observeSessions(changed)
+        shortcutRuns?.changed()
         events.emit('chat:sessions', changed)
         const settings = getSettings()
         const progressOrder = keptOrder(settings.progressOrder, changed)
@@ -240,6 +244,8 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       changed: (changed) => events.emit('channels:changed', changed),
     })
     channels = hub
+    const runs = new ShortcutRuns({ directory, onRun: (run) => events.emit('shortcuts:runChanged', run), items: (id) => started.items(id), manager: coordinator, conversations: () => all, publish: (destination, input) => hub.publishShortcut(destination, input) })
+    shortcutRuns = runs
 
     setGuideManager(coordinator.instructions())
     keepBrowserBridge(getSettings().chromeBridge)
@@ -271,6 +277,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       channelUpdateTimer.unref?.()
       void hub.start().then(() => { if (getSettings().channelAutoUpdate) return hub.checkUpdates() }).catch((error: Error) => console.error('Could not start channels:', error.message))
       stopSchedule = startShortcuts({
+        runs,
         manager: (shortcut, request) => coordinator.runShortcut(shortcut, request),
         start: (message) => started.send(message),
         rename: (id, title) => started.rename(id, title),
@@ -278,12 +285,13 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         employee: (id) => employees.list().employees.find((one) => one.id === id),
       }, (look) => { resumeSchedule = look; return () => { resumeSchedule = undefined } })
       await started.resumeQueues()
+      runs.changed()
       const running = Object.entries(routes.runs.all()).map(([id, run]) => ({ id, root: run.root }))
       const hosts = [...new Set(running.map((run) => hostOf(run.root)).filter((id) => id !== undefined))]
       void Promise.allSettled(hosts.map((id) => routes.hosts.ensure(id))).then(() => stopped ? undefined : started.reattach(running)).catch((error: Error) => console.error(error.message))
     }
     const configureManager = (change: Partial<ManagerConfig>): Promise<ManagerView> => coordinator.configure(change)
-    return { cliRegistry: (args: readonly string[]): string => { if (cliTargets === undefined) throw new Error('Computer registry is unavailable on this runtime.'); return cliTargets.registry(args) }, setCliTargets: (targets: NonNullable<typeof cliTargets>) => { cliTargets = targets }, sessions: started, manager: coordinator, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, managerView: () => view, refreshManager: async () => { view = await coordinator.view(); events.emit('manager:view', view) }, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), channels: hub.views(), channelPhoneViews: hub.views('phone'), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
+    return { shortcutRuns: runs, cliRegistry: (args: readonly string[]): string => { if (cliTargets === undefined) throw new Error('Computer registry is unavailable on this runtime.'); return cliTargets.registry(args) }, setCliTargets: (targets: NonNullable<typeof cliTargets>) => { cliTargets = targets }, sessions: started, manager: coordinator, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, managerView: () => view, refreshManager: async () => { view = await coordinator.view(); events.emit('manager:view', view) }, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), channels: hub.views(), channelPhoneViews: hub.views('phone'), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
   } catch (error) {
     await dispose()
     throw error

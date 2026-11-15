@@ -24,6 +24,8 @@ import { cleanJson, cleanText } from '../../core/clean'
 import { isVaultEnvelope } from '../../core/vault'
 import { TELEGRAM_INFO, telegramChannel } from './telegram'
 import { runningSecrets } from '../../core/secrets'
+import type { ShortcutDestination, ShortcutDestinationChannel, ShortcutDestinationReceipt } from '../../shared/shortcut-destinations'
+import { ChannelShortcutError, type ChannelShortcutPublication } from './channel-api'
 
 /** Channels that come with GeckIt: turned on and set up like a library, never removed or updated from GitHub. */
 export const BUILT_IN_CHANNELS: readonly LoadedChannel[] = [{ info: TELEGRAM_INFO, path: 'built-in', module: telegramChannel() }, { info: SLACK_INFO, path: 'built-in', module: SLACK_MODULE }, { info: DISCORD_INFO, path: 'built-in', module: DISCORD_MODULE }]
@@ -180,6 +182,56 @@ export class Channels {
     const name = this.#setting(id)?.info.name ?? 'This channel'
     if (running?.instance?.request === undefined) throw new Error(`${name} is not running, or has nothing to answer.`)
     return running.instance.request(request, from)
+  }
+
+  async shortcutDestinations(): Promise<readonly ShortcutDestinationChannel[]> {
+    return Promise.all(this.#deps.settings().channels.map(async (setting) => {
+      const running = this.#running.get(setting.info.id)
+      const instance = running?.instance
+      const supported = instance?.destinations !== undefined && instance.publishShortcut !== undefined
+      const base = { id: setting.info.id, name: setting.info.name, supported, destinations: [] }
+      if (!setting.enabled || running?.state !== 'connected' || !this.#deps.manager.enabled()) return { ...base, error: 'Channel or Manager is unavailable.' }
+      if (instance?.destinations === undefined || instance.publishShortcut === undefined) return base
+      try {
+        const destinations = await instance.destinations()
+        if (this.#running.get(setting.info.id) !== running || !running.alive.value || running.state !== 'connected') return { ...base, error: 'Channel connection changed.' }
+        return { ...base, destinations }
+      } catch (error) { return { ...base, error: message(error) } }
+    }))
+  }
+
+  async publishShortcut(destination: ShortcutDestination, input: Omit<ChannelShortcutPublication, 'destination'>): Promise<ShortcutDestinationReceipt> {
+    const running = this.#running.get(destination.channel)
+    const instance = running?.instance
+    const validate = (): void => {
+      if (running === undefined || this.#running.get(destination.channel) !== running || !running.alive.value || running.state !== 'connected' || this.#setting(destination.channel)?.enabled !== true || !this.#deps.manager.enabled()) throw new ChannelShortcutError(false, 'Channel or Manager is unavailable.')
+    }
+    validate()
+    if (instance?.destinations === undefined || instance.publishShortcut === undefined) throw new ChannelShortcutError(false, 'This channel does not support shortcut result destinations.')
+    const choices = await instance.destinations().catch((error: Error) => { throw new ChannelShortcutError(false, message(error)) })
+    validate()
+    if (!choices.some((choice) => choice.id === destination.destination && choice.model === 'thread')) throw new ChannelShortcutError(false, 'Destination unavailable.')
+    const text = await cleanText(input.text)
+    const title = input.title === undefined ? undefined : await cleanText(input.title)
+    validate()
+    let bound: ChannelThread | undefined
+    let accepting = true
+    let receipt: ShortcutDestinationReceipt
+    try {
+      receipt = await instance.publishShortcut({ ...input, destination: destination.destination, text, ...(title === undefined ? {} : { title }), beforeSend: validate, bind: (place) => {
+        validate()
+        if (!accepting || place.key.trim() === '' || bound !== undefined) throw new ChannelShortcutError(true, 'Destination route binding is invalid.')
+        const thread = input.bind(place)
+        bound = place
+        return thread
+      } })
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && 'uncertain' in error && typeof error.uncertain === 'boolean') throw new ChannelShortcutError(error.uncertain, message(error))
+      throw new ChannelShortcutError(true, message(error))
+    } finally { accepting = false }
+    if (receipt.destination !== destination.destination || bound === undefined || receipt.thread !== bound.key) throw new ChannelShortcutError(true, 'Native destination receipt does not match the run route.')
+    try { validate() } catch { throw new ChannelShortcutError(true, 'Channel connection changed during publication.') }
+    return receipt
   }
 
   /** The pairing of a connected owner chat, so a decision made under an earlier pairing is not used. */

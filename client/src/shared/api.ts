@@ -1,3 +1,4 @@
+import type { ShortcutDestination } from './shortcut-destinations'
 import { isRemote } from './hosts'
 import type { Elicitation } from './elicitation'
 import type { HostConfig } from './hosts'
@@ -1268,6 +1269,7 @@ export interface Settings {
   readonly calendarRecurrenceVersion?: 1
   readonly cronStartWindowVersion?: 1
   readonly managerShortcutsVersion?: 1
+  readonly shortcutDestinationsVersion?: 1
   /** What is written often, offered after ; in the message field. */
   readonly phrases: readonly string[]
   /** Other computers conversations run on, reached over SSH. Never a password: those are in the system's credential store. */
@@ -1276,6 +1278,7 @@ export interface Settings {
 
 /** A saved prompt sent to Manager or started as a new conversation, by hand or on a timetable. */
 export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'> {
+  readonly destination?: ShortcutDestination
   readonly target?: 'manager'
   readonly id: string
   readonly name: string

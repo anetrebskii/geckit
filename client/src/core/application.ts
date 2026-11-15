@@ -247,6 +247,8 @@ export function application(runtime: CoreRuntime) {
     },
     'orders:do': () => executeOrders(),
     'orders:cancel': () => { planned = undefined },
+    'shortcuts:destinations': () => runtime.channels.shortcutDestinations(),
+    'shortcuts:runs': (id?: string) => runtime.shortcutRuns.all(id),
     'shortcuts:save': (draft: ShortcutDraft) => saveShortcut(draft),
     'shortcuts:remove': (id: string) => removeShortcut(id),
     'shortcuts:run': (id: string) => runShortcut(id, 'hand'),
