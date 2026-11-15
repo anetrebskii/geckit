@@ -9,6 +9,7 @@ import type { SharedLink } from '../../shared/share'
 import type { Shares } from '../shares'
 import type { PluginLogger } from '../sessions/plugin-api'
 import type { ThreadActivity } from '../manager-status'
+import type { ShortcutDestination, ShortcutDestinationChoice, ShortcutDestinationReceipt } from '../../shared/shortcut-destinations'
 
 export type { ChannelScreen, ChannelScreenRequest } from '../../shared/channel-ui'
 export { ChannelDecisionError, channelDecisionReason } from '../../shared/channel-ui'
@@ -192,9 +193,21 @@ export interface ChannelContext {
   view?(value: Json): void
 }
 
+export interface ChannelShortcutPublication extends Pick<ShortcutDestination, 'destination'>, Pick<ChannelStart, 'text'>, Pick<ChannelThread, 'title'> {
+  readonly runId: string
+  readonly bind: (place: ChannelThread) => string
+  readonly beforeSend?: () => void
+}
+
+export class ChannelShortcutError extends Error {
+  constructor(readonly uncertain: boolean, message: string) { super(message) }
+}
+
 export interface Channel {
   start(): Promise<void>
   stop(): Promise<void>
+  destinations?(): Promise<readonly ShortcutDestinationChoice[]>
+  publishShortcut?(input: ChannelShortcutPublication): Promise<ShortcutDestinationReceipt>
   /** Version 2: a running channel answers its own Settings screen, such as pairing; `from` says whether the computer or the phone asks. */
   request?(request: Json, from: 'desktop' | 'phone'): Promise<Json>
 }

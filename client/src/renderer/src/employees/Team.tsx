@@ -11,6 +11,7 @@ import { EMPLOYEE_AVATARS } from './avatars'
 import { useEmployees } from './useEmployees'
 import { newEmployeeDraft, savedEmployeeId } from './draft'
 import { EmployeeShortcut, shortcutDraft } from './shortcuts'
+import { useShortcutRuns } from '../chat/ShortcutDestinations'
 import { useManager } from '../chat/useManager'
 import { managerStand } from '../chat/manager-label'
 import { ManagerPage, managerFace } from './TeamManager'
@@ -31,6 +32,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
 }): React.JSX.Element {
   const { view, take, loading, loadError, reload } = useEmployees()
   const manager = useManager()
+  const lastRuns = useShortcutRuns(chat.settings)
   const tasksFor = useTasksByEmployee(chat.everyone)
   const stand = managerStand(manager)
   const [selected, setSelected] = useState<Selected | undefined>(first)
@@ -157,7 +159,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
     if (shownId === 'manager' && draft === undefined) return <ManagerPage settings={chat.settings} change={chat.change} view={manager} onChat={() => { onClose(); openManagerChat() }}>
       <section className="team-section" aria-label="Shortcuts"><div className="employee-section-head"><h3>Shortcuts</h3><button type="button" className="quiet" onClick={() => onShortcut({ name: '', root: chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, target: 'manager' })}><Icon name="plus" size={11} />New shortcut</button></div>
         <p className="employee-note">Run recurring Manager requests from Shortcuts.</p>
-        <div className="team-box">{chat.settings.shortcuts.filter((one) => one.target === 'manager').map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={false} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>
+        <div className="team-box">{chat.settings.shortcuts.filter((one) => one.target === 'manager').map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={false} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>
       </section>
     </ManagerPage>
     if (shownId === 'none' && draft === undefined) return <>
@@ -167,7 +169,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
       </header>
       <section className="team-section" aria-label="Shortcuts">
         <div className="employee-section-head"><span><h3>Shortcuts <span className="employee-count">{orphans.length}</span></h3></span></div>
-        {orphans.length === 0 ? <p className="employee-empty">Every shortcut has an employee.</p> : <div className="team-box">{orphans.map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={false} now={now} onEdit={onShortcut} onGive={view.employees.some((employee) => !employee.archived) ? (anchor, id) => setGiving({ anchor, id }) : undefined} onOpen={openTask} />)}</div>}
+        {orphans.length === 0 ? <p className="employee-empty">Every shortcut has an employee.</p> : <div className="team-box">{orphans.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={false} now={now} onEdit={onShortcut} onGive={view.employees.some((employee) => !employee.archived) ? (anchor, id) => setGiving({ anchor, id }) : undefined} onOpen={openTask} />)}</div>}
       </section>
     </>
     if (form === undefined) return <p className="employee-note team-choose">Choose an employee</p>
@@ -196,7 +198,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
           <span><h3>Shortcuts <span className="employee-count">{shortcuts.length}</span></h3><p className="employee-note">What {current.name} does by hand or on a schedule. Each run is a new task assigned to them.</p></span>
           <button type="button" className="quiet employee-new" disabled={current.archived} onClick={() => onShortcut({ name: '', root: shortcuts[0]?.root ?? chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, employeeId: current.id })}><Icon name="plus" size={11} />New shortcut</button>
         </div>
-        {shortcuts.length === 0 ? <p className="employee-empty">No shortcuts yet. Add what this employee does by hand or on a schedule.</p> : <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={current.archived} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>}
+        {shortcuts.length === 0 ? <p className="employee-empty">No shortcuts yet. Add what this employee does by hand or on a schedule.</p> : <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={current.archived} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>}
       </section>}
       {tasks === undefined || current === undefined ? null : <EmployeeTasks key={`tasks-${current.id}`} tasks={tasks} settings={chat.settings} onOpen={openTask} />}
       <section className="team-section" aria-label="About">

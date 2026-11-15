@@ -326,3 +326,18 @@ describe('shortcuts owned by employees', () => {
     expect(f.start).toHaveBeenLastCalledWith({ root: '/p/samara', mode: 'auto', text: 'Work', provider: 'claude' })
   })
 })
+
+it('edits saved destination through employee CLI, preserves it on unrelated edits and removes it explicitly', async () => {
+  const f = team()
+  const destination = { channel: 'channel:discord', destination: '123', label: '#general' }
+  await f.employees.command(['shortcut', 'add', 'none', '--name', 'Result', '--project', 'samara', '--prompt', 'Inspect', '--destination', JSON.stringify(destination)])
+  const id = held.shortcuts[0]?.id ?? ''
+  expect(held.shortcuts[0]?.destination).toEqual(destination)
+  await f.employees.command(['shortcut', 'edit', id, '--name', 'Renamed'])
+  expect(held.shortcuts[0]?.destination).toEqual(destination)
+  expect(JSON.parse(await f.employees.command(['shortcuts', 'none', '--json']))).toMatchObject([{ id, destination }])
+  await expect(f.employees.command(['shortcut', 'edit', id, '--destination', '{"channel":"channel:discord","destination":""}'])).rejects.toThrow('valid result channel')
+  expect(held.shortcuts[0]?.destination).toEqual(destination)
+  await f.employees.command(['shortcut', 'edit', id, '--destination', 'none'])
+  expect(held.shortcuts[0]?.destination).toBeUndefined()
+})

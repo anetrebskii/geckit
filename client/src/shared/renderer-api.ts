@@ -1,3 +1,5 @@
+import type { ShortcutRun } from './shortcut-runs'
+import type { ShortcutDestinationChannel } from './shortcut-destinations'
 import type {
   ViewFrame,
   ViewInput,
@@ -170,6 +172,9 @@ return {
   correct: (request: CorrectRequest): Promise<Answered> => rendererTransport.invoke('correct', request),
 
   shortcuts: {
+    onRun: (said: (run: ShortcutRun) => void): (() => void) => rendererTransport.listen('shortcuts:runChanged', said),
+    destinations: (): Promise<readonly ShortcutDestinationChannel[]> => rendererTransport.invoke('shortcuts:destinations'),
+    runs: (id?: string): Promise<readonly ShortcutRun[]> => rendererTransport.invoke('shortcuts:runs', id),
     save: (draft: ShortcutDraft): Promise<Shortcut> => rendererTransport.invoke('shortcuts:save', draft),
     remove: (id: string): void => rendererTransport.send('shortcuts:remove', id),
     /** Run by hand: the conversation it started, or nothing where it could not. */

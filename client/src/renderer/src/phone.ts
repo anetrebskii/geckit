@@ -526,6 +526,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     },
     correct: (request) => call('correct', request),
     shortcuts: {
+      onRun: (said) => listen('shortcuts:runChanged', said),
+      destinations: () => call('shortcuts.destinations'),
+      runs: (id) => call('shortcuts.runs', id),
       save: (draft) => call('shortcuts.save', draft),
       remove: (id) => send('shortcuts.remove', id),
       run: (id) => call('shortcuts.run', id),

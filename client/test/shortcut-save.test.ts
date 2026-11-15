@@ -76,3 +76,13 @@ describe('shortcut save acknowledgment', () => {
   })
 
 })
+
+it('checks destination host support and refuses silent field loss', async () => {
+  const draft: ShortcutDraft = { name: 'Result', root: '/fixture', prompt: 'Inspect', mode: 'auto', on: false, destination: { channel: 'channel:discord', destination: '123', label: '#general' } }
+  const save = vi.fn<Geckit['shortcuts']['save']>(async (next) => ({ ...next, id: 'result', since: 1 }))
+  await expect(saveShortcut({ save }, {}, draft)).rejects.toThrow('does not support shortcut destinations')
+  expect(save).not.toHaveBeenCalled()
+  expect((await saveShortcut({ save }, { shortcutDestinationsVersion: 1 }, draft)).destination).toEqual(draft.destination)
+  save.mockImplementationOnce(async (next) => { const { destination: _destination, ...legacy } = next; return { ...legacy, id: 'result', since: 1 } })
+  await expect(saveShortcut({ save }, { shortcutDestinationsVersion: 1 }, draft)).rejects.toThrow('did not save this shortcut destination')
+})

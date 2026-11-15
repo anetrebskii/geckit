@@ -25,5 +25,5 @@ export type Configuration = PreferenceSections & Partial<Pick<Settings, 'hosts' 
   readonly manager?: Partial<ManagerConfig>
 }
 
-type CoveredSettings = typeof PREFERENCE_SECTIONS[keyof typeof PREFERENCE_SECTIONS][number] | typeof LOCAL_SETTINGS[number] | 'shortcuts' | 'hosts' | 'phrases' | 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion'
+type CoveredSettings = typeof PREFERENCE_SECTIONS[keyof typeof PREFERENCE_SECTIONS][number] | typeof LOCAL_SETTINGS[number] | 'shortcuts' | 'hosts' | 'phrases' | 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'shortcutDestinationsVersion'
 export type UnsectionedSettings = Exclude<keyof Settings, CoveredSettings>

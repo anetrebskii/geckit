@@ -228,11 +228,12 @@ const HELP = `geckit service - control a running headless service (run service h
   geckit employees manager [--json]
   geckit employees manager edit [--instructions <text>|--instructions-file <file>] [--avatar <1-12>]
   geckit employees shortcut add <employee-id|none> [--target manager|task] --name <name> --project <name> (--prompt <text>|--prompt-file <file>)
-      [--goal <text>] [--every <when>|--cron "<expr>"] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan]
+      [--destination <JSON|none>] [--goal <text>] [--every <when>|--cron "<expr>"] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan]
   geckit employees shortcut edit <shortcut-id> [the same options as add; --every none makes it by hand only]
   geckit employees shortcut pause|resume|remove|run <shortcut-id>
   geckit employees shortcut give <shortcut-id> <employee-id|none>
       Change the team. <when> is "hour", "hour 15", "day 9:00", "weekdays 9:00" or "week monday 9:00".
+      --destination accepts {"channel":"channel:discord","destination":"stable-channel-id","label":"#general"}; none removes it. Discover IDs with shortcuts destinations; inspect delivery with shortcuts runs.
       --start-window-minutes picks one random start within N minutes after each CRON time (1-1440); none restores exact timing.
       --project names a folder as geckit start does. An employee or shortcut may be named by its id or its exact name.
       Archiving pauses an employee's timetables until it is restored; nothing missed meanwhile is run.

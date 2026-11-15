@@ -5,10 +5,12 @@ import type { ManagerView } from '../shared/manager'
 import type { ChannelId, ChannelJson } from '../shared/channels'
 import type { ChannelsView } from '../shared/channels'
 import type { Shares } from '../main/shares'
+import type { ShortcutRun } from '../shared/shortcut-runs'
 import type { RpcEvent } from './rpc'
 import type { SessionListStatus } from '../shared/session-list'
 
 export interface CoreEvents {
+  'shortcuts:runChanged': (run: ShortcutRun) => void
   'chat:sessions': (sessions: readonly ChatSession[]) => void
   'chat:listStatus': (status: readonly SessionListStatus[]) => void
   'chat:items': (items: SessionItems) => void
