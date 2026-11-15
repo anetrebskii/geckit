@@ -1677,20 +1677,295 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   font-size: 11px;
 }
 
-.provider-library-copy > span.channel-failed {
+/* The line under a channel's name leads with a dot in its state's colour. */
+.provider-library-copy > span.channel-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.channel-state > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-state.failed > span {
+  overflow: visible;
+}
+
+.channel-state > i {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  opacity: 0.6;
+}
+
+.channel-state.connected > i {
+  background: var(--success-text);
+  opacity: 1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-text) 22%, transparent);
+}
+
+.channel-state.starting > i,
+.channel-state.setup > i {
+  background: var(--warning-text);
+  opacity: 1;
+}
+
+.channel-state.starting > i {
+  animation: channel-breathe 1.4s ease-in-out infinite;
+}
+
+.provider-library-copy > span.channel-state.failed {
+  align-items: baseline;
   color: var(--danger);
   white-space: normal;
 }
 
-/* Discord's Set up walks four steps down one rail; a step waits greyed until the one it depends on is done. */
-.discord-setup {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-inline-start: 0;
+.channel-state.failed > i {
+  background: var(--danger);
+  opacity: 1;
+  transform: translateY(-1px);
 }
 
-.discord-hidden {
+.channel-row {
+  transition: background var(--quick) var(--ease);
+}
+
+.channel-row.open {
+  background: var(--bg-sunken);
+}
+
+.channel-row .provider-library-remove[aria-expanded] {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.channel-row .provider-library-remove[aria-expanded] svg {
+  transition: transform var(--quick) var(--ease);
+}
+
+.channel-row .provider-library-remove[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.channel-row .provider-library-remove[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+/* The open connection screen is a card under the row, lined up with the name. */
+.channel-setup.channel-panel {
+  flex-basis: calc(100% - 38px);
+  box-sizing: border-box;
+  margin: 4px 0 4px 38px;
+  padding: 14px 16px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  animation: pop 160ms var(--ease);
+}
+
+.channel-panel .field:last-of-type {
+  margin-bottom: 14px;
+}
+
+.channel-panel .channel-setup-actions button,
+.channel-screen .channel-setup-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: 12px;
+}
+
+.channel-screen .channel-setup-actions button[aria-busy='true'] {
+  opacity: 1;
+}
+
+.channel-screen .channel-setup-actions .channel-risky {
+  color: var(--danger);
+}
+
+.channel-screen .channel-setup-actions .channel-risky:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.channel-screen-body {
+  animation: fade 140ms var(--ease);
+}
+
+.channel-screen .channel-screen-section {
+  padding: 12px 0 0;
+}
+
+.channel-screen .channel-screen-section + .channel-screen-section {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.channel-screen .channel-screen-head {
+  padding-top: 0;
+}
+
+.channel-screen .channel-screen-section h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.channel-screen .channel-screen-section h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.channel-screen-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+
+.dialog .channel-screen-text p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.channel-screen-section > :last-child {
+  margin-bottom: 0;
+}
+
+.channel-screen-section .field:last-of-type {
+  margin-bottom: 12px;
+}
+
+.channel-screen .provider-library-confirm {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  border-radius: var(--radius);
+}
+
+.channel-screen .provider-library-confirm p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.channel-working,
+.channel-screen-loading > p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.channel-screen-loading > p {
+  margin: 0 0 12px;
+}
+
+.channel-screen .channel-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  border-radius: var(--radius);
+}
+
+.channel-screen .channel-error button {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+/* Loading: the shapes of what is coming, breathing, so the space is never blank. */
+.channel-bone,
+.channel-skeleton .provider-library-icon,
+.channel-skeleton .provider-library-copy > span,
+.channel-skeleton-control {
+  display: block;
+  background: var(--bg-hover);
+  border-radius: 5px;
+  animation: channel-breathe 1.4s ease-in-out infinite;
+}
+
+.channel-bone {
+  height: 10px;
+  margin-bottom: 9px;
+}
+
+.channel-bone.title {
+  width: 32%;
+  height: 13px;
+  margin-bottom: 12px;
+}
+
+.channel-bone.short {
+  width: 58%;
+}
+
+.channel-bone-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.channel-bone.button {
+  width: 112px;
+  height: 26px;
+  margin: 0;
+  border-radius: var(--radius);
+}
+
+.channel-bone.button + .channel-bone.button {
+  width: 84px;
+}
+
+.channel-skeleton .provider-library-copy > span {
+  height: 9px;
+  width: 30%;
+}
+
+.channel-skeleton .provider-library-copy > span + span {
+  width: 55%;
+}
+
+.channel-skeleton:nth-child(3) .provider-library-copy > span + span {
+  width: 42%;
+}
+
+.channel-skeleton-control {
+  width: 96px;
+  height: 22px;
+  border-radius: var(--radius);
+}
+
+.channel-skeleton:nth-child(3) > *,
+.channel-skeleton:nth-child(3) .provider-library-copy > span {
+  animation-delay: 120ms;
+}
+
+.channel-skeleton:nth-child(4) > *,
+.channel-skeleton:nth-child(4) .provider-library-copy > span {
+  animation-delay: 240ms;
+}
+
+.channel-loading-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1699,398 +1974,14 @@ html.phone .composer-inner:has(.quiet.sending) textarea {
   white-space: nowrap;
 }
 
-.discord-step {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
-  padding-block: 8px 10px;
+.dialog .channel-empty {
+  padding: 18px 14px;
+  text-align: center;
 }
 
-.discord-step:not(:last-of-type)::before {
-  position: absolute;
-  inset-block: 30px -2px;
-  inset-inline-start: 13.5px;
-  width: 1px;
-  background: var(--border);
-  content: '';
-}
-
-.discord-step-mark {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  margin-inline-start: 3px;
-  place-items: center;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-}
-
-.discord-step.done .discord-step-mark {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: transparent;
-}
-
-.discord-step.waiting .discord-step-mark,
-.discord-step.waiting h4 {
-  color: var(--text-faint);
-}
-
-.discord-step-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.discord-step-body h4 {
-  margin: 3px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.discord-step-body > .check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.discord-step-body > .error,
-.discord-setup > .error {
-  margin: 0;
-  color: var(--danger);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.discord-setup .discord-lead,
-.discord-setup .channel-help {
-  margin: 0;
-}
-
-.discord-lead {
-  color: var(--text-dim);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.discord-link {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  gap: 4px;
-  padding: 3px 7px;
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.discord-token,
-.discord-add {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.discord-token input,
-.discord-add input {
-  flex: 1 1 180px;
-  min-width: 0;
-}
-
-.discord-retry {
-  padding: 0 3px;
-  font-size: 11px;
-}
-
-.discord-identity,
-.discord-people li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-
-.discord-identity {
-  padding: 8px 10px;
-  background: var(--bg-sunken);
-  border-radius: var(--radius);
-}
-
-.discord-identity > .quiet {
-  padding: 3px 5px;
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.discord-avatar {
-  display: grid;
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  overflow: hidden;
-  place-items: center;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--fill);
-  border-radius: 50%;
-}
-
-.discord-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.discord-identity-copy,
-.discord-person-copy {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.discord-identity-copy strong,
-.discord-person-copy strong {
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.discord-identity-copy span,
-.discord-person-copy span {
-  overflow: hidden;
-  color: var(--text-faint);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.discord-note {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  font-size: 11px;
-  line-height: 1.45;
-  border-radius: var(--radius);
-}
-
-.discord-note.danger {
-  margin-block-end: 4px;
-  color: var(--danger);
-  background: var(--bg-sunken);
-}
-
-.discord-note.warning {
-  color: var(--warning-text);
-  background: var(--warning-bg);
-}
-
-.discord-note .quiet {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 5px;
-  color: inherit;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.discord-note-actions,
-.discord-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.discord-row-actions {
-  justify-content: space-between;
-}
-
-.discord-row-actions .quiet,
-.discord-empty .quiet,
-.discord-add .quiet {
-  padding: 3px 7px;
-  font-size: 11px;
-}
-
-.discord-setup:focus {
-  outline: none;
-}
-
-.discord-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
-}
-
-.discord-empty .primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.discord-scope {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-}
-
-.discord-scope .check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.discord-servers,
-.discord-people {
-  display: flex;
-  flex-direction: column;
-  max-height: 260px;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overscroll-behavior: contain;
-}
-
-.discord-server,
-.discord-people li {
-  padding: 8px 10px;
-}
-
-.discord-server + .discord-server,
-.discord-people li + li {
-  border-top: 1px solid var(--border);
-}
-
-.discord-server-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.discord-server-head strong {
-  flex: 1;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.discord-server-head .discord-avatar {
-  border-radius: var(--radius);
-}
-
-.discord-channels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 8px 0 2px 32px;
-}
-
-.discord-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  max-width: 100%;
-  padding: 3px 8px;
-  overflow: hidden;
-  color: var(--text-dim);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-}
-
-.discord-chip > span {
-  color: var(--text-faint);
-}
-
-.discord-chip:hover {
-  color: var(--text);
-  border-color: var(--border-strong);
-}
-
-.discord-chip.on {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: transparent;
-}
-
-.discord-chip.on > span {
-  color: inherit;
-}
-
-.discord-people li.missing .discord-person-copy span {
-  color: var(--danger);
-}
-
-.discord-remove {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  place-items: center;
-  color: var(--text-faint);
-}
-
-.discord-remove:hover {
-  color: var(--text);
-}
-
-.discord-more summary {
-  width: fit-content;
-  color: var(--text-dim);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.discord-more[open] {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.discord-more .check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-
-.discord-setup > .channel-setup-actions {
-  padding-top: 10px;
-  margin-top: 2px;
-  border-top: 1px solid var(--border);
-}
-
-@media (max-width: 520px) {
-  .discord-channels {
-    padding-inline-start: 0;
+@keyframes channel-breathe {
+  50% {
+    opacity: 0.45;
   }
 }
 
@@ -12524,143 +12415,6 @@ html.phone .model-details .phone-cell {
   color: var(--danger);
 }
 
-.manager-telegram {
-  min-inline-size: 0;
-}
-
-/* Where Telegram stands: a dot in the state's tone, the state, and who it is connected as. */
-.manager-telegram-state {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  min-inline-size: 0;
-  margin-block-start: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-sunken);
-}
-
-.manager-telegram-state > div {
-  min-inline-size: 0;
-}
-
-.manager-telegram-state strong {
-  display: block;
-  font-size: 13px;
-}
-
-.manager-telegram-state p {
-  margin-block: 2px 0;
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.manager-telegram-state .manager-telegram-id {
-  color: var(--text-faint);
-}
-
-.manager-telegram-state p.manager-telegram-detail {
-  margin-block-start: 6px;
-  color: var(--danger);
-}
-
-.manager-telegram-dot {
-  flex: none;
-  inline-size: 8px;
-  block-size: 8px;
-  margin-block-start: 5px;
-  border-radius: 50%;
-  background: var(--text-faint);
-}
-
-.manager-telegram-state[data-state='connected'] .manager-telegram-dot {
-  background: var(--accent);
-}
-
-.manager-telegram-state[data-state='pairing'] .manager-telegram-dot,
-.manager-telegram-state[data-state='confirming'] .manager-telegram-dot,
-.manager-telegram-state[data-state='offline'] .manager-telegram-dot {
-  background: var(--review-solid);
-}
-
-.manager-telegram-state[data-state='revoked'] .manager-telegram-dot,
-.manager-telegram-state[data-state='conflict'] .manager-telegram-dot,
-.manager-telegram-state[data-state='storage-error'] .manager-telegram-dot {
-  background: var(--danger);
-}
-
-/* The links shared from Telegram: what each is, the time it has left, and Stop. */
-.manager-links {
-  margin-block-start: 12px;
-  outline: none;
-}
-
-.manager-links-title {
-  margin-block: 0 4px;
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.manager-links-none {
-  margin: 0;
-  color: var(--text-faint);
-  font-size: 12px;
-}
-
-.manager-links ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.manager-links li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-inline-size: 0;
-  padding-block: 4px;
-  border-block-end: 1px solid var(--border);
-}
-
-.manager-links-name {
-  flex: 1;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-}
-
-.manager-links-left {
-  flex: none;
-  color: var(--text-faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* The quiet note a step can carry under its buttons. */
-.manager-aside {
-  margin-block-start: 12px;
-}
-
-.manager-aside summary {
-  width: fit-content;
-  color: var(--text-faint);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.manager-aside p {
-  margin-block: 6px 0;
-  color: var(--text-faint);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
 /* The picture above the steps: three parts, and the direction the open step adds. */
 .manager-flow {
   margin-block: 12px 14px;
@@ -12790,10 +12544,6 @@ html.phone .model-details .phone-cell {
 
 .manager-flow.step-delegation[data-delegation='approve'] .manager-flow-mark {
   animation: manager-flow-ask 3200ms linear 2;
-}
-
-.manager-flow.step-telegram .manager-flow-mark {
-  animation: manager-flow-ping 3000ms linear 2;
 }
 
 .manager-flow.step-enable .manager-flow-mark {
@@ -13354,7 +13104,7 @@ button.manager-step-head:hover > svg {
   user-select: text;
 }
 
-.manager-said.is-telegram {
+.manager-said.is-channel {
   border-color: transparent;
   background: var(--bubble);
 }
@@ -16088,3 +15838,57 @@ html.phone .browser-profiles-form-wide { grid-column: 1; }
 .prose-picture { display: inline-block; max-width: 100%; }
 .prose-picture-open { display: inline-flex; padding: 0; border: 0; background: none; cursor: zoom-in; max-width: min(100%, 320px); }
 .prose-picture-open img { display: block; max-width: 100%; max-height: 240px; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius); }
+
+.channel-setup > .channel-setup {
+  padding-inline-start: 0;
+}
+
+.channel-screen {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.channel-screen .channel-setup-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.channel-screen + form {
+  margin-block-start: 12px;
+  border-block-start: 1px solid var(--border);
+}
+
+@media (max-width: 520px) {
+  .channel-setup {
+    padding-inline-start: 0;
+  }
+
+  .channel-setup.channel-panel {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .settings-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-block-end: 4px;
+  }
+
+  .settings-nav button {
+    white-space: nowrap;
+  }
+
+  .dialog.settings-dialog {
+    height: 94vh;
+  }
+}

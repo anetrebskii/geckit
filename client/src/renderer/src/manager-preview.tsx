@@ -4,7 +4,6 @@ import { DEFAULT_SETTINGS, providerOf } from '../../shared/api'
 import type { ChatSession, ClaudeModel, SessionItem, SessionItems, SessionProvider, Settings } from '../../shared/api'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE } from '../../shared/manager'
 import type { ManagerApi, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from '../../shared/manager'
-import type { TelegramAction, TelegramView } from '../../shared/telegram'
 import type { Geckit } from '../../preload'
 import type { PhoneCalls } from './phone-calls'
 import './styles.css'
@@ -18,7 +17,6 @@ const root = '/Users/alex/Projects/mine/geckit'
 let settings: Settings = { ...DEFAULT_SETTINGS, managerAvatar: 'employee-01', theme: query.get('theme') === 'dark' ? 'dark' : 'light', projects: [root, '/Users/alex/Projects/mine/notula'], chatProviders: ['claude', 'codex', 'plugin:fixture'], providerPlugins: [{ id: 'plugin:fixture', family: 'plugin:fixture', name: 'Library fixture', shortName: 'Library', icon: 'terminal', browser: 'none', loginCommand: '', planName: 'Fixture' }], chatView: query.has('list') ? 'list' : 'board', analyticsAsked: true }
 const settingsListeners = new Set<(value: Settings) => void>()
 const managerListeners = new Set<(value: ManagerView) => void>()
-const telegramListeners = new Set<(value: TelegramView) => void>()
 const managerItemListeners = new Set<(value: SessionItems) => void>()
 const itemListeners = new Set<(value: SessionItems) => void>()
 const sessionsListeners = new Set<(value: readonly ChatSession[]) => void>()
@@ -43,13 +41,6 @@ if (query.has('noProviders')) { settings = { ...settings, chatProviders: [] }; v
 else if (query.has('disabledProvider')) { settings = { ...settings, chatProviders: settings.chatProviders.filter((provider) => provider !== initialProvider) }; view = { ...view, providers: view.providers.filter((one) => one.provider !== initialProvider) } }
 let items: readonly SessionItem[] = [{ kind: 'mine', id: 'fixture-mine-1', text: 'Add provider preferences for this project.' }, { kind: 'theirs', id: 'fixture-theirs-1', text: 'Worker renderer fixture. No provider has been contacted.' }]
 if (query.has('workerActions')) items = [...items, { kind: 'card', id: 'worker-card', card: { kind: 'permission', title: 'Worker permission fixture', detail: 'Fixture permission detail.' } }, { kind: 'shell', id: 'worker-shell', command: 'worker fixture', output: 'Worker input remains usable.', running: true }]
-const telegramState = query.get('telegram')
-const initialTelegramState: TelegramView['state'] = telegramState === 'connected' || telegramState === 'offline' || telegramState === 'revoked' || telegramState === 'conflict' || telegramState === 'storage-error' ? telegramState : 'disconnected'
-let telegram: TelegramView = { state: initialTelegramState, pendingLate: 0, ...(initialTelegramState === 'disconnected' ? {} : { bot: { id: 1, username: 'geckit_fixture_bot' }, account: { id: 42, chatId: 42, name: 'Alex fixture', username: 'alex_fixture' } }), ...(initialTelegramState === 'conflict' ? { detail: 'Another app is using this bot. Stop its connection, then try again.' } : initialTelegramState === 'revoked' ? { detail: 'This bot token is no longer valid. Replace it with a token from BotFather.' } : initialTelegramState === 'storage-error' ? { detail: 'Secure storage is unavailable. Unlock your system credential store, then retry.' } : {}) }
-// ?links shows two links shared from Telegram, with Stop.
-if (query.has('links') && telegram.account !== undefined) telegram = { ...telegram, links: [{ id: 'fixture-site', title: 'localhost:5173', expiresAt: Date.now() + 11 * 3600_000 }, { id: 'fixture-file', title: 'weekly-report-with-a-long-name.html', expiresAt: Date.now() + 40 * 60_000 }] }
-let previousTelegram = telegram
-let telegramAttempt = 0
 if (query.get('state') === 'disabled') view = { ...view, config: { ...view.config, enabled: false }, state: 'off' }
 if (query.has('threads')) {
   const slack: ChatSession = { ...backing, id: 'manager-slack-fixture', title: 'Fix login redirect' }
@@ -189,26 +180,6 @@ const manager: ManagerApi = {
   restart: async () => { replaceBacking(view.config.provider, view.config.chatModel); return update({ session: backing, state: view.state === 'paused' ? 'paused' : 'idle' }) },
   on: (callback) => { managerListeners.add(callback); return () => managerListeners.delete(callback) },
 }
-const telegramAction = async (action: TelegramAction): Promise<TelegramView> => {
-  if (action.kind === 'connect') {
-    const attempt = ++telegramAttempt
-    if (query.has('telegramSlow')) await new Promise<void>((resolve) => setTimeout(resolve, 2000))
-    if (attempt !== telegramAttempt) return telegram
-    if (action.token === 'invalid') {
-      telegram = { ...telegram, state: telegram.account === undefined ? 'revoked' : telegram.state, detail: 'That token was not accepted. Check it with @BotFather and try again.' }
-      for (const callback of telegramListeners) callback(telegram)
-      return telegram
-    }
-    previousTelegram = telegram
-    telegram = { state: 'pairing', bot: { id: 1, username: 'geckit_fixture_bot' }, pairing: { url: 'https://t.me/geckit_fixture_bot?start=fixture', expiresAt: Date.now() + 600000 }, pendingLate: 0 }
-  } else if (action.kind === 'confirm' && telegram.candidate !== undefined) telegram = { state: 'connected', ...(telegram.bot === undefined ? {} : { bot: telegram.bot }), account: telegram.candidate, pendingLate: 0 }
-  else if (action.kind === 'disconnect') { telegramAttempt++; telegram = { state: 'disconnected', pendingLate: 0 }; previousTelegram = telegram }
-  else if (action.kind === 'cancel-pairing') { telegramAttempt++; telegram = previousTelegram }
-  else if (action.kind === 'stop-link') telegram = { ...telegram, links: (telegram.links ?? []).filter((one) => one.id !== action.id) }
-  else if (action.kind === 'retry') { const { detail: cleared, ...rest } = telegram; void cleared; telegram = { ...rest, state: telegram.account === undefined ? 'disconnected' : 'connected' } }
-  for (const callback of telegramListeners) callback(telegram)
-  return telegram
-}
 const chat: Partial<Geckit['chat']> = {
   search: async (text) => text === '' || !`${worker.title} worker`.toLowerCase().includes(text.toLowerCase()) ? [] : [{ id: worker.id, root, said: 'Worker renderer fixture', count: 1 }], list: async () => [worker], hidden: async () => [], items: async (id) => { if (id !== worker.id && id !== unknownWorker) throw new Error(`Error invoking remote method 'chat:items': Error: ${MANAGER_CHAT_GUIDANCE}`); return [...items] }, watching: noop, listening: noop,
   send: async (message) => { if (message.session !== worker.id && message.session !== unknownWorker) throw new Error(MANAGER_CHAT_GUIDANCE); const at = String(Date.now()); items = [...items, { kind: 'mine', id: `fixture-mine-${at}`, text: message.text }, { kind: 'theirs', id: `fixture-reply-${at}`, text: 'Worker renderer fixture received this message. No provider was contacted.' }]; for (const callback of itemListeners) callback({ id: message.session, items }); return message.session },
@@ -226,11 +197,10 @@ const chat: Partial<Geckit['chat']> = {
     worker = { ...rest, ...(status === undefined ? {} : { status }), moves: [...(worker.moves ?? []), { before, status: target, at: Date.now(), attribution: { executor: 'user', origin: 'desktop' } }] }
     for (const callback of sessionsListeners) callback([worker])
   },
-  openFile: noop, stop: noop, openLink: (url) => { if (url.startsWith('https://t.me/geckit_fixture_bot?start=') && telegram.state === 'pairing') { telegram = { ...telegram, state: 'confirming', candidate: { id: 42, chatId: 42, name: 'Alex fixture', username: 'alex_fixture' } }; for (const callback of telegramListeners) callback(telegram) } },
+  openFile: noop, stop: noop, openLink: noop,
 }
 const bridge: Omit<Partial<Geckit>, 'chat' | 'hosts' | 'shortcuts' | 'settings' | 'update' | 'errors' | 'speech'> & { readonly chat: typeof chat; readonly hosts: Partial<Geckit['hosts']>; readonly shortcuts: Partial<Geckit['shortcuts']>; readonly settings: Partial<Geckit['settings']>; readonly update: Partial<Geckit['update']>; readonly errors: Partial<Geckit['errors']> } = {
   platform: 'darwin', home: '/Users/alex', copy: noop, pathFor: () => '', manager,
-  telegram: { view: async () => telegram, action: telegramAction, on: (callback) => { telegramListeners.add(callback); return () => telegramListeners.delete(callback) } },
   employees: { list: async () => ({ employees: [] }), save: async () => { throw new Error('Employee editing is outside this Manager fixture.') }, archive: async () => ({ employees: [] }), restore: async () => ({ employees: [] }), retryInstructions: async () => ({ employees: [] }), memory: async () => { throw new Error('No employee memory in this fixture.') }, on: listen },
   chat, hosts: { list: async () => [], prompts: async () => [], onChanged: listen, onPrompt: listen, onAnswered: listen }, shortcuts: { onManage: listen },
   settings: { get: async () => settings, set: async (change) => { settings = { ...settings, ...change }; for (const callback of settingsListeners) callback(settings); return settings }, on: (callback) => { settingsListeners.add(callback); return () => settingsListeners.delete(callback) } },

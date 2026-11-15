@@ -9,6 +9,10 @@ import { registerProviderInfo } from '../../shared/providers'
 import { DEFAULT_MANAGER_CONFIG } from '../../shared/manager'
 import type { TelegramAction, TelegramView } from '../../shared/telegram'
 import type { DiscordPerson, DiscordSetupView } from '../../shared/discord'
+import { telegramSettings } from '../../main/channels/telegram-settings'
+import { discordSettings } from '../../main/channels/discord-settings'
+import type { ChannelScreenRequest } from '../../shared/channel-ui'
+import type { Json } from '../../main/channels/channel-api'
 import './styles.css'
 import './chat/phone-home.css'
 
@@ -26,7 +30,7 @@ const libraries = sourceLibraries.filter((one) => !(query.has('failed') && one.i
 const failedLibraries: readonly ProviderPluginFailure[] = query.has('failed') ? [{ id: 'plugin:claude-tmux', name: 'Claude Code (tmux)', icon: 'tmux', source: 'https://github.com/anetrebskii/geckit-claude-tmux', error: 'Plugin does not implement LlmProvider.' }] : []
 registerProviderInfo(libraries)
 document.documentElement.dataset.theme = theme
-Object.assign(window.geckit, { chat: { getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failedLibraries, account: async (provider: SessionProvider): Promise<ClaudeAccount> => ({ provider, here: true, signedIn: true, plan: provider === 'codex' ? 'Plus' : 'Max', program: { version: 'preview' }, usage: { quotas: [{ id: 'five-hour', name: '5h', part: 0.24 }, { id: 'week', name: 'Week', part: 0.63 }], measuredAt: Date.now() } }), onAccount: () => () => undefined } })
+Object.assign(window.geckit, { chat: { openLink: () => undefined, getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failedLibraries, account: async (provider: SessionProvider): Promise<ClaudeAccount> => ({ provider, here: true, signedIn: true, plan: provider === 'codex' ? 'Plus' : 'Max', program: { version: 'preview' }, usage: { quotas: [{ id: 'five-hour', name: '5h', part: 0.24 }, { id: 'week', name: 'Week', part: 0.63 }], measuredAt: Date.now() } }), onAccount: () => () => undefined } })
 
 const chrome = query.get('chrome') ?? 'waiting'
 let chromeConnected = chrome === 'connected'
@@ -46,11 +50,11 @@ Object.assign(window.geckit, { browser: {
   openFolder: async () => { setTimeout(() => { chromeConnected = true }, 3000) },
 } })
 
-const slackInfo: ChannelSetting['info'] = { id: 'channel:slack', name: 'Slack', icon: 'chat', source: 'https://github.com/example/geckit-slack', fields: [{ key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write.' }, { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write.' }, { key: 'allow', label: 'People who may write', type: 'list', help: 'Slack user IDs. Empty lets nobody in.' }, { key: 'verify', label: 'Check messages for secrets before sending', type: 'boolean', default: true }] }
+const slackInfo: ChannelSetting['info'] = { id: 'channel:slack', name: 'Slack', icon: 'slack', source: 'https://github.com/example/geckit-slack', fields: [{ key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write.' }, { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write.' }] }
 let channelSettings: readonly ChannelSetting[] = query.has('channels') ? [{ info: slackInfo, enabled: query.get('channels') !== 'off', projects: ['/Users/alex/Projects/app'], manager: false, config: { allow: ['U012ABC'] } }] : []
-let channelView: ChannelsView = { channels: channelSettings.map((one): ChannelsView['channels'][number] => ({ id: one.info.id, name: one.info.name, icon: one.info.icon, source: one.info.source ?? '', state: query.get('channels') === 'off' ? 'off' : query.get('channels') === 'failed' ? 'failed' : 'connected', ...(query.get('channels') === 'failed' ? { says: 'Slack refused the app token: invalid_auth' } : { says: 'Listening in 3 channels' }), secrets: query.get('channels') === 'off' ? [] : ['botToken', 'appToken'], conversations: 4, threads: 3, builtIn: true })), failures: query.has('channelFailed') ? [{ id: 'channel:jira', name: 'Jira', source: 'https://github.com/example/geckit-jira', error: 'Channel library must export create().' }] : [] }
+let channelView: ChannelsView = { channels: channelSettings.map((one): ChannelsView['channels'][number] => ({ id: one.info.id, name: one.info.name, icon: one.info.icon, source: one.info.source ?? '', state: query.get('channels') === 'off' ? 'off' : query.get('channels') === 'failed' ? 'failed' : 'connected', ...(query.get('channels') === 'failed' ? { says: 'Slack refused the app token: invalid_auth' } : { says: 'Listening in 3 channels' }), secrets: query.get('channels') === 'off' ? [] : ['botToken', 'appToken'], conversations: 4, threads: 3, builtIn: true, asks: query.has('abilities') ? ['control', 'files', 'shares'] : ['files'], grants: query.has('abilities') ? ['files'] : ['files'] })), failures: query.has('channelFailed') ? [{ id: 'channel:jira', name: 'Jira', source: 'https://github.com/example/geckit-jira', error: 'Channel library must export create().' }] : [] }
 const discord = query.get('discord')
-const discordInfo: ChannelSetting['info'] = { id: 'channel:discord', name: 'Discord', icon: 'discord', fields: [{ key: 'botToken', label: 'Bot token', type: 'secret', required: true }, { key: 'allow', label: 'People who may write', type: 'list', required: true }, { key: 'places', label: 'Channels it answers in', type: 'list' }, { key: 'directMessages', label: 'Answer direct messages', type: 'boolean', default: true }, { key: 'checkSecrets', label: 'Refuse messages that contain a token or key', type: 'boolean', default: true }] }
+const discordInfo: ChannelSetting['info'] = { id: 'channel:discord', name: 'Discord', icon: 'discord', fields: [{ key: 'botToken', label: 'Bot token', type: 'secret', required: true }, { key: 'allow', label: 'People who may write', type: 'list', required: true }] }
 let discordToken = discord !== null && discord !== 'new'
 const discordSetup = discord === 'connected' || discord === 'failed' || discord === 'reconnecting'
 if (discord !== null) {
@@ -75,17 +79,52 @@ const channelListeners = new Set<(view: ChannelsView) => void>()
 const telegramConnected = query.get('telegram') === 'connected'
 let telegramView: TelegramView = { state: telegramConnected ? 'connected' : 'disconnected', pendingLate: 0, ...(telegramConnected ? { bot: { id: 1, username: 'alex_geckit_bot' }, account: { id: 4242, name: 'Alex Netrebskii', username: 'anetrebskii' } } : {}) } as TelegramView
 Object.assign(window.geckit, {
-  telegram: { view: async () => telegramView, on: () => () => undefined, action: async (action: TelegramAction) => { if (action.kind === 'disconnect') telegramView = { state: 'disconnected', pendingLate: 0 } as TelegramView; return telegramView } },
   manager: { view: async () => ({ queued: 0, config: { ...DEFAULT_MANAGER_CONFIG, enabled: !query.has('managerOff') }, state: 'idle', workers: [], activity: [], providers: [], decisions: [] }), on: () => () => undefined },
 })
+if (query.get('state') === 'confirming') telegramView = { state: 'confirming', pendingLate: 0, bot: { id: 1, username: 'example_bot' }, pairing: { url: 'https://t.me/example_bot', command: '/geckit_connect@example_bot example-code', expiresAt: Date.now() + 600000 }, candidate: { id: 81, chatId: -10081, name: 'Example owner', team: { topicId: 42, title: 'Example team with a long name for a narrow window', generation: 'example', approvers: [81], allMembers: false } } }
+const telegramInfo: ChannelSetting['info'] = { id: 'channel:telegram', name: 'Telegram', icon: 'telegram', fields: [] }
+channelSettings = [...channelSettings, { info: telegramInfo, enabled: telegramConnected || query.get('state') === 'confirming', projects: [], manager: true, config: {} }]
+channelView = { ...channelView, channels: [...channelView.channels.map((one) => ({ ...one, settings: one.id === 'channel:discord' })), { id: 'channel:telegram', name: 'Telegram', icon: 'telegram', state: telegramConnected ? 'connected' : 'off', settings: true, builtIn: true, secrets: [], conversations: 0 }] }
+if (query.has('external')) {
+  const info: ChannelSetting['info'] = { id: 'channel:example-library', name: 'Example library', icon: 'chat', fields: [] }
+  channelSettings = [...channelSettings, { info, enabled: false, projects: [], manager: false, config: {} }]
+  channelView = { ...channelView, channels: [...channelView.channels, { id: info.id, name: info.name, icon: info.icon, state: 'off', settings: true, secrets: [], conversations: 0 }] }
+}
+const shownListeners = new Set<(value: { readonly id: string; readonly value: Json }) => void>()
+const channelRequest = async (id: string, request: Json): Promise<Json> => {
+  if (id !== 'channel:telegram') throw new Error('No running channel.')
+  const action = (request as { readonly action: TelegramAction }).action
+  if (action.kind === 'connect') {
+    if (action.token === 'invalid') throw new Error('That token was not accepted.')
+    telegramView = { state: 'pairing', bot: { id: 1, username: 'example_bot' }, pairing: { url: 'https://t.me/example_bot', expiresAt: Date.now() + 600000, ...(action.mode === 'team' ? { command: '/geckit_connect@example_bot example-code' } : {}) }, pendingLate: 0 }
+  } else if (action.kind === 'disconnect' || action.kind === 'cancel-pairing') telegramView = { state: 'disconnected', pendingLate: 0 }
+  else if (action.kind === 'confirm' && telegramView.candidate !== undefined) telegramView = { state: 'connected', bot: telegramView.bot!, account: telegramView.candidate, pendingLate: 0 }
+  for (const listener of shownListeners) listener({ id, value: JSON.parse(JSON.stringify(telegramView)) as Json })
+  return JSON.parse(JSON.stringify(telegramView)) as Json
+}
 let channelSettingsChanged: (channels: readonly ChannelSetting[]) => void = () => undefined
 const tellChannels = (): ChannelsView => { channelSettingsChanged(channelSettings); for (const listener of channelListeners) listener(channelView); return channelView }
 Object.assign(window.geckit, { channels: {
-  view: async () => channelView,
+  view: async () => { if (query.get('slowLoad') !== null && query.get('slowLoad') !== 'screen') await new Promise<void>((resolve) => setTimeout(resolve, query.get('slowLoad') === 'stuck' ? 600_000 : 1500)); return channelView },
+  request: channelRequest,
+  onShown: (listener: (value: { readonly id: string; readonly value: Json }) => void) => { shownListeners.add(listener); return () => shownListeners.delete(listener) },
+  screen: async (id: string, request: ChannelScreenRequest) => {
+    const setting = channelSettings.find((one) => one.info.id === id)
+    if (setting === undefined) throw new Error('Channel not installed.')
+    if (query.has('slowLoad') && request.action === undefined) await new Promise<void>((resolve) => setTimeout(resolve, ['stuck', 'screen'].includes(query.get('slowLoad') ?? '') ? 600_000 : 1200))
+    if (id === 'channel:example-library') return { title: request.action === 'confirm' ? 'Library action received' : 'Library-owned setup', text: ['This ID has no special renderer.'], fields: [{ key: 'label', label: 'Connection label', type: 'text' }], actions: [{ label: 'Run library action', action: 'confirm', confirm: 'Run this library action?', primary: true }] }
+    const hook = id === 'channel:telegram' ? telegramSettings : discordSettings
+    return hook({ id: setting.info.id, log: { path: '', write: () => undefined }, setting: () => channelSettings.find((one) => one.info.id === id) ?? setting, viewed: () => JSON.parse(JSON.stringify(telegramView)) as Json, config: () => channelSettings.find((one) => one.info.id === id)?.config ?? {}, secret: () => discordToken ? 'saved' : undefined, request: (value) => channelRequest(id, value), inspect: async (value) => JSON.parse(JSON.stringify(await discordInspect(value as { readonly people?: readonly string[]; readonly token?: string }))) as Json, configure: (change) => window.geckit.channels.configure(setting.info.id, change) }, request)
+  },
   install: async () => { await new Promise<void>((resolve) => setTimeout(resolve, 800)); throw new Error('This repository is not a GeckIt channel library.') },
   inspect: async (id: string, request: { readonly people?: readonly string[]; readonly token?: string }) => { if (id !== 'channel:discord') throw new Error('Nothing to check.'); return discordInspect(request) },
   configure: async (id: string, change: ChannelChange) => {
     await new Promise<void>((resolve) => setTimeout(resolve, 300))
+    if (id === 'channel:telegram') {
+      channelSettings = channelSettings.map((one) => one.info.id === id ? { ...one, ...change, config: change.config ?? one.config } : one)
+      channelView = { ...channelView, channels: channelView.channels.map((one) => one.id === id ? { ...one, state: change.enabled === false ? 'off' : telegramView.state === 'connected' ? 'connected' : 'starting' } : one) }
+      return tellChannels()
+    }
     if (id === 'channel:discord') {
       if (change.secrets?.['botToken'] !== undefined) discordToken = change.secrets['botToken'] !== null
       channelSettings = channelSettings.map((one) => one.info.id === id ? { ...one, ...(change.enabled === undefined ? {} : { enabled: change.enabled }), ...(change.projects === undefined ? {} : { projects: change.projects }), ...(change.manager === undefined ? {} : { manager: change.manager }), ...(change.config === undefined ? {} : { config: change.config }) } : one)
@@ -93,7 +132,6 @@ Object.assign(window.geckit, { channels: {
       channelView = { ...channelView, channels: channelView.channels.map((one) => one.id === id ? { ...one, secrets: discordToken ? ['botToken'] : [], state: enabled ? 'connected' : 'off', ...(enabled ? { says: 'As GeckIt Bot' } : {}) } as ChannelsView['channels'][number] : one) }
       return tellChannels()
     }
-    if (change.config?.['allow'] !== undefined && (change.config['allow'] as readonly string[]).some((one) => one.trim() !== '' && !/^U[A-Z0-9]+$/.test(one.trim()))) throw new Error('People who may write takes Slack user IDs such as U012ABC.')
     channelSettings = channelSettings.map((one) => one.info.id === id ? { ...one, ...(change.enabled === undefined ? {} : { enabled: change.enabled }), ...(change.projects === undefined ? {} : { projects: change.projects }), ...(change.manager === undefined ? {} : { manager: change.manager }), ...(change.config === undefined ? {} : { config: change.config }) } : one)
     const secrets = new Set(channelView.channels.find((one) => one.id === id)?.secrets ?? [])
     for (const [key, value] of Object.entries(change.secrets ?? {})) { if (value === null || value === '') { if (value === null) secrets.delete(key) } else secrets.add(key) }
@@ -125,7 +163,7 @@ function Preview(): React.JSX.Element {
     else document.documentElement.dataset.theme = settings.theme
   }, [settings.theme])
   useEffect(() => {
-    Object.assign(window.geckit, { chat: {
+    Object.assign(window.geckit.chat, { openLink: () => undefined,
       getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failed,
       reinstallProvider: async (id: string): Promise<LlmProviderInfo> => {
         if (query.has('reinstallDelay')) await new Promise<void>((resolve) => setTimeout(resolve, 1500))
@@ -152,7 +190,7 @@ function Preview(): React.JSX.Element {
         setSettings((current) => ({ ...current, providerUpdatesReady: current.providerUpdatesReady.filter((one) => one !== id) }))
         return provider
       },
-    } })
+    })
   }, [failed])
   const change = (next: Partial<Settings>): void => setSettings((current) => ({ ...current, ...next }))
   const save = async (next: Partial<Settings>): Promise<Settings> => {

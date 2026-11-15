@@ -476,13 +476,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       restart: () => call('manager.restart'),
       on: (said) => listen('manager:view', said),
     },
-    telegram: {
-      view: () => call('telegram.view'),
-      action: () => Promise.reject(new Error('Manage the Telegram connection on the computer.')),
-      on: (said) => listen('telegram:view', said),
-    },
     channels: {
-      view: () => Promise.resolve({ channels: [], failures: [] }),
+      view: () => call('channels.view'),
+      request: (id, request) => call('channels.request', id, request),
+      onShown: (said) => listen('channels:shown', said),
+      screen: () => Promise.reject(new Error('Manage channels on the computer.')),
       install: () => Promise.reject(new Error('Manage channels on the computer.')),
       configure: () => Promise.reject(new Error('Manage channels on the computer.')),
       remove: () => Promise.reject(new Error('Manage channels on the computer.')),

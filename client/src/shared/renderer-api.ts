@@ -58,7 +58,8 @@ import { pieceOf } from './pairing'
 import type { Piece } from './pairing'
 import type { VoiceMemosConnection } from './manager-intake'
 import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from './manager'
-import type { TelegramAction, TelegramApi, TelegramView } from './telegram'
+import type { ChannelScreen, ChannelScreenRequest } from './channel-ui'
+import type { ChannelJson } from './channels'
 import type { ChannelChange, ChannelId, ChannelInspectRequest, ChannelInspectResult, ChannelsView } from './channels'
 import type { EmployeeDraft, EmployeeMemory, EmployeesApi, EmployeesView } from './employees'
 import type { SessionListStatus } from './session-list'
@@ -123,13 +124,10 @@ return {
     on: (said: (view: ManagerView) => void): (() => void) => rendererTransport.listen('manager:view', said),
   } satisfies ManagerApi,
 
-  telegram: {
-    view: (): Promise<TelegramView> => rendererTransport.invoke('telegram:view'),
-    action: (action: TelegramAction): Promise<TelegramView> => rendererTransport.invoke('telegram:action', action),
-    on: (said: (view: TelegramView) => void): (() => void) => rendererTransport.listen('telegram:view', said),
-  } satisfies TelegramApi,
-
   channels: {
+    screen: (id: ChannelId, request: ChannelScreenRequest): Promise<ChannelScreen> => rendererTransport.invoke('channels:screen', id, request),
+    request: (id: ChannelId, request: ChannelJson): Promise<ChannelJson> => rendererTransport.invoke('channels:request', id, request),
+    onShown: (said: (view: { readonly id: ChannelId; readonly value: ChannelJson }) => void): (() => void) => rendererTransport.listen('channels:shown', said),
     view: (): Promise<ChannelsView> => rendererTransport.invoke('channels:view'),
     install: (url: string): Promise<ChannelsView> => rendererTransport.invoke('channels:install', url),
     configure: (id: ChannelId, change: ChannelChange): Promise<ChannelsView> => rendererTransport.invoke('channels:configure', id, change),

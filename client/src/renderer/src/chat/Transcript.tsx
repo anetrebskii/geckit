@@ -374,7 +374,7 @@ const Turn = memo(function Turn({
   return (
     <div className={`turn${step ? ' step' : ''}`} data-item={item.id}>
       {item.kind === 'mine' && manager && managerSaid(item.text) !== undefined ? (
-        <ManagerSaid said={managerSaid(item.text) ?? { kind: 'telegram', marks: [], text: item.text }} />
+        <ManagerSaid said={managerSaid(item.text) ?? { kind: 'channel', marks: [], text: item.text }} />
       ) : item.kind === 'mine' ? (
         <div className={`mine${item.unsent === true ? ' unsent' : ''}`}>
           {manager && item.text.startsWith('[User request]\n') ? item.text.slice('[User request]\n'.length) : item.text}

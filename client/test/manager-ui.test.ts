@@ -65,7 +65,7 @@ describe('Manager assistant availability', () => {
   it('keeps configuration and lifecycle in Settings without a chat or task dashboard', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, session: { ...worker, manager: true }, workers: [worker], decisions: [{ id: 'decision', title: 'Internal decision', choices: [{ label: 'Answer', value: 'answer' }] }] })
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
-    expect(markup).toContain('Give Manager work in the app or Telegram.')
+    expect(markup).toContain('Give Manager work in the app or a connected channel.')
     expect(markup).toContain('Pause</button>')
     expect(markup).toContain('Restart session</button>')
     expect(markup).toContain('Disable Manager</button>')
@@ -197,7 +197,8 @@ describe('What GeckIt itself writes into the Manager session', () => {
   })
 
   it('keeps what came from Telegram as the words that were sent, and leaves what Manager wrote itself alone', () => {
-    expect(managerSaid('[Telegram]\nCheck the latest Apple submission.')).toEqual({ kind: 'telegram', marks: [], text: 'Check the latest Apple submission.' })
+    expect(managerSaid('[Telegram]\nCheck the latest Apple submission.')).toEqual({ kind: 'channel', title: 'Telegram', marks: [], text: 'Check the latest Apple submission.' })
+    expect(managerSaid('[Via Slack, from Ann]\nShip it.')).toEqual({ kind: 'channel', title: 'Slack', marks: [], text: 'Ship it.' })
     expect(managerSaid('Check the latest Apple submission.')).toBeUndefined()
   })
 
@@ -270,18 +271,11 @@ describe('Manager thread on a worker card', () => {
 const { Channels } = await import('../src/renderer/src/ui/Channels')
 
 describe('Channels settings', () => {
-  it('lists Telegram as a built-in channel with its own Set up and no Remove', () => {
-    vi.stubGlobal('window', { geckit: { telegram: { view: vi.fn(), on: vi.fn(), action: vi.fn() }, manager: { view: vi.fn(), on: vi.fn() } } })
-    const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue(ready)
-    const api = { view: vi.fn(), on: vi.fn(), install: vi.fn(), configure: vi.fn(), remove: vi.fn(), inspect: vi.fn(), checkUpdates: vi.fn() } as unknown as ChannelsApi
+  it('does not create a Telegram row or access a special API when no channel is registered', () => {
+    const api: ChannelsApi = { view: vi.fn(), on: vi.fn(), install: vi.fn(), configure: vi.fn(), remove: vi.fn(), inspect: vi.fn(), checkUpdates: vi.fn(), screen: vi.fn(), request: vi.fn(), onShown: vi.fn() }
     const markup = renderToStaticMarkup(createElement(Channels, { settings: DEFAULT_SETTINGS, change: vi.fn(), api }))
-    expect(markup).toContain('Places outside GeckIt where people write to your conversations and Manager. Telegram, Slack and Discord come with GeckIt; add others from GitHub.')
-    expect(markup).toContain('<strong>Telegram</strong><span>Loading…</span>')
-    expect(markup).toContain('Set up</button>')
-    expect(markup).not.toContain('Remove Telegram')
-    expect(markup).not.toContain('No channels installed.')
-    hook.mockRestore()
-    vi.unstubAllGlobals()
+    expect(markup).not.toContain('<strong>Telegram</strong>')
+    expect(markup).toContain('Add channel')
   })
 })
 

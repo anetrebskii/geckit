@@ -1,4 +1,4 @@
-import { telegramText } from './telegram-text'
+import { plainText } from './channel-text'
 
 /** One Telegram message: the formatted form, and the plain form to fall back on if Telegram rejects the formatting. */
 export interface TelegramPiece {
@@ -135,7 +135,7 @@ function terminal(lines: readonly string[], original: readonly string[]): Block[
 }
 
 function blocks(source: string): Block[] {
-  const lines = telegramText(source).split('\n')
+  const lines = plainText(source).split('\n')
   const out: Block[] = []
   for (let at = 0; at < lines.length; at++) {
     const current = lines[at] ?? ''

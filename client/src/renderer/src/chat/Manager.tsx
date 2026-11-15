@@ -8,7 +8,6 @@ import { Picker } from '../ui/Menu'
 import { ManagerFlow } from './ManagerFlow'
 import type { ManagerStepName } from './ManagerFlow'
 import { ManagerStep } from './ManagerStep'
-import { useTelegram } from './ManagerTelegram'
 import { managerAssistant } from './manager-label'
 import { managerLabel, useManager } from './useManager'
 
@@ -18,7 +17,6 @@ const PROJECTS = 'All projects, current and future, across every profile.'
 
 export function ManagerSettings({ settings, embedded = false }: { readonly settings: Settings; readonly embedded?: boolean }): React.JSX.Element {
   const view = useManager()
-  const [telegram] = useTelegram()
   const initialProvider = useRef(view?.config.provider ?? 'claude')
   const [provider, setProvider] = useState<ManagerConfig['provider']>(view?.config.provider ?? 'claude')
   const [delegation, setDelegation] = useState<ManagerConfig['delegation']>('automatic')
@@ -93,11 +91,10 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
   const modelName = model === '' ? 'Provider default' : models?.find((one) => one.value === model)?.name ?? model
   const assistantName = llmProviderInfo(provider, 'stream', settings.providerPlugins).name
   const delegationName = delegation === 'approve' ? 'Approve new sessions' : 'Automatic delegation'
-  const account = telegram?.account === undefined ? undefined : `${telegram.bot === undefined ? '' : `@${telegram.bot.username} · `}${telegram.account.name}`
   const reopen = (step: ManagerStepName) => () => { setError(''); setOpened(step) }
   const done = <button type="button" className="quiet" onClick={() => setOpened(undefined)}>Done</button>
   return <section className="manager-settings">
-    {embedded ? null : <><h3>Manager</h3><p>Give Manager work in the app or Telegram. It delegates work to separate sessions and brings back results.</p></>}
+    {embedded ? null : <><h3>Manager</h3><p>Give Manager work in the app or a connected channel. It delegates work to separate sessions and brings back results.</p></>}
     {enabled || view.session === undefined ? null : <p role="status">Manager disabled. History is kept.</p>}
     <ManagerFlow step={focus} delegation={delegation} />
     <ol className="manager-steps">
@@ -136,7 +133,7 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
             </div>
           </>
           : <>
-            <dl className="manager-details"><dt>Assistant</dt><dd>{assistantName}</dd><dt>Model</dt><dd>{modelName}</dd><dt>Delegation</dt><dd>{delegationName}</dd>{account === undefined ? null : <><dt>Telegram</dt><dd>{account}</dd></>}<dt>Projects</dt><dd>{PROJECTS}</dd></dl>
+            <dl className="manager-details"><dt>Assistant</dt><dd>{assistantName}</dd><dt>Model</dt><dd>{modelName}</dd><dt>Delegation</dt><dd>{delegationName}</dd><dt>Projects</dt><dd>{PROJECTS}</dd></dl>
             <div className="manager-actions"><button type="button" className="primary" disabled={saving || !settled || !answered.assistant || !answered.delegation} onClick={save}>{saving ? 'Saving...' : 'Enable Manager'}</button></div>
           </>}
       </ManagerStep>
@@ -171,7 +168,7 @@ function ManagerConfirm({ kind, busy, working, error, onCancel, onConfirm }: { r
   }, [])
   return createPortal(<div className="dialog-scrim" onMouseDown={(event) => { event.stopPropagation(); if (!busy && event.target === event.currentTarget) onCancel() }}><div ref={dialog} className="dialog manager-session" role="dialog" aria-modal="true" aria-labelledby="manager-change-title">
     <header><h2 id="manager-change-title">{kind === 'change' ? 'Change manager assistant?' : kind === 'restart' ? 'Restart manager session?' : 'Disable manager?'}</h2></header>
-    <p>{kind === 'change' ? 'The manager session will restart with the selected assistant. Saved tasks and decisions stay. Workers keep their current assistants.' : kind === 'restart' ? 'Task history is kept. Workers continue.' : 'Coordination and Telegram controls will stop. Workers continue. Your task history is kept.'}</p>
+    <p>{kind === 'change' ? 'The manager session will restart with the selected assistant. Saved tasks and decisions stay. Workers keep their current assistants.' : kind === 'restart' ? 'Task history is kept. Workers continue.' : 'Coordination and channel controls will stop. Workers continue. Your task history is kept.'}</p>
     {!working || kind === 'disable' ? null : <p>{kind === 'restart' ? 'The current manager turn will be interrupted.' : 'The current manager turn will stop.'}</p>}
     {error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
     <div className="dialog-actions"><button ref={cancel} type="button" className="quiet" disabled={busy} onClick={onCancel}>Cancel</button><button type="button" className={kind === 'disable' ? 'quiet danger' : 'primary'} disabled={busy} onClick={onConfirm}>{busy ? 'Saving...' : kind === 'change' ? 'Change assistant' : kind === 'restart' ? 'Restart session' : 'Disable Manager'}</button></div>

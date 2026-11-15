@@ -1,2 +1,3 @@
-# Team Telegram renderer fixture
-Run npm exec vite -- --config test/browser/team-telegram/vite.config.ts from client. Open /test/browser/team-telegram/?theme=light or theme=dark, with state=confirming for owner confirmation. The real component uses a fake IPC contract; no tokens, network bot or provider calls. Validate at 1280x900 and 390x844: select Team topic, enter approver IDs, keyboard focus, Escape cancellation, command and candidate display.
+# Channel settings renderer fixture
+
+Run `npm exec vite -- --config test/browser/team-telegram/vite.config.ts` from `client`. Open `/test/browser/team-telegram/?theme=light&channels=off&discord=new`; use `theme=dark`, `telegram=connected`, `state=confirming`, `discord=nointent`, `discord=offline` or `discord=refused` for alternate states. This mounts the real SettingsDialog and common channel renderer with module-owned settings hooks. IPC and external services are explicit fixtures; no real tokens, bots, providers or account verification are used. Review at 1280x900 and 390x844, including validation, retry, team/private setup, confirmation, focus, Escape and scrolling.

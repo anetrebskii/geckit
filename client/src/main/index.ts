@@ -15,7 +15,7 @@ import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
 import { isRemote, machineName } from '../shared/hosts'
 import { geckoState } from '../shared/gecko'
 import type { GeckoPose } from '../shared/gecko'
-import { phoneTelegramView } from './telegram-access'
+import type { ChannelId, ChannelJson } from '../shared/channels'
 import type { ServiceSnapshot } from '../core/application'
 import type { ServiceMethods, ServiceEvents } from '../service/application'
 import type { RpcEvent } from '../core/rpc'
@@ -466,9 +466,9 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
     case 'peer:shares':
       if (snapshot !== undefined) snapshot = { ...snapshot, shares: event.args[0] }
       keepPeer(); shownPeer()?.webContents.send(event.name, event.args[0]); return
-    case 'telegram:view':
+    case 'channels:shown':
       for (const window of everyWindow()) window.webContents.send(event.name, event.args[0])
-      shownPeer()?.webContents.send('peer:tell', event.name, phoneTelegramView(event.args[0])); return
+      shownPeer()?.webContents.send('peer:tell', 'channels:shown', { id: event.args[0].id, value: event.args[0].phone ?? null }); return
     case 'core:terminal': {
       const [root, command, status] = event.args
       openTerminal(root, status === undefined ? command : `${command}; echo $? > ${JSON.stringify(status)}`)
@@ -493,13 +493,13 @@ function applySnapshot(next: ServiceSnapshot): void {
   tell('hosts:changed', next.hosts)
   tell('lineup:changed', next.lineup)
   tell('manager:view', next.manager)
-  coreEvent({ name: 'telegram:view', args: [next.telegram] })
+  for (const [id, value] of Object.entries(next.channels)) coreEvent({ name: 'channels:shown', args: [{ id: id as ChannelId, value, phone: next.channelPhoneViews?.[id] ?? null }] })
   tell('speech:model', next.speech)
   keepPeer()
   if (watched !== undefined) void invoke('chat:items', watched).then((items) => tellChats('chat:items', { id: watched ?? '', items })).catch(report)
 }
 
-const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "telegram:view", "telegram:action", "channels:view", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run"] as const satisfies readonly (keyof ServiceMethods)[]
+const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run"] as const satisfies readonly (keyof ServiceMethods)[]
 
 function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void {
   ipcMain.handle(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
@@ -788,8 +788,8 @@ const PHONE_CALLS = {
   'manager.resume': (...args: Parameters<ServiceMethods['manager:resume']>) => invoke('manager:resume', ...args),
   'manager.retry': (...args: Parameters<ServiceMethods['manager:retry']>) => invoke('manager:retry', ...args),
   'manager.restart': (...args: Parameters<ServiceMethods['manager:restart']>) => invoke('manager:restart', ...args),
-  'telegram.view': (...args: Parameters<ServiceMethods['phone:telegram']>) => invoke('phone:telegram', ...args),
-  'telegram.action': (...args: Parameters<ServiceMethods['phone:telegramAction']>) => invoke('phone:telegramAction', ...args),
+  'channels.view': () => invoke('channels:view'),
+  'channels.request': (id: ChannelId, request: ChannelJson) => invoke('phone:channelRequest', id, request),
   'employees.list': (...args: Parameters<ServiceMethods['employees:list']>) => invoke('employees:list', ...args),
   'employees.memory': (...args: Parameters<ServiceMethods['employees:memory']>) => invoke('employees:memory', ...args),
   'employees.save': (...args: Parameters<ServiceMethods['employees:save']>) => invoke('employees:save', ...args),
@@ -906,9 +906,13 @@ async function migrateSecrets(): Promise<void> {
       if (text !== undefined) hosts.push({ id, password: safeStorage.decryptString(Buffer.from(text, 'base64')) })
     }
   }
-  const sealed = hello.migration.telegram ? readFileSync(join(app.getPath('userData'), 'manager-telegram.sealed')) : undefined
-  const telegram = sealed !== undefined && !isVaultEnvelope(sealed) ? safeStorage.decryptString(sealed) : undefined
-  if (hosts.length > 0 || telegram !== undefined) await invoke('desktop:migrateSecrets', { hosts, ...(telegram === undefined ? {} : { telegram }) })
+  const sealed: { [name: string]: string } = {}
+  for (const name of hello.migration.sealed) {
+    if (name.includes('/') || name.includes('\\')) continue
+    const bytes = readFileSync(join(app.getPath('userData'), name))
+    if (!isVaultEnvelope(bytes)) sealed[name] = safeStorage.decryptString(bytes)
+  }
+  if (hosts.length > 0 || Object.keys(sealed).length > 0) await invoke('desktop:migrateSecrets', { hosts, sealed })
 }
 
 const SIGN_IN = 'geckit://signin'

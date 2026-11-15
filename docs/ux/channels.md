@@ -10,12 +10,17 @@ Settings, Channels, after Integrations. Assistant libraries are added in Assista
 
 - Heading "Channels", with "Add channel" at its right, as Assistants has "Add assistant".
 - Under it one line: "Places outside GeckIt where people write to your conversations and Manager. Telegram, Slack and Discord come with GeckIt; add others from GitHub."
-- Telegram is always the first row. It moved here from the Manager settings in Team on 2026-11-05: it is a place people write to Manager from, like Slack, and Manager settings keep only how Manager works. Its row has no "On" and no Remove: the line under the name is its connection state ("Not connected", "Connected", "Telegram needs attention"), and "Set up" opens the same connect flow Manager had (create a bot, paste its token, confirm the account, Disconnect), with the links shared from Telegram under it. With Manager off, Set up says "Turn Manager on in Team, Manager first. Telegram talks to Manager." and offers nothing else, since connecting is refused then.
-- Slack comes with GeckIt and is the second row; it has no Remove, only "On". Its fields are the bot token, the app token, the people who may write and the secret check; each Slack thread with the bot is a Manager thread of its own (see [Manager threads](manager-threads.md)).
-- Discord comes with GeckIt and is the third row; it has no Remove, only "On". Its Set up is its own four steps (connect the bot, where it answers, who may write, what it may reach), described in [Discord channel](discord-channel.md), because each step depends on the token being checked first.
-- The Manager settings in Team keep one line where the Telegram step was: "Telegram, Slack and Discord reach Manager from Settings, Channels." The summary of a configured Manager still names the connected Telegram account.
+- Telegram, Slack and Discord use the same row with On and Set up. Bundled rows cannot be removed. Their module-owned connection screens use the same declarative contract available to installed libraries.
+- Telegram's module supplies bot creation, pairing, private/team setup, disconnect and shared links. Telegram controls do not appear in Manager.
+- Slack uses manifest fields for bot token and app token. Each Slack thread is its own Manager thread (see [Manager threads](manager-threads.md)).
+- Discord's module supplies token checks and configuration through the generic settings hook (see [Discord channel](discord-channel.md)).
+- Manager configuration has no Telegram-specific account panel or controls. Channels are configured in Settings, Channels.
 - Nothing installed from GitHub: Telegram, Slack and Discord are still listed, so the section is never empty.
 - At the bottom, "Update channels automatically", on at first, and "Check now", which fetches newer versions and restarts each one that changed.
+
+## Loading
+
+Until the service answers, the list shows three placeholder rows in the shape of a channel row (icon, name, line, controls), breathing, with "Loading channels…" for screen readers. The list is never an empty box. With nothing installed and nothing failed: "No channels yet. Add one from GitHub."
 
 ## A channel's row
 
@@ -31,6 +36,8 @@ The line under the name says where it stands, in its library's words where it ga
 | Running | Connected, then what the library said: "Connected · Listening in 3 channels" |
 | Failed | Stopped: and the reason, in the danger colour |
 
+A dot before the line shows the state at a glance: green Running, amber Starting or setup missing, red Failed, grey Off.
+
 When it has started conversations: "4 conversations" after the state; when it has Manager threads: "3 threads".
 
 Turning it on with a required setting empty does not start it; the row says what to fill in and Set up opens.
@@ -44,10 +51,9 @@ Opens under the row. Fields come from the library's own list, in its order, each
 - list: one entry per line
 - yes or no: a tick
 
-Then what GeckIt itself grants, the same for every channel:
+GeckIt adds no folder or permission controls. All project folders configured in GeckIt and every declared capability are available automatically for every channel, including installed libraries. Legacy permission and folder lists do not restrict them. The operational channel On switch and global Manager switch remain.
 
-- "Folders it may use": ticks over GeckIt's projects. None ticked means it cannot start conversations.
-- "May talk to Manager": a tick, off at first.
+Slack has only Bot token and App token. All workspace users may write, including guests; bots, deleted users and users from other workspaces are refused. Discord has only Bot token and People who may write. It always answers in every visible channel and in direct messages, and checks messages and files for secrets. Old restrictions and disabled check settings are ignored.
 
 "Save" applies everything and restarts the channel if it was on; "Cancel" closes without saving. A refused value says why under the form and keeps what was typed.
 
@@ -62,3 +68,7 @@ A row with the danger icon: "Could not load this channel: <reason>" and "Remove"
 ## Add
 
 "Add channel" opens a field for the repository address with "Add" and "Cancel", and under it: "Channel code runs on this computer and reaches the conversations you allow it. Add a repository you trust." A new channel is added off.
+
+## Module-owned connection screen
+
+The current behavior and transitions are in [Library-owned settings](../../specs/030-channel-contract-v2/ux.md). Every channel uses the same row and permission form. A module may return declarative connection steps via `settings(context, request)`; Telegram pairing and Discord checks use this hook. The renderer contains no channel-ID switches. Manager has no Telegram account panel. Phone calls and updates use the channel ID and the same contract.

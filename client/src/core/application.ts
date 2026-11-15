@@ -1,5 +1,6 @@
 import { providerChange } from '../main/provider-changes'
 import { assertProviderUnused } from '../main/provider-settings'
+import type { ChannelScreenRequest } from '../shared/channel-ui'
 import type { ProductAuthority } from '../shared/product-cli'
 import { dispatchProduct } from './product-cli'
 import { homedir, hostname } from 'node:os'
@@ -12,7 +13,7 @@ import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { hostOf, isRemote, machineName } from '../shared/hosts'
 import type { LocalAsk } from '../shared/local'
 import type { ManagerConfig } from '../shared/manager'
-import type { TelegramAction } from '../shared/telegram'
+import type { ChannelJson } from '../shared/channels'
 import type { ChannelChange, ChannelId, ChannelInspectRequest } from '../shared/channels'
 import { recordedNote } from '../shared/recording'
 import { commandsFor } from '../main/commands'
@@ -40,7 +41,6 @@ import { keepRecording, startRecording, addToRecording, dropRecording } from '..
 import { removeShortcut, runShortcut, saveShortcut } from '../main/shortcuts'
 import { forgetProject, getSettings, rememberProject, setSettings } from '../main/store'
 import type { Sessions } from '../main/sessions'
-import { configureManagerAccess, phoneTelegramView, telegramActionAccess } from '../main/telegram-access'
 import { transcribe } from '../main/transcribe'
 import { voiceMemosConnection } from '../main/voice-memos'
 import { checkVpnIp } from '../main/vpn-ip'
@@ -97,7 +97,7 @@ export function uninstallProvider(runtime: Pick<CoreRuntime, 'managerView'> & { 
 }
 
 export function application(runtime: CoreRuntime) {
-  const { sessions, employees, manager, telegram, routes, shares, channels } = runtime
+  const { sessions, employees, manager, routes, shares, channels } = runtime
   let cutOffered = false
   let planned: { readonly orders: readonly Order[]; readonly told: readonly Told[]; readonly recording?: Recording } | undefined
   const unfavorite = (ids: readonly string[]): void => {
@@ -173,8 +173,7 @@ export function application(runtime: CoreRuntime) {
     'phone:settings': () => ({ ...getSettings(), profile: '', chatProjects: [], chatAll: true }),
     'phone:list': (root: string | undefined) => list(root, getSettings().projects),
     'phone:search': (asked: string, root: string | undefined) => search(asked, root, getSettings().projects),
-    'phone:telegram': () => phoneTelegramView(telegram.view()),
-    'phone:telegramAction': (action: TelegramAction) => telegramActionAccess(manager, telegram, action, false),
+    'phone:channelRequest': (id: ChannelId, request: ChannelJson) => channels.request(id, request, 'phone'),
     'employees:list': () => employees.list(),
     'employees:save': (draft: EmployeeDraft) => employees.save(draft),
     'employees:archive': (id: string, revision: number) => employees.archive(id, revision),
@@ -182,7 +181,7 @@ export function application(runtime: CoreRuntime) {
     'employees:retryInstructions': () => employees.retryInstructions(),
     'employees:memory': (id: string, cursor?: string) => employees.memory(id, cursor),
     'manager:view': () => manager.view(),
-    'manager:configure': (change: Partial<ManagerConfig>) => configureManagerAccess(manager, telegram, change),
+    'manager:configure': (change: Partial<ManagerConfig>) => runtime.configureManager(change),
     'manager:history': (...args: Parameters<typeof manager.history>) => manager.history(...args),
     'manager:inspect': (...args: Parameters<typeof manager.inspect>) => manager.inspect(...args),
     'manager:sendApp': (request: Parameters<typeof manager.sendApp>[0]) => manager.sendApp(request, 'desktop'),
@@ -191,14 +190,14 @@ export function application(runtime: CoreRuntime) {
     'manager:answerApp': (...args: Parameters<typeof manager.answerApp>) => manager.answerApp(...args),
     'manager:answerCard': (...args: Parameters<typeof manager.answerCard>) => manager.answerCard(...args),
     'manager:voice-memos': () => voiceMemosConnection({ transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }, manager.voiceMemosDirectory()),
-    'telegram:view': () => telegram.view(),
     'channels:view': () => channels.view(),
     'channels:install': (url: string) => channels.install(url),
     'channels:configure': (id: ChannelId, change: ChannelChange) => channels.configure(id, change),
     'channels:remove': (id: ChannelId) => channels.remove(id),
     'channels:inspect': (id: ChannelId, request: ChannelInspectRequest) => channels.inspect(id, request),
     'channels:checkUpdates': () => channels.checkUpdates(),
-    'telegram:action': (action: TelegramAction) => telegramActionAccess(manager, telegram, action, true),
+    'channels:screen': (id: ChannelId, request: ChannelScreenRequest) => channels.screen(id, request),
+    'channels:request': (id: ChannelId, request: ChannelJson) => channels.request(id, request, 'desktop'),
     'correct': (request: CorrectRequest) => correct(request),
     'transcribe': (request: TranscribeRequest) => transcribe(request),
     'speech:model': () => speechModel(),

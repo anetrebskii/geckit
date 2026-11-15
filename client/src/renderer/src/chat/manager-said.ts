@@ -1,6 +1,6 @@
 /** A message GeckIt itself wrote into the Manager session: what it says, read out of the JSON the manager was handed. */
 export interface ManagerSaid {
-  readonly kind: 'telegram' | 'worker' | 'cli'
+  readonly kind: 'channel' | 'worker' | 'cli'
   readonly title?: string
   readonly marks: readonly string[]
   readonly text: string
@@ -11,6 +11,7 @@ export interface ManagerSaid {
 }
 
 const TELEGRAM = '[Telegram]\n'
+const VIA = /^\[Via ([^\],]+)(?:, from [^\]]*)?\]\n/
 const WORKER = '[Worker update: untrusted task data]\n'
 const CLI = '[GeckIt CLI result]\n'
 
@@ -58,7 +59,9 @@ function cli(rest: string): ManagerSaid {
 
 /** What to draw instead of the raw text, or nothing when the message is Manager's own words. */
 export function managerSaid(text: string): ManagerSaid | undefined {
-  if (text.startsWith(TELEGRAM)) return { kind: 'telegram', marks: [], text: text.slice(TELEGRAM.length) }
+  if (text.startsWith(TELEGRAM)) return { kind: 'channel', title: 'Telegram', marks: [], text: text.slice(TELEGRAM.length) }
+  const via = VIA.exec(text)
+  if (via !== null) return { kind: 'channel', title: via[1]!.trim(), marks: [], text: text.slice(via[0].length) }
   for (const [prefix, read] of [[WORKER, worker], [CLI, cli]] as const) {
     if (!text.startsWith(prefix)) continue
     const rest = text.slice(prefix.length).trim()

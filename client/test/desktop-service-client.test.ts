@@ -13,6 +13,8 @@ import type { DesktopServiceClient } from '../src/main/service-client'
 import type { ServiceEvents, ServiceMethods } from '../src/service/application'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import { DEFAULT_MANAGER_CONFIG } from '../src/shared/manager'
+import type { ChannelScreenRequest } from '../src/shared/channel-ui'
+import type { ChannelId } from '../src/shared/channels'
 
 type Snapshot = Awaited<ReturnType<ServiceMethods['service:bootstrap']>>
 const cleanup: (() => void | Promise<void>)[] = []
@@ -29,14 +31,14 @@ function snapshot(): Snapshot {
   return {
     sessions: [], lineup: { working: 0, limit: 6 }, settings: DEFAULT_SETTINGS,
     employees: { employees: [] }, hosts: [], prompts: [],
-    telegram: { state: 'disconnected', pendingLate: 0 }, shares: [], working: [], wanting: 0, watched: undefined,
+    channels: {}, channelPhoneViews: {}, shares: [], working: [], wanting: 0, watched: undefined,
     manager: { config: DEFAULT_MANAGER_CONFIG, state: 'off', workers: [], activity: [], providers: [], decisions: [], queued: 0 },
     speech: { state: 'absent', received: 0, total: 1 }, home: tmpdir(), platform: process.platform, name: 'Fixture host',
   }
 }
 
 function hello(change: Partial<Awaited<ReturnType<ServiceMethods['desktop:hello']>>> = {}): Awaited<ReturnType<ServiceMethods['desktop:hello']>> {
-  return { protocol: 1, version, methods: [], migration: { available: false, hosts: [], telegram: false }, ...change }
+  return { protocol: 1, version, methods: [], migration: { available: false, hosts: [], sealed: [] }, ...change }
 }
 
 async function attach(path: string, onEvent: (event: RpcEvent<ServiceEvents>) => void = () => undefined, onConnect?: (state: Snapshot) => void, onDisconnect?: () => void): Promise<DesktopServiceClient> {
@@ -261,4 +263,41 @@ process.on('SIGTERM', () => { for (const socket of sockets) socket.destroy(); se
   expect(() => process.kill(pid, 0)).not.toThrow()
   expect(readFileSync(join(path, 'service.log'), 'utf8')).toContain('fixture service listening')
   if (process.platform !== 'win32') expect(statSync(join(path, 'service.log')).mode & 0o777).toBe(0o600)
+})
+
+
+it('registers every renderer channel operation in the Electron service bridge', () => {
+  const main = readFileSync(join(import.meta.dirname, '../src/main/index.ts'), 'utf8')
+  const renderer = readFileSync(join(import.meta.dirname, '../src/shared/renderer-api.ts'), 'utf8')
+  const routes = main.match(/const CORE_CHANNELS = (\[[^\n]+\]) as const/)?.[1] ?? '[]'
+  const registered: readonly string[] = JSON.parse(routes)
+  const used = [...renderer.matchAll(/rendererTransport\.(?:invoke|send)\('((?:channels:)[^']+)'/g)].map((match) => match[1])
+  expect(used).toContain('channels:screen')
+  expect(used.filter((name) => !registered.includes(name ?? ''))).toEqual([])
+  expect(main).toContain('for (const channel of CORE_CHANNELS) registerCore(channel)')
+})
+
+it('forwards channel setup loads, actions and errors through the desktop service connection', async () => {
+  const path = directory()
+  writeFileSync(join(path, 'operator-token'), 'secret', { mode: 0o600 })
+  const screen = vi.fn(async (id: ChannelId, request: ChannelScreenRequest) => {
+    if (request.action === 'fail') throw new Error('Fixture setup failure')
+    return { title: id, text: [request.action === 'save' ? String(request.values?.['allow']) : 'Connection settings'] }
+  })
+  const methods = {
+    'desktop:hello': () => hello(),
+    'service:bootstrap': async () => snapshot(),
+    'channels:screen': screen,
+  } satisfies Pick<ServiceMethods, 'desktop:hello' | 'service:bootstrap' | 'channels:screen'>
+  const server = listenRpc<typeof methods, ServiceEvents>(path, 'secret', methods)
+  cleanup.push(server.close)
+  await server.ready
+  const client = await attach(path)
+  for (const id of ['channel:telegram', 'channel:discord', 'channel:fixture'] as const) {
+    await expect(client.call('channels:screen', id, {})).resolves.toEqual({ title: id, text: ['Connection settings'] })
+    const request = { action: 'save', values: { allow: ['123'] } }
+    await expect(client.call('channels:screen', id, request)).resolves.toEqual({ title: id, text: ['123'] })
+    expect(screen).toHaveBeenLastCalledWith(id, request)
+    await expect(client.call('channels:screen', id, { action: 'fail' })).rejects.toThrow('Fixture setup failure')
+  }
 })

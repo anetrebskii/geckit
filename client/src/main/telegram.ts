@@ -1,21 +1,19 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
 
-import type { ManagerHistoryBoundary, ManagerHistoryChange, ManagerDecision, ManagerDecisionOutcome, ManagerReplyOrigin, ManagerTelegramReply, ManagerTelegramSource } from '../shared/manager'
+import type { ManagerHistoryBoundary, ManagerHistoryChange, ManagerDecision, ManagerDecisionOutcome, ManagerReplyOrigin, ManagerRequestSource } from '../shared/manager'
 import type { Json, JsonObject } from '../shared/elicitation'
 import { jsonObject } from '../shared/elicitation'
-import type { TelegramAction, TelegramAccount, TelegramBot, TelegramDecision, TelegramView } from '../shared/telegram'
-import { memberAllowed, targetMessage, teamScope, topicBody, TEAM_QUEUE_LIMIT, TEAM_AUDIT_LIMIT } from './telegram-team'
+import type { ManagerTelegramReply, TelegramAction, TelegramAccount, TelegramBot, TelegramDecision, TelegramView } from '../shared/telegram'
+import { memberAllowed, targetMessage, topicBody, TEAM_QUEUE_LIMIT, TEAM_AUDIT_LIMIT } from './telegram-team'
 import { endsIn, shareLink, shareMentions } from '../shared/share'
 import type { ShareMention } from '../shared/share'
 import type { Shares } from './shares'
-import { ManagerDecisionFailure } from './manager-approvals'
-import { telegramText } from './telegram-text'
+import { channelDecisionReason } from '../shared/channel-ui'
+import { plainText } from './channel-text'
 import { telegramMessages } from './telegram-render'
 import type { TelegramPiece } from './telegram-render'
-import { TelegramAttachmentFailure, TelegramAttachments, telegramFilename, telegramImage } from './telegram-attachments'
-import type { TelegramAttachment, TelegramFileSender } from './telegram-attachments'
+import { AttachmentFailure, attachmentFilename, attachmentImage } from '../shared/channel-files'
+import type { ChannelAttachment, FileRoute } from '../shared/channel-files'
 import { TelegramBotClient, TelegramFailure, telegramUpdate } from './telegram-bot'
 import type { TelegramMessage, TelegramUpdate } from './telegram-bot'
 import { TelegramTyping } from './telegram-typing'
@@ -23,12 +21,13 @@ import { StatusMessage } from './manager-status'
 import { heard, say } from './manager-voice'
 import type { Speech } from './manager-voice'
 import type { ThreadActivity } from './manager-status'
-import { cleanText } from '../core/clean'
+import type { ChannelSealed } from './channels/channel-api'
 
-export interface TelegramVault {
-  available(): boolean
-  encrypt(text: string): Buffer
-  decrypt(bytes: Buffer): string
+/** Where the bot keeps its files, bound to its Manager thread by the channel. */
+export interface TelegramFiles {
+  keep(bytes: Buffer, name: string, media: string): ChannelAttachment['id']
+  has(id: ChannelAttachment['id']): boolean
+  hold(ids: readonly ChannelAttachment['id'][]): void
 }
 
 export interface TelegramManager {
@@ -36,8 +35,8 @@ export interface TelegramManager {
   accepted?(id: string): boolean
   historyBoundary?(chatId: number): ManagerHistoryBoundary | undefined
   originCurrent?(origin: ManagerReplyOrigin): boolean
-  submit(text: string, id?: string, attachments?: readonly TelegramAttachment['id'][], authorized?: () => boolean, source?: ManagerTelegramSource): Promise<void | ManagerReplyOrigin['session']>
-  reply?(text: string, id: string | undefined, reference: ManagerTelegramReply, authorized?: () => boolean, attachments?: readonly TelegramAttachment['id'][], source?: ManagerTelegramSource): Promise<void>
+  submit(text: string, id?: string, attachments?: readonly ChannelAttachment['id'][], authorized?: () => boolean, source?: ManagerRequestSource): Promise<void | ManagerReplyOrigin['session']>
+  reply?(text: string, id: string | undefined, reference: ManagerTelegramReply, authorized?: () => boolean, attachments?: readonly ChannelAttachment['id'][], source?: ManagerRequestSource): Promise<unknown>
   typingAllowed?(): boolean
   pending?(): readonly string[]
   onPending?(changed: () => void): () => void
@@ -53,9 +52,8 @@ export interface TelegramManager {
 }
 
 export interface TelegramOptions {
-  readonly directory: string
-  readonly attachments?: TelegramAttachments
-  readonly vault: TelegramVault
+  readonly storage: ChannelSealed
+  readonly files?: TelegramFiles
   readonly manager: TelegramManager
   readonly changed: (view: TelegramView) => void
   readonly fetch?: typeof fetch
@@ -191,29 +189,22 @@ export class ManagerTelegram {
   private failure: TelegramView['state'] = 'disconnected'
   private detail: string | undefined
   private outgoing: Promise<void> = Promise.resolve()
-  private readonly path: string
   private readonly now: () => number
-  readonly attachments: TelegramAttachments
   private pendingListener: (() => void) | undefined
-  private cleanupTimer: ReturnType<typeof setInterval> | undefined
   private status: { readonly connection: Connection; readonly chatId: number; readonly message: StatusMessage } | undefined
 
   constructor(private readonly options: TelegramOptions) {
-    this.path = join(options.directory, 'manager-telegram.sealed')
     this.now = options.now ?? Date.now
-    this.attachments = options.attachments ?? new TelegramAttachments(options.directory, this.now)
     this.restorePins()
-    this.attachments.cleanup()
-    this.cleanupTimer = setInterval(() => { try { this.attachments.cleanup() } catch { /* Access reports storage failures. */ } }, 60_000)
-    this.cleanupTimer.unref()
     this.listenPending()
   }
 
   private restorePins(): void {
     try {
-      if (!this.options.vault.available()) return
-      const kept = keptOf(this.options.vault.decrypt(readFileSync(this.path)))
-      if (kept?.pendingAttachment !== undefined) this.attachments.pin('telegram-handoff', [kept.pendingAttachment])
+      if (!this.options.storage.available()) return
+      const text = this.options.storage.read()
+      const kept = text === undefined ? undefined : keptOf(text)
+      if (kept?.pendingAttachment !== undefined) this.options.files?.hold([kept.pendingAttachment])
     } catch { /* start reports invalid secure state; cleanup cannot establish authorization. */ }
   }
 
@@ -240,14 +231,12 @@ export class ManagerTelegram {
 
   async start(): Promise<void> {
     this.listenPending()
-    let bytes: Buffer
-    try { bytes = readFileSync(this.path) } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
-      this.failed('storage-error', 'Telegram settings could not be read. Check app data permissions, then reconnect.'); return
-    }
-    if (!this.options.vault.available()) { this.failed('storage-error', 'Secure storage is unavailable. Unlock your system credential store, then retry.'); return }
+    if (!this.options.storage.available()) { this.failed('storage-error', 'Secure storage is unavailable. Unlock your system credential store, then retry.'); return }
+    let text: string | undefined
+    try { text = this.options.storage.read() } catch { text = '' }
+    if (text === undefined) return
     let kept: KeptTelegram | undefined
-    try { kept = keptOf(this.options.vault.decrypt(bytes)) } catch { kept = undefined }
+    try { kept = keptOf(text) } catch { kept = undefined }
     if (kept === undefined) { this.failed('storage-error', 'Telegram settings could not be decrypted. Reconnect with your bot token.'); return }
     if (kept.account === undefined) return
     const connection = this.connection(kept)
@@ -269,8 +258,6 @@ export class ManagerTelegram {
   stop(): void {
     this.pendingListener?.()
     this.pendingListener = undefined
-    if (this.cleanupTimer !== undefined) clearInterval(this.cleanupTimer)
-    this.cleanupTimer = undefined
     this.attempt?.abort()
     this.pairing?.controller.abort()
     this.active?.controller.abort()
@@ -278,10 +265,6 @@ export class ManagerTelegram {
 
   async action(action: TelegramAction): Promise<TelegramView> {
     if (action.kind !== 'disconnect') this.listenPending()
-    if (this.cleanupTimer === undefined && action.kind !== 'disconnect') {
-      this.cleanupTimer = setInterval(() => { try { this.attachments.cleanup() } catch { /* Access reports storage failures. */ } }, 60_000)
-      this.cleanupTimer.unref()
-    }
     try {
       switch (action.kind) {
         case 'connect': await this.connect(action.token, action.mode, action.approvers, action.allMembers); break
@@ -306,8 +289,8 @@ export class ManagerTelegram {
           this.options.shares?.stopAll()
           this.stop()
           this.active = undefined; this.pairing = undefined; this.detail = undefined; this.failure = 'disconnected'
-          this.attachments.clear()
-          rmSync(this.path, { force: true }); rmSync(`${this.path}.new`, { force: true })
+          this.options.files?.hold([])
+          this.options.storage.write(undefined)
           break
       }
     } catch (error) {
@@ -319,7 +302,7 @@ export class ManagerTelegram {
   }
 
   async deliver(said: string, origin: ManagerReplyOrigin, beforeSend: () => void): Promise<void> {
-    const text = await cleanText(said)
+    const text = said
     const connection = this.active
     let started = false
     await this.notify(text, undefined, origin, () => { beforeSend(); started = true })
@@ -327,7 +310,7 @@ export class ManagerTelegram {
   }
 
   notify(text: string, decision?: TelegramDecision, origin?: ManagerReplyOrigin, beforeSend?: () => void): Promise<void> {
-    text = telegramText(text)
+    text = plainText(text)
     if (text.trim() === '') return Promise.resolve()
     const connection = this.active
     if (connection === undefined || connection.kept.account === undefined || connection.kept.account.team !== undefined && (origin === undefined ? decision === undefined || !this.options.manager.hasDecision?.(decision.id) : origin.thread !== this.options.manager.thread?.())) return Promise.resolve()
@@ -374,7 +357,7 @@ export class ManagerTelegram {
       questions: connection.kept.questions.filter((one) => this.options.manager.hasDecision?.(one.id) !== false),
       ...(selected ? { pendingInputs: [], pendingUpdate: undefined, historyRevision: change.revision } : {}),
     }
-    if (selected) { connection.dispatches.clear(); connection.typing.update(false); this.attachments.pin('telegram-handoff', []) }
+    if (selected) { connection.dispatches.clear(); connection.typing.update(false); this.options.files?.hold([]) }
     this.save(connection)
   }
 
@@ -431,7 +414,7 @@ export class ManagerTelegram {
     await this.send(connection, [`**${words.linksTitle}** (${String(live.length)})`, ...live.map((link) => `- ${link.title} - ${words.endsIn(endsIn(link.expiresAt, this.now()))}`)].join('\n'), [], undefined, undefined, undefined, rows)
   }
 
-  fileSender(): TelegramFileSender {
+  fileSender(): FileRoute {
     const connection = this.active
     if (connection === undefined) throw new Error('Telegram is not paired. Reconnect in GeckIt Settings.')
     return (bytes, name, media, caption, as, origin, beforeSend) => this.sendFile(bytes, name, media, caption, as, origin, connection, beforeSend)
@@ -441,7 +424,7 @@ export class ManagerTelegram {
     const connection = this.active
     if (connection === undefined || expected !== undefined && expected !== connection || connection.kept.account === undefined || !this.current(connection) || connection.state !== 'connected') return Promise.reject(new Error('Telegram is not connected to a paired account. Reconnect in GeckIt Settings.'))
     const chatId = connection.kept.account.chatId
-    const fingerprint = createHash('sha256').update(JSON.stringify({ workers: origin.workers.toSorted(), name: telegramFilename(name), as })).update(bytes).digest('hex')
+    const fingerprint = createHash('sha256').update(JSON.stringify({ workers: origin.workers.toSorted(), name: attachmentFilename(name), as })).update(bytes).digest('hex')
     const job = connection.sending.then(async () => {
       await beforeSend?.()
       if (!this.current(connection) || !this.options.manager.enabled() || this.options.manager.originCurrent?.(origin) === false || connection.kept.account?.team !== undefined && origin.thread !== this.options.manager.thread?.()) throw new Error('Telegram connection changed before upload. Nothing was sent.')
@@ -451,7 +434,7 @@ export class ManagerTelegram {
       connection.kept = { ...connection.kept, outgoing: true, pendingUpload: fingerprint }
       this.save(connection)
       try {
-        const messageId = await connection.client.upload(chatId, bytes, telegramFilename(name), media, caption, as, connection.controller.signal, connection.kept.account?.team?.topicId)
+        const messageId = await connection.client.upload(chatId, bytes, attachmentFilename(name), media, caption, as, connection.controller.signal, connection.kept.account?.team?.topicId)
         if (!this.current(connection)) throw new Error('Telegram file delivery is uncertain after the connection changed. Check the original paired chat.')
         const { outgoing: _outgoing, pendingUpload: _pendingUpload, ...kept } = connection.kept
         connection.kept = { ...kept, replies: [...kept.replies, { ...origin, chatId, messageId, text: caption || name }].slice(-2048) }
@@ -548,10 +531,8 @@ export class ManagerTelegram {
   private save(connection: Connection): void {
     if (connection !== this.active) return
     try {
-      if (!this.options.vault.available()) throw new Error('Storage unavailable')
-      mkdirSync(this.options.directory, { recursive: true, mode: 0o700 })
-      writeFileSync(`${this.path}.new`, this.options.vault.encrypt(JSON.stringify(connection.kept)), { mode: 0o600 })
-      renameSync(`${this.path}.new`, this.path)
+      if (!this.options.storage.available()) throw new Error('Storage unavailable')
+      this.options.storage.write(JSON.stringify(connection.kept))
     } catch {
       connection.state = 'storage-error'; connection.detail = 'Secure Telegram settings could not be saved. Unlock your credential store and check app data permissions, then retry.'
       connection.controller.abort()
@@ -564,7 +545,7 @@ export class ManagerTelegram {
     if (approvers.length > 100 || approvers.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new Error('Use at most 100 positive Telegram approver IDs.')
     const token = raw.trim()
     if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) { this.failed('revoked', 'Enter the bot token from BotFather.'); return }
-    if (!this.options.vault.available()) { this.failed('storage-error', 'Secure storage is unavailable. Unlock your system credential store before connecting Telegram.'); return }
+    if (!this.options.storage.available()) { this.failed('storage-error', 'Secure storage is unavailable. Unlock your system credential store before connecting Telegram.'); return }
     this.active?.typing.update(false)
     this.attempt?.abort(); this.pairing?.controller.abort(); this.pairing = undefined
     const controller = new AbortController()
@@ -616,7 +597,7 @@ export class ManagerTelegram {
         const { pendingUpdate: _pending, pendingAttachment: _attachment, ...rest } = connection.kept
         connection.kept = rest
         this.save(connection)
-        this.attachments.pin('telegram-handoff', [])
+        this.options.files?.hold([])
       }
 
       void this.poll(connection)
@@ -644,7 +625,7 @@ export class ManagerTelegram {
           const { incoming: _incoming, pendingAttachment: _pendingAttachment, pendingUpdate: _pendingUpdate, ...kept } = connection.kept
           connection.kept = kept
           this.save(connection)
-          this.attachments.pin('telegram-handoff', [])
+          this.options.files?.hold([])
         }
         this.changed()
         if (updates.length === 0) await this.delay(connection, 250)
@@ -718,7 +699,7 @@ export class ManagerTelegram {
           if (this.options.manager.hasDecision?.(callback.id) !== false) this.restoreDecision(connection, previous, callback.id)
           else { this.retire(connection, callback.id); this.removeDecision(connection, callback.id) }
           this.save(connection)
-          await this.send(connection, error instanceof ManagerDecisionFailure ? words.failure[error.reason] : words.notSent)
+          await this.send(connection, error instanceof Error && channelDecisionReason(error) !== undefined ? words.failure[channelDecisionReason(error)!] : words.notSent)
         }
       }
       else await this.send(connection, words.notHere)
@@ -756,7 +737,7 @@ export class ManagerTelegram {
       return
     }
     const id = (account.team === undefined ? `telegram:${String(update.id)}` : `telegram:${connection.kept.bot.id}:${account.team.generation}:${String(update.id)}`)
-    const source: ManagerTelegramSource | undefined = account.team === undefined ? undefined : { id, bot: connection.kept.bot.id, chatId: account.chatId, topicId: account.team.topicId, generation: account.team.generation, actor: message.from.id, messageId: message.id }
+    const source: ManagerRequestSource | undefined = account.team === undefined ? undefined : { id, bot: connection.kept.bot.id, chatId: account.chatId, topicId: account.team.topicId, generation: account.team.generation, actor: message.from.id, messageId: message.id }
     await this.dispatch(connection, text, question, id, message.id, reference, attachment, source)
   }
 
@@ -773,7 +754,7 @@ export class ManagerTelegram {
     } catch { return false }
   }
 
-  private async dispatch(connection: Connection, text: string, question?: string, id?: string, replyTo?: number, reference?: ManagerTelegramReply, attachment?: TelegramFileReference, source?: ManagerTelegramSource): Promise<void> {
+  private async dispatch(connection: Connection, text: string, question?: string, id?: string, replyTo?: number, reference?: ManagerTelegramReply, attachment?: TelegramFileReference, source?: ManagerRequestSource): Promise<void> {
     if (id !== undefined && this.options.manager.accepted?.(id) === true) return
     const historyEpoch = connection.historyEpoch
     const authorized = (): boolean => this.current(connection) && this.options.manager.enabled() && historyEpoch === connection.historyEpoch
@@ -794,24 +775,27 @@ export class ManagerTelegram {
     if (connection.kept.account?.team !== undefined && (command === '/pause' || command === '/resume' || question !== undefined)) { await this.send(connection, 'Only current approval buttons can answer decisions. Global Manager controls are owner-only in GeckIt.'); return }
     const previous = connection.kept
     let origin: ManagerReplyOrigin | undefined = reference
-    const attachments: TelegramAttachment['id'][] = []
+    const attachments: ChannelAttachment['id'][] = []
     const typingId = question === undefined && command !== '/pause' && command !== '/resume' ? id : undefined
     if (typingId !== undefined) { connection.typingFailed = false; connection.dispatches.add(typingId); connection.kept = { ...connection.kept, pendingInputs: [...new Set([...this.pendingInputs(connection), typingId])] }; this.save(connection); this.syncTyping(connection) }
     try {
       if (attachment?.file !== undefined) {
-        const scope = connection.kept.account?.team === undefined ? undefined : this.options.manager.thread?.() ?? teamScope(connection.kept.account)
-        let kept: TelegramAttachment
-        if (connection.kept.pendingAttachment !== undefined) kept = this.attachments.read(connection.kept.pendingAttachment, scope).attachment
-        else {
+        const files = this.options.files
+        if (files === undefined) throw new AttachmentFailure('Telegram may not take files. Turn on Files for Telegram in Settings, Channels.')
+        let kept: ChannelAttachment['id']
+        if (connection.kept.pendingAttachment !== undefined) {
+          kept = connection.kept.pendingAttachment
+          if (!files.has(kept)) throw new AttachmentFailure('This attachment expired or is unavailable. Ask the user to resend it; it was not delivered to the assistant.')
+        } else {
           const bytes = await connection.client.download(attachment.file, connection.controller.signal)
           if (!authorized()) return
-          if (connection.kept.account?.team !== undefined && telegramImage(bytes) === undefined) throw new TelegramAttachmentFailure('Send one PNG, JPEG, GIF or WebP image.')
-          kept = this.attachments.put(bytes, attachment.file.name, attachment.file.media, scope)
-          connection.kept = { ...connection.kept, pendingAttachment: kept.id }
-          this.attachments.pin('telegram-handoff', [kept.id])
+          if (connection.kept.account?.team !== undefined && attachmentImage(bytes) === undefined) throw new AttachmentFailure('Send one PNG, JPEG, GIF or WebP image.')
+          kept = files.keep(bytes, attachment.file.name, attachment.file.media)
+          connection.kept = { ...connection.kept, pendingAttachment: kept }
+          files.hold([kept])
           this.save(connection)
         }
-        attachments.push(kept.id)
+        attachments.push(kept)
         text = `${text === '' ? '[Attachment without caption]' : `[User caption]\n${text}`}\n[Telegram source] ${JSON.stringify({ chatId: connection.kept.account?.chatId, messageId: attachment.id, mediaGroup: attachment.mediaGroup })}`
       }
       if (question !== undefined) {
@@ -851,9 +835,9 @@ export class ManagerTelegram {
         if (this.options.manager.hasDecision?.(question) !== false) this.restoreDecision(connection, previous, question)
         else { this.retire(connection, question, previous.questions); this.removeDecision(connection, question) }
         this.save(connection)
-        if (error instanceof ManagerDecisionFailure) { await this.send(connection, words.failure[error.reason], [], undefined, replyTo); return }
+        if (error instanceof Error && channelDecisionReason(error) !== undefined) { await this.send(connection, words.failure[channelDecisionReason(error)!], [], undefined, replyTo); return }
       }
-      if (attachment !== undefined) { await this.send(connection, words.fileFailed(error instanceof TelegramAttachmentFailure ? error.message : 'I couldn\'t take that file. Check /status and the connection, then send it again.'), [], undefined, replyTo); return }
+      if (attachment !== undefined) { await this.send(connection, words.fileFailed(error instanceof AttachmentFailure ? error.message : 'I couldn\'t take that file. Check /status and the connection, then send it again.'), [], undefined, replyTo); return }
       await this.send(connection, words.notAccepted, [], undefined, replyTo)
     } finally {
       if (typingId !== undefined) connection.dispatches.delete(typingId)

@@ -2,11 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Settings } from '../../../shared/api'
 import type { ChannelChange, ChannelId, ChannelSetting, ChannelValue, ChannelView, ChannelsView } from '../../../shared/channels'
 import type { Geckit } from '../../../preload'
-import { ManagerTelegram, SharedLinks, telegramState, useTelegram, who } from '../chat/ManagerTelegram'
-import { homePath, projectLabel, projectName } from '../chat/project'
-import { useManager } from '../chat/useManager'
 import { Icon, hasIcon } from './Icon'
-import { DiscordSetup, discordLine } from './DiscordSetup'
+import { ChannelScreen } from './ChannelScreen'
 
 export type ChannelsApi = Geckit['channels']
 
@@ -22,30 +19,28 @@ function stateLine(view: ChannelView): string {
   return `Connected${view.says === undefined || view.says === '' ? '' : ` · ${view.says}`}${count}`
 }
 
-function SetUp({ setting, view, settings, api, onDone }: {
+function SetUp({ setting, view, api, onDone }: {
   readonly setting: ChannelSetting
   readonly view: ChannelView
-  readonly settings: Settings
   readonly api: ChannelsApi
   readonly onDone: () => void
 }): React.JSX.Element {
   const [values, setValues] = useState<{ readonly [key: string]: ChannelValue }>(() => Object.fromEntries(setting.info.fields.filter((field) => field.type !== 'secret').map((field) => [field.key, setting.config[field.key] ?? field.default ?? (field.type === 'boolean' ? false : field.type === 'list' ? [] : '')])))
   const [secrets, setSecrets] = useState<{ readonly [key: string]: string | null }>({})
-  const [projects, setProjects] = useState<readonly string[]>(setting.projects.filter((root) => settings.projects.includes(root)))
-  const [manager, setManager] = useState(setting.manager)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const first = useRef<HTMLFormElement>(null)
-  useLayoutEffect(() => { first.current?.querySelector<HTMLElement>('input, textarea, button')?.focus() }, [])
+  useLayoutEffect(() => { if (view.settings !== true) first.current?.querySelector<HTMLElement>('input, textarea, button')?.focus() }, [view.settings])
+  useLayoutEffect(() => { if (!saving && error !== '') first.current?.querySelector<HTMLElement>('[role=alert]')?.focus() }, [saving, error])
   const save = (): void => {
     setSaving(true)
     setError('')
-    const change: ChannelChange = { config: values, secrets, projects, manager }
+    const change: ChannelChange = { config: values, secrets }
     void api.configure(setting.info.id, change).then(onDone).catch((failure: unknown) => setError(reason(failure))).finally(() => setSaving(false))
   }
   return (
     <form ref={first} className="channel-setup" onSubmit={(event) => { event.preventDefault(); save() }} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onDone() } }}>
-      {setting.info.fields.map((field) => {
+      {(view.settings === true ? [] : setting.info.fields).map((field) => {
         const id = `channel-${setting.info.id.replace(':', '-')}-${field.key}`
         const help = field.help === undefined ? null : <span className="channel-help">{field.help}</span>
         if (field.type === 'boolean') return (
@@ -82,28 +77,7 @@ function SetUp({ setting, view, settings, api, onDone }: {
           </div>
         )
       })}
-      <div className="field">
-        <label>Folders it may use</label>
-        {settings.projects.length === 0 ? <span className="channel-help">Add a folder to GeckIt first.</span> : (
-          <div className="projects-listed">
-            {settings.projects.map((root) => {
-              const on = projects.includes(root)
-              return (
-                <button key={root} type="button" role="switch" aria-checked={on} aria-label={projectLabel(root)} className={`project-listed${on ? '' : ' off'}`} onClick={() => setProjects((current) => on ? current.filter((one) => one !== root) : [...current, root])}>
-                  <span className="tick">{on ? <Icon name="check" size={13} /> : null}</span>
-                  <span className="name">{projectName(root)}</span>
-                  <span className="says">{homePath(root)}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-        <span className="channel-help">None ticked means it cannot start conversations.</span>
-      </div>
-      <div className="field">
-        <label className="check"><input type="checkbox" checked={manager} onChange={(event) => setManager(event.target.checked)} />May talk to Manager</label>
-      </div>
-      {error === '' ? null : <span className="error" role="alert">{error}</span>}
+      {error === '' ? null : <span className="error" role="alert" tabIndex={-1}>{error}</span>}
       <div className="channel-setup-actions">
         <button type="button" className="quiet" disabled={saving} onClick={onDone}>Cancel</button>
         <button type="submit" className="primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
@@ -112,10 +86,9 @@ function SetUp({ setting, view, settings, api, onDone }: {
   )
 }
 
-function ChannelRow({ setting, view, settings, api }: {
+function ChannelRow({ setting, view, api }: {
   readonly setting: ChannelSetting
   readonly view: ChannelView
-  readonly settings: Settings
   readonly api: ChannelsApi
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -129,16 +102,15 @@ function ChannelRow({ setting, view, settings, api }: {
     void api.configure(setting.info.id, { enabled }).then((next) => { if (enabled && next.channels.find((one) => one.id === setting.info.id)?.state === 'setup') setOpen(true) }).catch((failure: unknown) => setError(reason(failure)))
   }
   const close = (): void => { setOpen(false); setUpButton.current?.focus() }
-  const discord = setting.info.id === 'channel:discord'
   return (
-    <div className={`provider-library-row channel-row${discord ? ' discord-row' : ''}`}>
+    <div className={`provider-library-row channel-row${open ? ' open' : ''}`}>
       <span className="provider-library-icon"><Icon name={hasIcon(setting.info.icon) ? setting.info.icon : 'chat'} size={16} /></span>
       <span className="provider-library-copy">
         <strong>{setting.info.name}</strong>
-        <span className={view.state === 'failed' ? 'channel-failed' : ''} title={setting.info.source}>{discord ? discordLine(view) : stateLine(view)}</span>
+        <span className={`channel-state ${view.state}`} title={setting.info.source}><i aria-hidden="true" /><span>{stateLine(view)}</span></span>
       </span>
       <label className="check channel-on"><input type="checkbox" checked={setting.enabled} onChange={(event) => toggle(event.target.checked)} />On</label>
-      <button ref={setUpButton} type="button" className="quiet provider-library-remove" aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>Set up</button>
+      <button ref={setUpButton} type="button" className="quiet provider-library-remove" aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>Set up<Icon name="down" size={12} /></button>
       {view.builtIn === true ? null : <button ref={removeButton} type="button" className="quiet provider-library-remove" aria-label={`Remove ${setting.info.name}`} aria-expanded={confirming} disabled={busy} onClick={() => setConfirming((current) => !current)}>Remove</button>}
       {error === '' ? null : <p className="provider-library-failure-reason" role="alert">{error}</p>}
       {confirming ? <div className="provider-library-confirm">
@@ -151,31 +123,8 @@ function ChannelRow({ setting, view, settings, api }: {
           }}>{busy ? 'Removing…' : 'Remove channel'}</button>
         </div>
       </div> : null}
-      {open ? discord ? <DiscordSetup setting={setting} view={view} settings={settings} api={api} onDone={close} /> : <SetUp setting={setting} view={view} settings={settings} api={api} onDone={close} /> : null}
-    </div>
-  )
-}
-
-function TelegramRow(): React.JSX.Element | null {
-  const [view, setView] = useTelegram()
-  const manager = useManager()
-  const [open, setOpen] = useState(false)
-  const setUpButton = useRef<HTMLButtonElement>(null)
-  if (window.geckit.telegram === undefined) return null
-  const close = (): void => { setOpen(false); setUpButton.current?.focus() }
-  const line = view === undefined ? 'Loading…' : [telegramState(view.state), who(view)].filter((part) => part !== '').join(' · ')
-  return (
-    <div className="provider-library-row channel-row">
-      <span className="provider-library-icon"><Icon name={hasIcon('telegram') ? 'telegram' : 'chat'} size={16} /></span>
-      <span className="provider-library-copy">
-        <strong>Telegram</strong>
-        <span>{line}</span>
-      </span>
-      <button ref={setUpButton} type="button" className="quiet provider-library-remove" aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>Set up</button>
-      {open ? <div className="channel-setup" onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); close() } }}>
-        {manager?.config.enabled === false && view?.state === 'disconnected'
-          ? <p className="channel-help">Turn Manager on in Team, Manager first. Telegram talks to Manager.</p>
-          : <><ManagerTelegram view={view} onView={setView} /><SharedLinks view={view} onView={setView} /></>}
+      {open ? <div className="channel-setup channel-panel" onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); close() } }}>
+        {view.settings === true ? <ChannelScreen id={setting.info.id} api={api} /> : <SetUp key={JSON.stringify(setting.config)} setting={setting} view={view} api={api} onDone={close} />}
       </div> : null}
     </div>
   )
@@ -207,8 +156,10 @@ export function Channels({ settings, change, api = window.geckit.channels }: { r
         <button type="button" className="provider-library-add-button" onClick={() => setAdding(true)} disabled={adding}><Icon name="plus" size={14} />Add channel</button>
       </div>
       <p className="provider-library-intro">Places outside GeckIt where people write to your conversations and Manager. Telegram, Slack and Discord come with GeckIt; add others from GitHub.</p>
-      <div className="provider-library-list">
-        <TelegramRow />
+      {view === undefined ? <div className="provider-library-list channel-loading" aria-busy="true">
+        <span className="channel-loading-label" role="status">Loading channels…</span>
+        {[0, 1, 2].map((one) => <div key={one} className="provider-library-row channel-skeleton" aria-hidden="true"><span className="provider-library-icon" /><span className="provider-library-copy"><span /><span /></span><span className="channel-skeleton-control" /></div>)}
+      </div> : <div className="provider-library-list">
         {failures.map((failure) => (
           <div key={failure.id ?? failure.name} className="provider-library-row provider-library-failure">
             <span className="provider-library-icon"><Icon name="chat" size={16} /></span>
@@ -222,8 +173,9 @@ export function Channels({ settings, change, api = window.geckit.channels }: { r
             <p className="provider-library-failure-reason" role="alert">Could not load this channel: {failure.error}</p>
           </div>
         ))}
-        {rows.map(({ setting, shown }) => <ChannelRow key={setting.info.id} setting={setting} view={shown} settings={settings} api={api} />)}
-      </div>
+        {rows.map(({ setting, shown }) => <ChannelRow key={setting.info.id} setting={setting} view={shown} api={api} />)}
+        {rows.length === 0 && failures.length === 0 ? <p className="provider-library-empty channel-empty">No channels yet. Add one from GitHub.</p> : null}
+      </div>}
       {adding ? <form className="provider-library-add" onSubmit={(event) => {
         event.preventDefault()
         setInstalling(true)

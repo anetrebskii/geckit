@@ -54,7 +54,7 @@ const EN = {
 /resume - start work again
 /settings - where my setup is changed
 /links - what is shared and how to stop it`,
-  help: (commands: string) => `**Talking to me in Telegram**
+  help: (commands: string) => `**Talking to me in this channel**
 
 Send a task as a message. Reply to my question to answer it, or use the buttons on approvals that can be answered here.
 
@@ -63,7 +63,7 @@ ${commands}
 Typed forms and sign-in links open only in GeckIt itself.`,
   settings: `**Where my setup lives**
 
-GeckIt, Settings, Manager changes my assistant, model, delegation and this Telegram connection.
+GeckIt, Settings, Manager changes my assistant, model, delegation and channel connections.
 
 Credentials stay on the computer. Talk to me here; approvals that can be answered here come with buttons.`,
   connected: (commands: string) => `**Connected.** Send me a task as a message, and reply to my questions to answer them.
@@ -81,7 +81,7 @@ GeckIt must stay open on your computer.`,
   notHere: "I can't take that answer here. Ask me to show the current question again.",
   badFile: "I can't open this photo or document: its details are broken or it is over 20 MiB. Send it as a smaller file.",
   badKind: 'I read text, photos and documents, not this kind of attachment. Send it as a file.',
-  tooLong: 'That message is too long for me in Telegram. Send a shorter one.',
+  tooLong: 'That message is too long for me in this channel. Send a shorter one.',
   unmatched: "I can't tell which of my messages this answers. Reply to one of my messages or write a new one.",
   fileAnswer: "A file can't answer a question or an approval. Use the buttons or reply with text, then send the file on its own.",
   answered: 'Got your answer, carrying on.',
@@ -99,7 +99,7 @@ GeckIt must stay open on your computer.`,
   menu: { status: 'What I and my workers are doing', pause: 'Stop starting new work', resume: 'Start work again', settings: 'Where my setup is changed', links: 'What is shared and how to stop it', help: 'What can be done here' },
   about: 'I run GeckIt on your own computer. Send me a task and answer my questions here.',
   dmOff: 'Direct messages to me are off. Mention me in a server channel instead.',
-  wrongPlace: "I don't answer in this channel. Choose it for me in GeckIt, Settings, Channels, Discord.",
+  wrongPlace: "I don't answer in this channel. Choose it for me in GeckIt, Settings, Channels.",
   noThread: (reason: string) => `I couldn't start a thread for this: ${reason}. Give me Create Public Threads and Send Messages in Threads in this channel.`,
   questionClosed: 'This question is already closed.',
   reviewWorker: 'Open the worker in GeckIt to review this request.',
@@ -167,7 +167,7 @@ const RU: typeof EN = {
 /resume - снова начинать работу
 /settings - где меня настраивать
 /links - чем я делюсь и как это остановить`,
-  help: (commands) => `**Как со мной работать в Telegram**
+  help: (commands) => `**Как со мной работать в этом канале**
 
 Пиши задачу обычным сообщением. Чтобы ответить на мой вопрос, ответь на него или нажми кнопку под запросом.
 
@@ -176,7 +176,7 @@ ${commands}
 Формы с полями и ссылки для входа открываются только в самом GeckIt.`,
   settings: `**Где меня настраивать**
 
-В GeckIt: Settings, Manager. Там меняются ассистент, модель, делегирование и это подключение к Telegram.
+В GeckIt: Settings, Manager. Там меняются ассистент, модель, делегирование и это подключение к каналам.
 
 Ключи остаются на компьютере. Пиши мне здесь; запросы, на которые можно ответить отсюда, приходят с кнопками.`,
   connected: (commands) => `**Подключено.** Пиши мне задачи обычными сообщениями, а на мои вопросы отвечай прямо на них.
@@ -194,13 +194,13 @@ GeckIt должен оставаться открытым на компьюте�
   notHere: 'Здесь этот ответ принять не могу. Попроси меня показать текущий вопрос ещё раз.',
   badFile: 'Не могу открыть это фото или документ: данные о нём повреждены или он больше 20 МиБ. Пришли файл поменьше.',
   badKind: 'Читаю текст, фото и документы, а такое вложение не умею. Пришли его файлом.',
-  tooLong: 'Это сообщение для меня в Telegram слишком длинное. Пришли покороче.',
+  tooLong: 'Это сообщение для меня в этом канале слишком длинное. Пришли покороче.',
   unmatched: 'Не понимаю, на какое моё сообщение этот ответ. Ответь на одно из моих сообщений или напиши заново.',
   fileAnswer: 'Файлом на вопрос или запрос не ответить. Нажми кнопку или ответь текстом, а файл пришли отдельным сообщением.',
   answered: 'Ответ получен, продолжаю.',
   paused: 'Пауза. Новую работу не начинаю, начатая продолжается.',
   resumed: 'Снова в работе.',
-  fileFailed: () => 'Не получилось принять файл. Telegram отдаёт файлы до 20 МиБ: проверь размер и подключение и пришли ещё раз.',
+  fileFailed: () => 'Не получилось принять файл. Канал принимает файлы до 20 МиБ: проверь размер и подключение и пришли ещё раз.',
   notAccepted: 'Не получилось принять это сообщение. Проверь /status или GeckIt: Settings, Manager, и отправь ещё раз.',
   tooManyLate: 'Здесь накопилось слишком много вопросов. Ответь на них кнопками "Выполнить" или "Отменить", потом пришли это снова. Пока оно не выполнено.',
   late: '**Это сообщение дошло до меня с опозданием больше 10 минут.** Выполнить сейчас?',
@@ -212,7 +212,7 @@ GeckIt должен оставаться открытым на компьюте�
   menu: { status: 'Что делаю я и исполнители', pause: 'Не начинать новую работу', resume: 'Снова начинать работу', settings: 'Где меня настраивать', links: 'Чем я делюсь и как это остановить', help: 'Что здесь можно сделать' },
   about: 'Я работаю в GeckIt на твоём компьютере. Пиши мне задачи и отвечай здесь на мои вопросы.',
   dmOff: 'Личные сообщения мне выключены. Упомяни меня в канале сервера.',
-  wrongPlace: 'В этом канале я не отвечаю. Выбери его для меня в GeckIt: Settings, Channels, Discord.',
+  wrongPlace: 'В этом канале я не отвечаю. Выбери его для меня в GeckIt: Settings, Channels.',
   noThread: (reason) => `Не получилось открыть тред: ${reason}. Дай мне права Create Public Threads и Send Messages in Threads в этом канале.`,
   questionClosed: 'Этот вопрос уже закрыт.',
   reviewWorker: 'Посмотри этот запрос в GeckIt, в беседе исполнителя.',
@@ -280,5 +280,5 @@ export function workerDoing(stands: string, speech: Speech | undefined): string 
   return undefined
 }
 
-/** The language Discord says a person's own app is in, for a button press, which has no words of its own. */
+/** The locale of a person's app supplies the language for an action with no words of its own. */
 export const localeSpeech = (locale: string | undefined): Speech | undefined => locale === undefined ? undefined : locale.toLowerCase().startsWith('ru') ? 'ru' : 'en'

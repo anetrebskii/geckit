@@ -1,3 +1,4 @@
+import { containsSecret } from '../../shared/channel-safety'
 import { channelDownload } from './channel-files'
 import type { ChannelFileSender } from './channel-files'
 import type { ChannelInfo } from '../../shared/channels'
@@ -7,22 +8,20 @@ import { heard as speechOf, say } from '../manager-voice'
 
 class SlackApiFailure extends Error {}
 
-const SECRET = /\b(?:xox[abposr]-[\w-]{10,}|xapp-[\w-]{10,}|sk-[\w-]{16,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|[MNO][\w-]{23,27}\.[\w-]{6}\.[\w-]{27,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/
 
 export const SLACK_INFO: ChannelInfo = {
   id: 'channel:slack',
   name: 'Slack',
-  icon: 'chat',
+  icon: 'slack',
   description: 'Each Slack thread with the bot is a Manager thread of its own.',
+  capabilities: ['conversations', 'manager', 'delivery', 'files'],
   fields: [
     { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write, reactions:write.' },
     { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode.' },
-    { key: 'allow', label: 'People who may write', type: 'list', help: 'Slack user IDs, such as U012ABC. Nobody else is answered. Empty: every member of the bot\'s workspace, but not guests, people from other workspaces or bots.' },
-    { key: 'checkSecrets', label: 'Refuse messages that contain a token or key', type: 'boolean', default: true },
   ],
 }
 
-export const containsSecret = (text: string): boolean => SECRET.test(text)
+export { containsSecret } from '../../shared/channel-safety'
 export const cleanMention = (text: string): string => text.replace(/<@[A-Z0-9]+>/g, '').trim()
 
 interface SlackFile {
@@ -179,17 +178,13 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     return name
   }
 
-  const listed = (): readonly unknown[] => { const allow = context.config()['allow']; return Array.isArray(allow) ? allow.filter((one) => typeof one === 'string' && one.trim() !== '') : [] }
-
-  /** Whether a person may write, from what is already known: on the list when there is one, otherwise a full member of the bot's own workspace. */
   const allowedNow = (user: string): boolean => {
-    if (listed().length > 0) return listed().includes(user)
     const found = members.get(user)?.user
-    return team !== undefined && found?.team_id === team && found.is_bot !== true && found.deleted !== true && found.is_restricted !== true && found.is_ultra_restricted !== true
+    return team !== undefined && found?.team_id === team && found.is_bot !== true && found.deleted !== true
   }
 
   const allowed = async (user: string): Promise<boolean> => {
-    if (listed().length === 0) await member(user)
+    await member(user)
     return allowedNow(user)
   }
 
@@ -263,7 +258,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       if (!current()) throw new Error('The Manager conversation changed.')
       const bytes = await channelDownload(transport.fetch, url, (location) => location.hostname === 'files.slack.com' && location.pathname.startsWith('/files-pri/'), file.size, context.secret('botToken'))
       if (!current()) throw new Error('The Manager conversation changed.')
-      if (context.config()['checkSecrets'] !== false && containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
+      if (containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
       if (context.files === undefined) throw new Error('Attachment storage is unavailable.')
       ids.push(context.files.keep(thread, bytes, file.name ?? 'attachment', file.mimetype ?? 'application/octet-stream'))
     }
@@ -278,7 +273,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       const validate = (): void => {
         const writer = context.store.get(`writer:${key}`)
         if (!current() || typeof writer !== 'string' || !allowedNow(writer)) throw new Error('The originating Slack conversation is no longer authorized.')
-        if (context.config()['checkSecrets'] !== false && (containsSecret(caption) || containsSecret(bytes.toString('utf8')))) throw new Error('The selected file or caption appears to contain a token or key.')
+        if (containsSecret(caption) || containsSecret(bytes.toString('utf8'))) throw new Error('The selected file or caption appears to contain a token or key.')
       }
       const writer = context.store.get(`writer:${key}`)
       if (typeof writer === 'string') await allowed(writer)
@@ -377,7 +372,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     const text = await named(event.text ?? '')
     if (text === '' && event.thread_ts === undefined && (event.files?.length ?? 0) === 0) return
     if (!mention && !direct && !pending(key).some((one) => one.values.includes(text.toLowerCase())) && (event.files?.length ?? 0) === 0 && fileLinks(event.text ?? '').length === 0) return
-    if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(event.channel, ts, say(speechOf(text)).secret); return }
+    if (containsSecret(text)) { await post(event.channel, ts, say(speechOf(text)).secret); return }
     const from = await person(event.user)
     const link = known ? undefined : await slack('chat.getPermalink', { channel: event.channel, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
     if (!current()) return

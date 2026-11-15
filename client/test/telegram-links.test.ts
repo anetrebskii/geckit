@@ -11,13 +11,14 @@ import { jsonObject } from '../src/shared/elicitation'
 import { readShareLink } from '../src/shared/share'
 import { Shares } from '../src/main/shares'
 import { ManagerTelegram } from '../src/main/telegram'
-import type { TelegramVault } from '../src/main/telegram'
+import type { ChannelVault } from '../src/main/channels/channels'
+import { sealedAt } from './telegram-storage'
 
 const token = '123456:very_secret_example_token_for_tests'
 const now = 1_800_000_000_000
 const user = { id: 81, is_bot: false, first_name: 'Alex', username: 'alex' }
 const xor = (bytes: Buffer): Buffer => Buffer.from(bytes.map((byte) => byte ^ 123))
-const vault: TelegramVault = { available: () => true, encrypt: (text) => xor(Buffer.from(text)), decrypt: (bytes) => xor(bytes).toString() }
+const vault: ChannelVault = { available: () => true, encrypt: (text) => xor(Buffer.from(text)), decrypt: (bytes) => xor(bytes).toString() }
 const cleanup: (() => void)[] = []
 const speech: { now: 'en' | 'ru' | undefined } = { now: undefined }
 afterEach(() => { for (const one of cleanup.splice(0)) one() })
@@ -78,7 +79,7 @@ async function setUp(enabled = true): Promise<{ readonly telegram: ManagerTelegr
   const api = botApi()
   const holder: { telegram?: ManagerTelegram } = {}
   const shares = new Shares({ home, now: () => now, changed: () => undefined, ended: (id) => holder.telegram?.linkEnded(id) })
-  const telegram = new ManagerTelegram({ directory: home, vault, fetch: api.fetch, now: () => now, changed: () => undefined, shares, manager: { submit: async () => undefined, pause: async () => undefined, resume: async () => undefined, status: () => 'idle', enabled: () => enabled, language: () => speech.now } })
+  const telegram = new ManagerTelegram({ storage: sealedAt(home, vault), fetch: api.fetch, now: () => now, changed: () => undefined, shares, manager: { submit: async () => undefined, pause: async () => undefined, resume: async () => undefined, status: () => 'idle', enabled: () => enabled, language: () => speech.now } })
   holder.telegram = telegram
   cleanup.push(() => { telegram.stop(); shares.stopAll(); rmSync(home, { recursive: true, force: true }) })
   await telegram.action({ kind: 'connect', token })

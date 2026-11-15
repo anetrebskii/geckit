@@ -1,6 +1,6 @@
 import type { ChatSession } from '../shared/api'
 import type { ManagerThread, ManagerView } from '../shared/manager'
-import { containsSecret } from './channels/slack'
+import { containsSecret } from '../shared/channel-safety'
 import { commandSaid, say, workerDoing } from './manager-voice'
 import type { Speech } from './manager-voice'
 

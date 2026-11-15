@@ -2,7 +2,7 @@ import type { ManagerView } from '../shared/manager'
 import { say } from './manager-voice'
 import type { Speech } from './manager-voice'
 
-export function telegramText(text: string): string {
+export function plainText(text: string): string {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   while (lines.length > 0 && lines[0]?.trim() === '') lines.shift()
   while (lines.length > 0 && lines.at(-1)?.trim() === '') lines.pop()
@@ -23,7 +23,7 @@ export function telegramText(text: string): string {
 const SHOWN = 8
 
 /** What /status answers, in the person's language: where Manager stands, what its workers are doing, and what waits for Alex. */
-export function managerTelegramStatus(view: ManagerView, speech?: Speech): string {
+export function managerStatus(view: ManagerView, speech?: Speech): string {
   const words = say(speech)
   const lines = [words.stands[view.state], '']
   if (view.workers.length === 0) lines.push(words.noWorkers)
