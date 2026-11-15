@@ -64,6 +64,7 @@ GeckIt gives a person one place to supervise work across AI conversations, proje
 - Not verified live: Slack, Telegram and the running app.
 
 ## Discord channel - 2026-11-07 (branch feat/discord-channel, not released)
+- Window toolbar, tasks and Stop tracking (2026-11-15): `Tasks`, `Details` and the toolbar in `client/src/renderer/src/chat/ManagerChat.tsx`; Stop tracking is `Manager.unfollow` in `client/src/main/manager.ts`, served as `manager:unfollow` (desktop RPC and phone call). Reviewed in `manager-preview.html?threads` (fixture `unfollow`, `?unfollowFails`), desktop dark and light 1440x900, dark 860x700, phone dark and light. No unit test for `unfollow` yet; live service path unverified.
 
 - Channel: `createDiscord()` in `client/src/main/channels/discord.ts`, built in through `BUILT_IN` in `client/src/main/channels/channels.ts`. Gateway v10 with intents GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES and MESSAGE_CONTENT, heartbeat with jitter, resume on `resume_gateway_url`, op 7 and op 9, backoff 1 to 30 s, fatal close codes 4004 and 4010 to 4014 reported with their fix.
 - Places: a mention in a text channel starts a thread on the message (`POST /channels/{id}/messages/{id}/threads`, 1 day archive); keys are the thread id or `dm:<channel>`; allow list, chosen channels (a thread counts by its parent), direct messages on or off, the shared token check (`containsSecret`, Discord bot tokens added in `slack.ts`), earlier thread messages for Manager, mentions off (`allowed_mentions.parse = []`), answers cut at 2000 characters, files named not passed.

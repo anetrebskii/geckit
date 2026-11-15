@@ -47,7 +47,7 @@ if (query.has('threads')) {
   const following: ChatSession = { ...worker, id: 'codex:worker-following', title: 'Deploy preview for the login fix', state: 'working', stands: 'Working' }
   view = { ...view, workers: [...view.workers.filter((one) => one.id !== worker.id), worker, following], threads: [
     { id: 'main', title: 'Manager', labels: {}, session: backing.id, conversation: backing, state: 'idle', at: Date.now() - 600_000, owns: [] },
-    { id: 'slack:C012:1730800000.000100', place: 'Slack', title: '#dev', labels: { channel: 'C012DEV', thread: '1730800000.000100', starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://example.slack.com/archives/C012DEV/p1730800000000100', session: slack.id, conversation: slack, state: 'working', at: Date.now() - 60_000, owns: [worker.id] },
+    { id: 'slack:C012:1730800000.000100', place: 'Slack', title: '#dev', labels: { channel: 'C012DEV', thread: '1730800000.000100', starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://example.slack.com/archives/C012DEV/p1730800000000100', session: slack.id, conversation: slack, state: 'working', at: Date.now() - 60_000, owns: [worker.id, following.id] },
     { id: 'telegram:4242', place: 'Telegram', title: 'Alex', labels: { chat: '4242', user: 'Alex' }, from: 'Alex', state: 'asks', at: Date.now() - 300_000, owns: [], ...(query.has('closedThread') ? { closed: 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.' } : {}) },
   ] }
 }
@@ -155,6 +155,10 @@ const manager: ManagerApi = {
     pushItems([card])
     return true
   },
+  unfollow: async (thread, id) => {
+    if (query.has('unfollowFails')) throw new Error('This thread does not track this worker; Telegram · Alex does.')
+    return update({ threads: (view.threads ?? []).map((one) => one.id === thread ? { ...one, owns: one.owns.filter((owned) => owned !== id) } : one) })
+  },
   onItems: (callback) => { managerItemListeners.add(callback); return () => managerItemListeners.delete(callback) },
   configure: async (change) => {
     if (query.has('saveFailure')) throw new Error('Could not save Manager. Try again.')
@@ -197,7 +201,7 @@ const chat: Partial<Geckit['chat']> = {
     worker = { ...rest, ...(status === undefined ? {} : { status }), moves: [...(worker.moves ?? []), { before, status: target, at: Date.now(), attribution: { executor: 'user', origin: 'desktop' } }] }
     for (const callback of sessionsListeners) callback([worker])
   },
-  openFile: noop, stop: noop, openLink: noop,
+  openFile: noop, stop: noop, openLink: noop, listStatus: async () => [], onListStatus: listen,
 }
 const bridge: Omit<Partial<Geckit>, 'chat' | 'hosts' | 'shortcuts' | 'settings' | 'update' | 'errors' | 'speech'> & { readonly chat: typeof chat; readonly hosts: Partial<Geckit['hosts']>; readonly shortcuts: Partial<Geckit['shortcuts']>; readonly settings: Partial<Geckit['settings']>; readonly update: Partial<Geckit['update']>; readonly errors: Partial<Geckit['errors']> } = {
   platform: 'darwin', home: '/Users/alex', copy: noop, pathFor: () => '', manager,

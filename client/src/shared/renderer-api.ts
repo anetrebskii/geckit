@@ -116,6 +116,7 @@ return {
     answer: (request: ManagerAnswerRequest): Promise<ManagerAnswerResult> => rendererTransport.invoke('manager:answerApp', request),
     answerCard: (session: string, card: string, answer: string): Promise<boolean> => rendererTransport.invoke('manager:answerCard', session, card, answer),
     onItems: (said: (items: SessionItems) => void): (() => void) => rendererTransport.listen('manager:items', said),
+    unfollow: (thread: string, worker: string): Promise<ManagerView> => rendererTransport.invoke('manager:unfollow', thread, worker),
     configure: (change: Partial<ManagerConfig>): Promise<ManagerView> => rendererTransport.invoke('manager:configure', change),
     pause: (): Promise<ManagerView> => rendererTransport.invoke('manager:pause'),
     resume: (): Promise<ManagerView> => rendererTransport.invoke('manager:resume'),

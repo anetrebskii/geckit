@@ -467,6 +467,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       receipt: (id) => call('manager.receipt', id),
       answer: (request) => call('manager.answer', request),
       answerCard: (session, card, answer) => call('manager.answerCard', session, card, answer),
+      unfollow: (thread, worker) => call('manager.unfollow', thread, worker),
       onItems: (said) => listen('manager:items', said),
       configure: (change) => call('manager.configure', change),
       pause: () => call('manager.pause'),

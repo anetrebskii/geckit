@@ -568,6 +568,16 @@ export class Manager {
     return this.answer(request.id, request.choice, () => epoch === this.#epoch(thread) && request.session === this.#state(thread).sessionId && !this.#record.paused && !this.#stopped)
   }
 
+  /** The window's Stop tracking: the thread lets the worker go, as `sessions unfollow` does. */
+  async unfollow(thread: string, worker: ChatSession['id']): Promise<ManagerView> {
+    const tracker = this.#ownerThread(worker)
+    if (tracker !== thread) throw new Error(tracker === undefined ? 'No thread tracks this worker.' : `This thread does not track this worker; ${this.#threadName(tracker)?.said ?? 'another thread'} does.`)
+    const { managerUntracked: _untracked, ...note } = this.#deps.notes.all()[worker] ?? {}
+    this.#deps.notes.set(worker, { ...note, managerUntracked: true })
+    this.#emit()
+    return this.view()
+  }
+
   async answerCard(session: ChatSession['id'], card: SessionItems['items'][number]['id'], answer: string): Promise<boolean> {
     this.#appReady()
     const thread = this.#threadOfSession(session)

@@ -128,6 +128,7 @@ export interface ManagerApi {
   receipt(id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined>
   answer(request: ManagerAnswerRequest): Promise<ManagerAnswerResult>
   answerCard(session: ChatSession['id'], card: SessionItem['id'], answer: string): Promise<boolean>
+  unfollow(thread: ManagerThread['id'], worker: ChatSession['id']): Promise<ManagerView>
   onItems(said: (items: SessionItems) => void): () => void
   configure(change: Partial<ManagerConfig>): Promise<ManagerView>
   pause(): Promise<ManagerView>

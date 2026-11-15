@@ -12966,27 +12966,43 @@ button.manager-step-head:hover > svg {
   color: var(--text-faint);
 }
 
-.manager-inspection {
+.dialog.manager-inspection {
   display: flex;
   flex-direction: column;
-  inline-size: min(920px, calc(100vw - 32px));
-  block-size: min(740px, calc(100dvh - 48px));
+  align-self: flex-start;
+  inline-size: min(1200px, calc(100vw - 80px));
+  block-size: calc(100dvh - 100px);
+  max-height: none;
+  margin-block-start: 62px;
   padding: 0;
   overflow: hidden;
+  background: var(--bg);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 35%);
+}
+
+@media (width <= 900px) {
+  .dialog.manager-inspection {
+    inline-size: calc(100vw - 28px);
+    block-size: calc(100dvh - 90px);
+    margin-block-start: 52px;
+  }
 }
 
 .manager-inspection-header {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 10px;
+  min-block-size: var(--topbar);
+  padding: 6px 10px 6px 14px;
   border-block-end: 1px solid var(--border);
 }
 
 .manager-inspection-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .manager-inspection-header > button {
@@ -13060,7 +13076,11 @@ button.manager-step-head:hover > svg {
 }
 
 .manager-inspection-info {
+  display: flex;
   flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
   padding: 8px 16px;
   max-block-size: 35%;
   overflow-y: auto;
@@ -13075,12 +13095,6 @@ button.manager-step-head:hover > svg {
 
 .manager-retry {
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.manager-inspection-facts {
-  color: var(--text) !important;
-  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -15357,15 +15371,262 @@ html.phone .phone-team-block .employee-section-head h3 {
   min-inline-size: 0;
 }
 
-.manager-threads {
+.manager-side {
   display: flex;
   flex: none;
   flex-direction: column;
+  inline-size: 272px;
+  min-block-size: 0;
+  border-inline-end: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+
+.manager-side-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  block-size: 56px;
+  padding: 0 14px;
+  border-block-end: 1px solid var(--border);
+}
+
+.manager-identity {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+}
+
+.manager-identity h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.manager-threads {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 2px;
-  inline-size: 200px;
+  min-block-size: 0;
   padding: 8px;
   overflow-y: auto;
-  border-inline-end: 1px solid var(--border);
+}
+
+/* The open thread's one toolbar: its title and where it is from, and its actions at the end. */
+.manager-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  block-size: 56px;
+  padding: 0 10px 0 16px;
+  border-block-end: 1px solid var(--border);
+}
+
+.manager-toolbar-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-inline-size: 0;
+}
+
+.manager-toolbar-title h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-toolbar-title p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.manager-toolbar-title p > span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-toolbar-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+}
+
+.manager-toolbar-gap {
+  inline-size: 1px;
+  block-size: 18px;
+  margin-inline: 6px;
+  background: var(--border);
+}
+
+.manager-tasks {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.manager-tasks:hover,
+.manager-tasks[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.manager-work-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.manager-work-row {
+  min-inline-size: min(360px, calc(100vw - 40px));
+}
+
+.manager-work-open {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.manager-work-open > .manager-thread-dot {
+  margin-block-start: 6px;
+}
+
+.manager-work-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+
+.manager-work-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.manager-work-title,
+.manager-work-says {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-work-title {
+  flex: 1;
+}
+
+.manager-work-at {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.manager-work-says {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.manager-work-stop {
+  flex: none;
+  opacity: 0;
+}
+
+.manager-work-row:hover .manager-work-stop,
+.manager-work-row:has(:focus-visible) .manager-work-stop,
+.manager-work-stop.is-leaving,
+html.phone .manager-work-stop {
+  opacity: 1;
+}
+
+.manager-work-error {
+  max-inline-size: 44ch;
+  margin: 6px 9px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.manager-details.in-menu {
+  margin: 0;
+  padding: 2px 9px 8px;
+}
+
+html.phone .manager-toolbar {
+  block-size: auto;
+  padding: 8px 12px;
+}
+
+/* The phone's thread picker: the open thread's name, a native menu over it. */
+.manager-thread-pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.manager-thread-pick > span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-thread-pick > svg {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.manager-thread-pick select {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  opacity: 0;
+  font-size: 16px;
+}
+
+.manager-phone-nav .manager-stand {
+  display: inline-flex;
+  max-inline-size: 100%;
+  padding: 0;
+  background: none;
+  font-size: 12px;
+}
+
+html.phone .manager-side {
+  inline-size: auto;
+  border: 0;
+  background: none;
 }
 
 .manager-thread {
@@ -15439,104 +15700,13 @@ html.phone .phone-team-block .employee-section-head h3 {
   font-variant-numeric: tabular-nums;
 }
 
-.manager-thread-menu {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-block-end: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
-.manager-thread-menu select {
-  flex: 1;
-  min-inline-size: 0;
-}
-
 html.phone .manager-chat-threads {
   flex-direction: column;
-}
-
-.manager-thread-head {
-  flex: none;
-  padding: 8px 16px;
-  border-block-end: 1px solid var(--border);
-}
-
-.manager-thread-head p {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-block: 2px;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.manager-thread-head .manager-thread-label {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.manager-work {
-  flex: none;
-  max-block-size: 30%;
-  padding: 6px 16px;
-  overflow-y: auto;
-  border-block-end: 1px solid var(--border);
-  font-size: 12px;
-}
-
-.manager-work summary {
-  color: var(--text-dim);
-  cursor: default;
-}
-
-.manager-work summary span {
-  margin-inline-start: 4px;
-  font-variant-numeric: tabular-nums;
-}
-
-.manager-work-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  inline-size: 100%;
-  padding: 3px 6px;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: var(--text);
-  text-align: start;
-}
-
-.manager-work-row:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
-.manager-work-row span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 html.phone .manager-phone {
   block-size: 100%;
   background: var(--bg);
-}
-
-html.phone .manager-phone .manager-inspection-header {
-  gap: 8px;
-  padding: 12px;
-}
-
-html.phone .manager-phone .manager-inspection-header h2 {
-  font-size: 17px;
-}
-
-html.phone .manager-phone .manager-stand {
-  padding-inline: 6px;
-  font-size: 11px;
 }
 
 html.phone .manager-composer {

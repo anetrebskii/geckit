@@ -191,6 +191,7 @@ export function application(runtime: CoreRuntime) {
     'manager:answerCard': (...args: Parameters<typeof manager.answerCard>) => manager.answerCard(...args),
     'manager:voice-memos': () => voiceMemosConnection({ transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }, manager.voiceMemosDirectory()),
     'channels:view': () => channels.view(),
+    'manager:unfollow': (...args: Parameters<typeof manager.unfollow>) => manager.unfollow(...args),
     'channels:install': (url: string) => channels.install(url),
     'channels:configure': (id: ChannelId, change: ChannelChange) => channels.configure(id, change),
     'channels:remove': (id: ChannelId) => channels.remove(id),
