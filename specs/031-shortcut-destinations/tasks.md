@@ -31,8 +31,10 @@
 
 - [x] T013 Run required focused/full tests, typecheck, lint, safe scratch desktop/service and mobile builds; preserve unrelated changes.
 - [x] T014 Audit FR-001 through FR-012/SC-001 through SC-004 and record exact mock/live evidence plus real-channel blockers in docs/reports/shortcut-destinations.md.
-- [ ] T015 Follow authorized repository delivery workflow and update day plan; no merge/deploy or runtime restart.
+- [x] T015 Follow authorized repository delivery workflow and update day plan; no merge/deploy or runtime restart.
 
 ## Dependencies and strategy
 
 T003 precedes T004-T006/T008/T009. T004/T008/T009 precede T010/T011. T007 waits for UX approval; T012 follows it. T013-T015 follow implementation. T009 can run alongside lifecycle work after contract agreement. US1 is independently tested by save/reload, US2 by two completions and continuations, US3 by refusal/restart/uncertainty fixtures. Full objective remains all stories; no reduced MVP substitutes for requested scope.
+
+Delivery: draft [PR #87](https://github.com/anetrebskii/geckit/pull/87), implementation commit b3b4cea. No task temporary worktree existed; permanent checkout and unrelated edits retained. Live channel checks remain unverified with their exact required safe destination documented in the report.
