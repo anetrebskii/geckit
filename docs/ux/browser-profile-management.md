@@ -17,8 +17,8 @@ The existing Settings list mixes profile identifiers, account notes and status i
 
 - **Entry and result:** Settings > Web Browser > Browser profiles. Press "New profile", enter a name and, if useful, a description, press "Create profile", then "Open browser" for that saved profile. Sign in manually in its Chrome for Testing window. Later tasks can use `geckit:<name>`.
 - **Readiness:** A saved profile is available to open. "Open" reports a running browser, not successful authentication. GeckIt does not inspect or invent account sign-in status. Profile management remains visible when Chrome through GeckIt is off. Creation/deletion remain available; opening and live sign-in require enabling the connection below. The first browser launch may download Chrome for Testing, as today.
-- **Decisions and order:** Choose a stable short name and identify the intended account. Open the saved profile, then sign in. Live "Sign in" remains available when viewing another computer or when the person prefers that view.
-- **Shape:** Profile management leads the section; Chrome extension/connection setup follows below as secondary content. New profile is the prominent section action. One list and a disclosed creation form directly below the heading, because the name and the optional description are independent fields. Separate setup pages would make a small repeated operation longer. Profiles sit in one grouped list, macOS Settings style: each row has a letter badge, `geckit:<name>` with its open/closed dot, and its description, when there is one, on one line under it. Open browser is the row's only visible action; Edit, Sign in and Delete live in the row's More menu (the ellipsis button). Edit turns the row into the same two-field form, filled in, with Cancel and Save. The creation form opens as the first block inside the same group, with labels beside the fields.
+- **Decisions and order:** Choose a stable short name and identify the intended account. Open the saved profile, then sign in. On this computer Open browser is the only way in; when viewing another computer, Open browser shows the live view.
+- **Shape:** Profile management leads the section; Chrome extension/connection setup follows below as secondary content. New profile is the prominent section action. One list and a disclosed creation form directly below the heading, because the name and the optional description are independent fields. Separate setup pages would make a small repeated operation longer. Profiles sit in one grouped list, macOS Settings style: each row has a letter badge, `geckit:<name>` with its open/closed dot, and its description, when there is one, on one line under it. Open browser is the row's only visible action; Edit and Delete live in the row's More menu (the ellipsis button). Edit turns the row into the same two-field form, filled in, with Cancel and Save. The creation form opens as the first block inside the same group, with labels beside the fields.
 - **First use and return:** The empty list leads to New profile. Cancelling the form saves nothing. Leaving Settings keeps saved profiles and sign-ins; unsaved form input is not promised across closing Settings. A closed profile can be opened again. If startup fails, show its reason and allow another attempt.
 - **Transfer:** Close the source profile, run `geckit browser profiles export <name> --output <file>`, transfer that file yourself, then run `geckit browser profiles import <file> --name <new-name>` on the destination computer. Open the imported browser and check its accounts. Import completion means files restored, not signed in.
 
@@ -27,7 +27,7 @@ The existing Settings list mixes profile identifiers, account notes and status i
 | Surface | What appears | When visible |
 | --- | --- | --- |
 | Existing Settings > Web Browser | "Browser profiles", short explanation and "New profile" | Supported platform, including when the connection is off |
-| Existing profile list | Grouped list; badge, name, open/closed dot and description per row; Open browser plus a More menu with Sign in and Delete | Profiles exist |
+| Existing profile list | Grouped list; badge, name, open/closed dot and description per row; Open browser plus a More menu with Edit and Delete | Profiles exist |
 | Creation form | Visible labels "Profile name" and "Description" (optional), naming hint, Cancel and Create profile | New profile pressed |
 | Existing row actions | Busy wording and local error feedback | Operation pending or failed |
 | CLI help and commands | Export/import syntax, result path and authentication limitation | Help or transfer command |
@@ -37,7 +37,7 @@ The existing Settings list mixes profile identifiers, account notes and status i
 | State | When | What the person sees | What to do |
 | --- | --- | --- | --- |
 | Empty | No profiles | "No browser profiles yet. Create one, then open it to sign in." | New profile |
-| Saved, closed | Profile exists without live browser | "Closed" | Open browser or Sign in |
+| Saved, closed | Profile exists without live browser | "Closed" | Open browser |
 | Connection off | Chrome through GeckIt is off | "Turn on Chrome through GeckIt below to open a browser or sign in."; opening/sign-in disabled | Enable the connection below |
 | Open | Live driver reports the profile | "Open" | Use the browser; close its window when finished |
 | Creating | Valid form submitted | "Creating..."; submission disabled | Wait for result |
@@ -98,7 +98,7 @@ stateDiagram-v2
 | Edit form | Press Cancel or Escape | Previous row | Nothing saved; focus returns to the row's More button |
 | Edit form | Save succeeds | Saved | Description-only: row shows the new text, focus returns to More. Rename: the row appears under the new name with its sign-ins, focus on its Open browser |
 | Edit form | Save fails (name taken, browser opened meanwhile) | Edit form | Input kept; backend reason shown; Save can retry |
-| Saved or open | Choose Sign in in the row's More menu | Existing live view | Existing Opening, Live, Failed, Done behavior from feature 025; focus enters Done |
+| Saved or open, another computer | Press Open browser | Existing live view | Existing Opening, Live, Failed, Done behavior from feature 025; focus enters Done |
 | Saved or open | Choose Delete in the row's More menu | Confirmation | Exact confirmation inside the row with Cancel and Delete; focus enters Cancel |
 | Confirmation | Press Cancel or Escape | Previous row | Existing profile restored; focus returns to the row's More button |
 | Confirmation | Press Delete, operation succeeds automatically | List | Profile row disappears; focus moves to New profile |
@@ -141,7 +141,7 @@ No new time threshold is introduced by this change.
 | Description label, placeholder and hint | "Description"; "GitHub as alex@example.com"; "Optional. Assistants read it to pick the right profile for a task." Alex asked on 2026-11-12 for it not to be mandatory, and noted that assistants use it to choose a profile. |
 | Edit | "Edit"; "Save"; "Saving..."; rename hint "Lowercase letters, numbers and hyphens. Conversations and settings that use the old name need the new one."; open browser "Close its browser to rename it."; refusal "Close geckit:<name> before renaming it." Alex asked on 2026-11-12 for name and description to be editable. |
 | Creation | "Create profile"; "Creating..."; "Cancel" |
-| Row actions | "Open browser"; "Opening..."; "Sign in"; "Delete" |
+| Row actions | "Open browser"; "Opening..."; "Edit"; "Delete" |
 | Status | "Open"; "Closed" |
 | Empty | "No browser profiles yet. Create one, then open it to sign in." |
 | Duplicate | "A profile named <name> already exists. Choose another name." |
@@ -239,7 +239,7 @@ stateDiagram-v2
 | Absent | Press Open or Sign in | Downloading | Download progress; requested action remains pending |
 | Downloading | Download finishes, automatically | Installing | "Installing Camoufox without bundled fonts..." |
 | Installing | Installation finishes, automatically | Open | Browser window or sign-in view |
-| Downloading or Installing | Operation fails | Failed | "Camoufox could not be installed: {error}. Try Open or Sign in again." |
+| Downloading or Installing | Operation fails | Failed | "Camoufox could not be installed: {error}. Try Open browser again." |
 | Failed | Press Open or Sign in | Downloading | A fresh attempt |
 | Open | Close the window | Ready | Open and rename are available again |
 | Closed | Save a new name | Closed | The same Firefox data and note under the new name |
@@ -332,3 +332,9 @@ Prepare during enabled service startup and when access is enabled, instead of wa
 ### 11. Requirements
 
 Covers the request to install and configure in the background without waiting for Settings. A real fresh installation and platform dependency checks must be distinguished from mocked startup orchestration tests.
+
+## One way in - 2026-11-15
+
+Open and Sign in did the same thing for the person: open the profile so they sign in. The row's More menu no longer has Sign in; on this computer Open browser opens the Camoufox window, and in a window showing another computer it opens the live view. The live view stays the target of `geckit browser signin` links.
+
+On this computer the More menu has `Show in GeckIt` above Edit: the same profile shown in GeckIt's live view rather than in its own window, for a computer where Camoufox has no window or when the person prefers it there. It is disabled while browser access is off and absent when the window shows another computer, where Open browser already does it.

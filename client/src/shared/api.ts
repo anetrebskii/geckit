@@ -889,7 +889,7 @@ export type ViewInput =
   | { readonly type: 'back' }
 
 /** One picture of the sign-in tab, a JPEG in base64, with the page it shows. */
-export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string }
+export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string } }
 
 /** Test browsers: Camoufox driven by GeckIt, each profile kept by name. */
 export interface TestBrowsersState {

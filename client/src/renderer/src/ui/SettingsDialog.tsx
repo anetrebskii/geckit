@@ -293,7 +293,7 @@ function ChromeBridge({ settings, change }: Part): React.JSX.Element {
   const remove = (): void => { void window.geckit.browser.deleteModel().then(() => { setDeleted(true); return window.geckit.browser.state() }).then(setState) }
   return (
     <div className="chrome-bridge">
-      <BrowserProfiles testing={state?.testing} refresh={refresh} enabled={on} />
+      <BrowserProfiles testing={state?.testing} loading={state === undefined && stateProblem === ''} refresh={refresh} enabled={on} />
       {stateProblem === '' ? null : <p className="browser-profile-error" role="alert">{stateProblem}</p>}
       <section className="browser-connection" aria-labelledby="browser-connection-title">
         <h4 id="browser-connection-title">Browser connection</h4>

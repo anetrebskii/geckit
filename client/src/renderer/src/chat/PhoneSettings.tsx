@@ -20,6 +20,7 @@ import { AssistantStatus } from './AssistantStatus'
 import { Cell, Page, Switch, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { PhoneShortcuts } from './PhoneShortcuts'
+import { PhoneBrowser } from './PhoneBrowser'
 import { computerName } from './PhoneHosts'
 import { PhoneProject } from './PhoneProject'
 import { homePath, projectLabel } from './project'
@@ -42,6 +43,7 @@ type Where =
   | { readonly page: 'phrases' }
   | { readonly page: 'shortcuts' }
   | { readonly page: 'vpn' }
+  | { readonly page: 'browser' }
 
 const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
   { value: 'system', label: 'System' },
@@ -86,6 +88,7 @@ export function PhoneSettings({
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
   if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
+  if (where.page === 'browser') return <PhoneBrowser chat={chat} host={macs()?.list().find((one) => one.current)?.name ?? 'the host'} back={before()} onBack={back} />
   if (where.page === 'vpn') return <PhoneVpnSettings settings={chat.settings} back={before()} onBack={back} />
   return <Root chat={chat} go={go} />
 }
@@ -152,6 +155,11 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
       <div className="phone-head">Connection</div>
       <div className="phone-group">
         <Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} says="Applies to the paired computer" onPress={() => go({ page: 'vpn' })} />
+      </div>
+
+      <div className="phone-head">Web Browser</div>
+      <div className="phone-group">
+        <Cell label="Browser profiles" value={settings.chromeBridge ? undefined : 'Off'} says="Sign in to sites for assistants" onPress={() => go({ page: 'browser' })} />
       </div>
 
       <div className="phone-head">Assistants</div>

@@ -9,7 +9,7 @@ import { makeTestAccount, profilesFolder, updateTestProfile } from '../src/cli/t
 import { exportTestProfile, importTestProfile } from '../src/cli/profile-archive'
 import { registerBrowserConversation } from '../src/cli/browser-lifecycle'
 
-interface Reply { readonly ok: boolean; readonly error?: string; readonly result?: { readonly id?: number; readonly title?: string; readonly lines?: string[]; readonly text?: string; readonly jpeg?: string; readonly png?: string; readonly gif?: string; readonly sheet?: string; readonly value?: { readonly cookie?: string; readonly stored?: string; readonly moves?: number; readonly trusted?: boolean; readonly webdriver?: boolean }; readonly url?: string; readonly width?: number; readonly height?: number; readonly dark?: boolean; readonly still?: boolean } }
+interface Reply { readonly ok: boolean; readonly error?: string; readonly result?: { readonly id?: number; readonly title?: string; readonly lines?: string[]; readonly text?: string; readonly jpeg?: string; readonly png?: string; readonly gif?: string; readonly sheet?: string; readonly value?: { readonly cookie?: string; readonly stored?: string; readonly moves?: number; readonly trusted?: boolean; readonly webdriver?: boolean }; readonly url?: string; readonly width?: number; readonly height?: number; readonly dark?: boolean; readonly still?: boolean; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string } } }
 const wait = (ms = 50): Promise<void> => new Promise((done) => setTimeout(done, ms))
 const roots: string[] = []
 let child: ChildProcess | undefined
@@ -45,7 +45,7 @@ it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('runs persistent p
     if (request.url === '/file') { response.setHeader('Content-Disposition', 'attachment; filename=report.txt'); response.end('Camoufox download kept'); return }
     response.setHeader('Content-Type', 'text/html; charset=utf-8')
     if (request.url?.startsWith('/login')) response.setHeader('Set-Cookie', 'session=local-test; Max-Age=3600; Path=/; SameSite=Lax')
-    response.end(`<!doctype html><title>Camoufox local sign-in</title><style>body{font:18px sans-serif;padding:30px}input,button{font:inherit;padding:12px;display:block;margin:15px}</style><h1>Local sign-in check</h1><form action="/login"><input aria-label="Account" name="account"><button>Sign in locally</button></form><a href="/other" target="_blank">Open another tab</a><a href="/file" download>Download report</a><div style="height:1600px">Scroll area</div><script>if(location.pathname==='/login')localStorage.setItem('account','local-test');document.documentElement.dataset.moves='0';document.documentElement.dataset.trusted='true';addEventListener('mousemove',e=>{document.documentElement.dataset.moves=String(Number(document.documentElement.dataset.moves)+1);if(!e.isTrusted)document.documentElement.dataset.trusted='false'})</script>`)
+    response.end(`<!doctype html><title>Camoufox local sign-in</title><style>body{font:18px sans-serif;padding:30px}input,button{font:inherit;padding:12px;display:block;margin:15px}</style><h1>Local sign-in check</h1><form action="/login"><input aria-label="Account" name="account"><button>Sign in locally</button></form><a href="/other" target="_blank">Open another tab</a><a href="/file" download>Download report</a><div style="height:1600px">Scroll area</div><button id="popup" style="position:fixed;left:0;top:0;width:24px;height:24px;margin:0;padding:0" onclick="if(location.pathname==='/other')window.close();else window.open('/other','popup','width=500,height=600')"></button><script>if(location.pathname==='/login')localStorage.setItem('account','local-test');document.documentElement.dataset.moves='0';document.documentElement.dataset.trusted='true';addEventListener('mousemove',e=>{document.documentElement.dataset.moves=String(Number(document.documentElement.dataset.moves)+1);if(!e.isTrusted)document.documentElement.dataset.trusted='false'})</script>`)
   })
   await new Promise<void>((done) => server?.listen(0, '127.0.0.1', done))
   const address = server.address()
@@ -94,6 +94,25 @@ it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('runs persistent p
   const stateCode = '({cookie:document.cookie,stored:localStorage.getItem("account")})'
   const saved = (await ask(first, { cmd: 'eval', tab: reopened, code: stateCode })).result?.value
   expect(saved?.cookie).toContain('session=local-test'); expect(saved?.stored).toBe('local-test')
+  await ask(first, { cmd: 'view-open', url })
+  const shown = async (path: string): Promise<void> => { for (let tries = 0; tries < 100; tries++) { if ((await ask(first, { cmd: 'view-frame' })).result?.url === `${url}${path}`) return; await wait() }; throw new Error(`The live view did not show ${path}.`) }
+  await ask(first, { cmd: 'view-input', input: { type: 'go', url: `127.0.0.1:${address.port}/start` } })
+  await shown('/start')
+  await ask(first, { cmd: 'view-input', input: { type: 'click', x: 10, y: 10 } })
+  await shown('/other')
+  expect((await ask(first, { cmd: 'view-frame' })).result).toMatchObject({ width: 1280, height: 800 })
+  await ask(first, { cmd: 'view-input', input: { type: 'click', x: 10, y: 10 } })
+  await shown('/start')
+  await ask(first, { cmd: 'view-input', input: { type: 'click', x: 140, y: 155 } })
+  const empty = (await ask(first, { cmd: 'view-frame' })).result?.caret
+  expect(empty).toMatchObject({ height: expect.any(Number), color: 'rgb(0, 0, 0)' })
+  await ask(first, { cmd: 'view-input', input: { type: 'text', text: 'abc' } })
+  const typed = (await ask(first, { cmd: 'view-frame' })).result?.caret
+  expect(typed?.x).toBeGreaterThan(empty?.x ?? Infinity); expect(typed?.y).toBe(empty?.y)
+  expect(empty?.x).toBeGreaterThan(40); expect(empty?.x).toBeLessThan(80); expect(empty?.y).toBeGreaterThan(120); expect(empty?.y).toBeLessThan(150)
+  await ask(first, { cmd: 'view-input', input: { type: 'click', x: 600, y: 600 } })
+  expect((await ask(first, { cmd: 'view-frame' })).result?.caret).toBeUndefined()
+  await ask(first, { cmd: 'view-close' })
   await stop(first)
   const archive = await exportTestProfile('renamed', join(first, 'profile.gz'), { root: first })
   const second = root()

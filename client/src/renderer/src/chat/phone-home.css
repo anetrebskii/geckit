@@ -725,3 +725,77 @@ html.keyboard .phone-tabs {
   font-size: 13px;
   color: var(--text-faint);
 }
+
+/* Settings > Web Browser: a profile's coloured letter, its geckit: name and whether its browser is open. */
+.phone-browser-badge {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  border-radius: 50%;
+}
+
+.phone-browser-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phone-browser-prefix {
+  color: var(--text-faint);
+}
+
+.phone-browser-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 6px;
+  vertical-align: 1px;
+  background: var(--text-faint);
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+.phone-browser-dot.on {
+  background: var(--success-text);
+  opacity: 1;
+}
+
+.phone-cell-pair .phone-cell-says {
+  padding-inline-start: 38px;
+}
+
+.phone-browser-skeleton {
+  min-height: 60px;
+}
+
+.phone-browser-skeleton .phone-cell-words {
+  gap: 8px;
+}
+
+.phone-browser-skeleton .browser-bone.line {
+  width: 42%;
+  height: 12px;
+}
+
+.phone-browser-skeleton .browser-bone.line.short {
+  width: 64%;
+  height: 10px;
+}
+
+.phone-browser-skeleton:nth-child(3) .browser-bone { animation-delay: 120ms; }
+.phone-browser-skeleton:nth-child(3) .browser-bone.line { width: 34%; }
+.phone-browser-skeleton:nth-child(4) .browser-bone { animation-delay: 240ms; }
+.phone-browser-skeleton:nth-child(4) .browser-bone.line.short { width: 50%; }
+
+.phone-browser-problem {
+  color: var(--danger);
+}
+
+.phone-note.phone-browser-hint {
+  margin-inline: 16px;
+}
