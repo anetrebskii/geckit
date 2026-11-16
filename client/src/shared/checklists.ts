@@ -46,9 +46,17 @@ export const newItem = (title = ''): ChecklistItem => ({ id: crypto.randomUUID()
 
 const filled = (items: readonly ChecklistItem[]): readonly ChecklistItem[] => items.filter((one) => one.title.trim() !== '')
 
+const PERSON_PROOF = 'check: ready for the person to approve; do not ask them, GeckIt does'
+
+/** A goal set for a person's item, in today's words or the earlier ones that told the assistant to ask: no goal check can see it met. */
+export const isPersonGoal = (condition: string): boolean => condition.trim().endsWith(PERSON_PROOF) || condition.trim().endsWith('check: stop and ask the person to approve before going on')
+
+/** What the assistant is sent for a person's item: work it to ready, stop, and leave the approval to GeckIt. */
+export const personTurn = (item: ChecklistItem): string => `Next on the checklist: ${[sentence(item.title), sentence(item.description ?? '')].filter((one) => one !== '').join(' - ')}. Work on it until it is ready for the person to review, then stop and say what is ready. Do not ask them to approve it: GeckIt asks them, and any change they want comes as their next message.`
+
 const proof = (item: ChecklistItem): string => {
   if (item.check === 'command' && item.command?.trim()) return `check: \`${item.command.trim()}\` exits with 0`
-  if (item.check === 'person') return 'check: ready for the person to approve; do not ask them, GeckIt does'
+  if (item.check === 'person') return PERSON_PROOF
   if (item.check === 'review') return 'check: show the evidence in the conversation'
   return ''
 }

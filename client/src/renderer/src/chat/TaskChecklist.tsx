@@ -30,10 +30,12 @@ const plain = (list: readonly ChecklistItem[]): string => JSON.stringify(list.fi
 const SAVE_AFTER = 600
 
 /** The task's checklist, ticked as goals are met and edited by the person. Every change saves itself; ticks that land meanwhile are kept, and an edit made elsewhere shows when nothing here is waiting to save. */
-export function TaskChecklistEditor({ checklist, goal, onSave, onClear, onClose, panel = false }: {
+export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onClear, onClose, panel = false }: {
   readonly checklist: TaskChecklist
   /** The conversation's goal now, so the item it was set from stands out. */
   readonly goal?: string | undefined
+  /** The person's item being worked, the goal though none is set. */
+  readonly personItem?: string | undefined
   /** `typing` while an item is still being typed: saved, but not made the goal yet. */
   readonly onSave: (checklist: TaskChecklist, typing: boolean) => void
   readonly onClear: () => void
@@ -122,7 +124,7 @@ export function TaskChecklistEditor({ checklist, goal, onSave, onClear, onClose,
         <ChecklistItems
           items={merged}
           current={now?.id}
-          active={now !== undefined && goal !== undefined && itemCondition(now) === goal.trim()}
+          active={now !== undefined && (now.check === 'person' ? now.state === undefined && personItem === now.id : goal !== undefined && itemCondition(now) === goal.trim())}
           focus={focus}
           onChange={edit}
           onTick={(id, passed) => {

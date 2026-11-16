@@ -446,6 +446,8 @@ export interface ChatSession {
   readonly goalMet?: string
   /** The task's own checklist, each item set as the goal in turn. */
   readonly checklist?: TaskChecklist
+  /** The person's item the assistant is working on, which is its goal though no goal is set. */
+  readonly personItem?: string
   /** When it was last moved into the column it stands in, which is the day Done shows it under. */
   readonly since?: number
   /** A command typed after ! that is still running in it, the first where there are more. */

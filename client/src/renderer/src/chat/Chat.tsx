@@ -934,6 +934,7 @@ export function Chat(): React.JSX.Element {
               panel
               checklist={shownChecklist(chat.session.checklist, chat.session.goal?.condition, chat.session.goalMet)}
               goal={chat.session.goal?.condition}
+              personItem={chat.session.personItem}
               onSave={(next, typing) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, typing) }}
               onClear={() => { if (chat.session === undefined) return; chat.setChecklist(chat.session.id, { items: [] }); if (chat.session.goal !== undefined) chat.say('/goal clear') }}
               onClose={() => showChecklist(false)}

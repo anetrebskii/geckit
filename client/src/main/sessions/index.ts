@@ -10,8 +10,8 @@ import { homedir } from 'node:os'
 import { basename } from 'node:path'
 
 import { letGo, taken } from '../lineup'
-import type { TaskChecklist } from '../../shared/checklists'
-import { awaitingApproval, checklistContext, checklistMet, currentItem, nextCondition, taskChecklist } from '../../shared/checklists'
+import type { ChecklistItem, TaskChecklist } from '../../shared/checklists'
+import { awaitingApproval, checklistContext, checklistMet, currentItem, isPersonGoal, nextCondition, personTurn, taskChecklist } from '../../shared/checklists'
 import { importedNote } from '../session-migration'
 import type { Standing } from '../lineup'
 
@@ -157,6 +157,8 @@ readonly vpnGoalPaused?: true | undefined
   /** The goal that held; cleared when another goal is set. */
   readonly goalMet?: string | undefined
   readonly checklist?: TaskChecklist | undefined
+  /** The person's item the assistant was sent to work on; when its turn ends, the item waits for Approve. */
+  readonly personItem?: string | undefined
   /** A turn is running, where and since when; still here on a start, it was cut off by GeckIt closing. */
   readonly cut?: { readonly root: string; readonly at: number }
   /** Messages waiting for the turn before them, kept so a restart does not lose them. */
@@ -560,6 +562,7 @@ export class Sessions {
   readonly #dispatching = new Set<string>()
   readonly #closingSessions = new Set<string>()
   readonly #settling = new Map<string, () => void>()
+  readonly #personSends = new WeakSet<SessionMessage>()
   readonly #preparedSending = new Set<string>()
   readonly #live = new Map<string, Live>()
   readonly #retiredProviders = new Set<LlmProvider>()
@@ -870,9 +873,39 @@ export class Sessions {
     if (checklist === undefined || note?.prepared !== undefined || this.#settling.has(id)) return
     const live = this.#live.get(id)
     if (live !== undefined && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) return
+    const now = currentItem(checklist)
+    if (now?.check === 'person') {
+      if (now.state === undefined && note?.personItem !== now.id) void this.#sendPerson(id, now).catch(() => undefined)
+      return
+    }
     const next = nextCondition(checklist)
     if (next === undefined || (live?.goal ?? note?.goal)?.condition === next && note?.goalMet !== next) return
     void this.#sendGoal(id, next).catch(() => undefined)
+  }
+
+  /** A person's item is worked as an ordinary turn, not a goal: whether it holds is theirs to say, which no goal check can wait for. */
+  async #sendPerson(id: string, item: ChecklistItem): Promise<void> {
+    const live = this.#live.get(id)
+    const note = this.#deps.notes.all()[id]
+    const root = live?.root ?? this.#rows.get(id)?.root ?? note?.unborn
+    if (root === undefined) return
+    const base = { session: id, root, mode: live?.mode ?? note?.mode ?? 'auto', ...(live?.chosen === undefined ? {} : { model: live.chosen }) } as const
+    if ((live?.goal ?? note?.goal) !== undefined) await this.send({ ...base, text: '/goal clear' })
+    this.#note(id, { personItem: item.id })
+    const message: SessionMessage = { ...base, text: personTurn(item) }
+    this.#personSends.add(message)
+    await this.send(message)
+  }
+
+  /** A turn that ended by itself after the assistant was sent to the person's item: the item now waits for Approve. */
+  #personTurnEnded(id: string): void {
+    const note = this.#deps.notes.all()[id]
+    const checklist = note?.checklist
+    const now = checklist === undefined ? undefined : currentItem(checklist)
+    if (checklist === undefined || now === undefined || now.check !== 'person' || now.state !== undefined || note?.personItem !== now.id) return
+    this.#note(id, { personItem: undefined, checklist: { ...checklist, items: checklist.items.map((one) => (one.id === now.id ? { ...one, state: 'approval' as const } : one)) } })
+    this.#askApproval(id, now.title)
+    this.#changed()
   }
 
   async #sendGoal(id: string, condition: string): Promise<void> {
@@ -897,16 +930,20 @@ export class Sessions {
     this.#settling.set(id, (this.#deps.later ?? after)(() => { this.#settling.delete(id); this.#advance(id) }, typing ? CHECKLIST_TYPING : CHECKLIST_SETTLE))
   }
 
-  /** A message to a task waiting for approval says the item is not approved: it goes back to being worked, and the condition to set as its goal again is returned. */
-  #sendBack(id: string): string | undefined {
+  /** A message to a task whose person's item waits for approval, or is still being worked, says it is not approved yet: the message is the next round of work on it, and when that turn ends the item waits for Approve again. */
+  #onPersonItem(id: string): boolean {
     const checklist = this.#deps.notes.all()[id]?.checklist
-    const waiting = awaitingApproval(checklist)
-    if (checklist === undefined || waiting === undefined) return undefined
-    const back: TaskChecklist = { ...checklist, items: checklist.items.map((one) => (one.id === waiting.id ? (({ state: _state, ...rest }) => rest)(one) : one)) }
-    this.#note(id, { checklist: back, goalMet: undefined })
-    this.#deps.notify({ session: id, title: '', subtitle: '', body: '', asks: false })
+    return checklist !== undefined && currentItem(checklist)?.check === 'person'
+  }
+
+  #sendBack(id: string): void {
+    const checklist = this.#deps.notes.all()[id]?.checklist
+    const now = checklist === undefined ? undefined : currentItem(checklist)
+    if (checklist === undefined || now === undefined || now.check !== 'person') return
+    const back: TaskChecklist = { ...checklist, items: checklist.items.map((one) => (one.id === now.id ? (({ state: _state, ...rest }) => rest)(one) : one)) }
+    this.#note(id, { checklist: back, goalMet: undefined, personItem: now.id })
+    if (now.state === 'approval') this.#deps.notify({ session: id, title: '', subtitle: '', body: '', asks: false })
     this.#changed()
-    return nextCondition(back)
   }
 
   /** The person approves the item their checklist waits on; false when it no longer waits on that item. */
@@ -921,8 +958,15 @@ export class Sessions {
   async #startChecklist(message: SessionMessage, go: boolean, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
     const { checklist: given, ...rest } = message
     const checklist = taskChecklist(given ?? { items: [] })
-    const goal = nextCondition(checklist)
+    const first = currentItem(checklist)
     const context = checklistContext(checklist)
+    if (first?.check === 'person') {
+      const sent = await this.send({ ...rest, text: [rest.text, context, personTurn(first)].filter((one) => one !== '').join('\n\n') }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
+      this.#note(sent, { checklist, personItem: first.id })
+      this.#changed()
+      return sent
+    }
+    const goal = nextCondition(checklist)
     if (goal === undefined) {
       const waiting = await this.send({ ...rest, text: context === '' ? rest.text : `${rest.text}\n\n${context}` }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
       if (checklist.items.length > 0) this.#note(waiting, { checklist })
@@ -1288,6 +1332,7 @@ export class Sessions {
         ...(goal === undefined ? {} : { goal }),
         ...(note?.goalMet === undefined ? {} : { goalMet: note.goalMet }),
         ...(note?.checklist === undefined ? {} : { checklist: note.checklist }),
+        ...(note?.personItem === undefined ? {} : { personItem: note.personItem }),
         ...(moved === undefined ? {} : { since: moved.at }),
         ...(note?.moves === undefined ? {} : { moves: note.moves }),
         ...(runs === undefined ? {} : { runs: runs.command }),
@@ -2269,11 +2314,11 @@ export class Sessions {
       } finally { this.#preparedSending.delete(id) }
     }
     if (message.session !== undefined && this.#holders.has(message.session)) throw new Error('Answer the request first: nothing is said in its card.')
-    const correcting = message.session !== undefined && guardSource === undefined && queued === undefined && message.again === undefined && !this.isManager(message.session) && !/^[!/]/.test(message.text.trim()) ? this.#sendBack(message.session) : undefined
-    if (correcting !== undefined) {
-      const sent = await this.send(message, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
-      await this.#sendGoal(sent, correcting)
-      return sent
+    if (message.session !== undefined && guardSource === undefined && queued === undefined && message.again === undefined && !this.#personSends.has(message) && !this.isManager(message.session) && !/^[!/]/.test(message.text.trim()) && this.#onPersonItem(message.session)) {
+      const id = message.session
+      const stale = this.#live.get(id)?.goal ?? this.#deps.notes.all()[id]?.goal
+      if (stale !== undefined && isPersonGoal(stale.condition)) await this.send({ session: id, root: message.root, mode: message.mode, text: '/goal clear' })
+      this.#sendBack(id)
     }
     if (message.session !== undefined && this.isManager(message.session) && !this.#managerMessages.has(message)) {
       if (this.#managerSend === undefined) this.#ordinary(message.session)
@@ -4174,6 +4219,14 @@ export class Sessions {
 
     if (live.goalStatus !== undefined && live.queued.length === 0) this.#goalEnded(live.id, live.goalStatus.ended, live.goalStatus.condition)
     live.goalStatus = undefined
+    const stale = live.goal
+    const person = this.#deps.notes.all()[live.id]?.checklist
+    const waitingOn = person === undefined ? undefined : currentItem(person)
+    if (stale !== undefined && isPersonGoal(stale.condition) && waitingOn?.check === 'person' && waitingOn.state === undefined) {
+      live.clearing = true
+      this.#note(live.id, { personItem: waitingOn.id })
+      this.#personTurnEnded(live.id)
+    } else if (signal.how === 'done' && live.queued.length === 0) this.#personTurnEnded(live.id)
     live.at = now
     if (items.length > 0 || gone.length > 0) {
       this.#tellItems({ id: live.id, items, ...(gone.length > 0 ? { gone } : {}) })
