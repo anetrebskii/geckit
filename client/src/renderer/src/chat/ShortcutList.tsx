@@ -78,6 +78,7 @@ export function ShortcutList({
   only = false,
   onTeam,
   onClose,
+  place = false,
 }: {
   readonly chat: ShortcutChat
   /** The list, `new`, a shortcut's id to edit, or a new one already filled in. */
@@ -86,6 +87,8 @@ export function ShortcutList({
   readonly only?: boolean
   readonly onTeam?: () => void
   readonly onClose: () => void
+  /** Shown as a place of the Chat window, not over it: no scrim, no Done, and Escape leaves it where it is. */
+  readonly place?: boolean
 }): React.JSX.Element {
   // Another profile's shortcuts are kept and run, and listed only where that profile is in use.
   const shortcuts = chat.settings.shortcuts.filter((one) => shownProjects(chat.settings).includes(one.root))
@@ -125,11 +128,11 @@ export function ShortcutList({
 
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape' && !place) onClose()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [onClose])
+  }, [onClose, place])
 
   const run = (one: Shortcut): void => {
     setRunningId(one.id)
@@ -142,8 +145,8 @@ export function ShortcutList({
   }
 
   return (
-    <div className="dialog-scrim" onMouseDown={onClose}>
-      <div className="dialog shortcut-list" onMouseDown={(event) => event.stopPropagation()}>
+    <div className={place ? 'place-dialog' : 'dialog-scrim'} onMouseDown={place ? undefined : onClose}>
+      <div className={`dialog shortcut-list${place ? ' in-place' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
         {editing === undefined ? (
           <>
             <header className="shortcut-list-head">
@@ -221,9 +224,9 @@ export function ShortcutList({
             <div className="dialog-actions">
               {onTeam === undefined ? null : <button type="button" className="quiet" onClick={onTeam}>Manage in Team</button>}
               <span className="spacer" />
-              <button type="button" className="quiet" onClick={onClose}>
+              {place ? null : <button type="button" className="quiet" onClick={onClose}>
                 Done
-              </button>
+              </button>}
             </div>
           </>
         ) : (

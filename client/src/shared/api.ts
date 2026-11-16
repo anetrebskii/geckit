@@ -1210,6 +1210,10 @@ export interface Settings {
   readonly chatGrouping: ChatGrouping
   /** The conversations as a list, or as a board of cards by what stands where. */
   readonly chatView: ChatView
+  /** The place the Chat window shows: tasks, manager, questions, a Workspace place, settings, or `host:<id>`. */
+  readonly chatPlace: string
+  /** The Chat window's sidebar shows its names, or only its icons by the person's choice. */
+  readonly navNames: boolean
   /** A conversation opened from the board comes up over it, or below it with the board shrunk to a strip above. */
   readonly conversationPlace: ConversationPlace
   /** How tall the strip of board above a conversation was dragged, in pixels. */
@@ -1404,6 +1408,8 @@ export const DEFAULT_SETTINGS: Settings = {
   chatMode: 'auto',
   chatGrouping: 'time',
   chatView: 'board',
+  chatPlace: 'tasks',
+  navNames: true,
   conversationPlace: 'over',
   boardHeight: 240,
   boardColumns: [],

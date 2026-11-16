@@ -483,7 +483,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onShown: (said) => listen('channels:shown', said),
       screen: () => Promise.reject(new Error('Manage channels on the computer.')),
       install: () => Promise.reject(new Error('Manage channels on the computer.')),
-      configure: () => Promise.reject(new Error('Manage channels on the computer.')),
+      configure: (id, change) => call('channels.configure', id, change),
       remove: () => Promise.reject(new Error('Manage channels on the computer.')),
       inspect: () => Promise.reject(new Error('Manage channels on the computer.')),
       checkUpdates: () => Promise.reject(new Error('Manage channels on the computer.')),
@@ -753,10 +753,10 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     },
     // Hosts are reached through the Mac; adding, editing and removing one, and a terminal, are for the Mac itself.
     secrets: {
-      list: () => Promise.reject(new Error('Manage secrets on the computer.')),
-      history: () => Promise.reject(new Error('Manage secrets on the computer.')),
-      revoke: () => Promise.reject(new Error('Manage secrets on the computer.')),
-      status: () => Promise.resolve({ problem: 'secrets are managed on the computer' }),
+      list: () => call('secrets.list'),
+      history: (name) => call('secrets.history', name),
+      revoke: (name) => call('secrets.revoke', name),
+      status: () => call('secrets.status'),
       prepare: () => Promise.reject(new Error('Manage secrets on the computer.')),
       save: () => Promise.reject(new Error('Manage secrets on the computer.')),
       update: () => Promise.reject(new Error('Manage secrets on the computer.')),

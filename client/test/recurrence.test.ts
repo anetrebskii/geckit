@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CalendarRecurrence } from '../src/shared/api'
-import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceEnded, recurrenceError, sameRecurrence } from '../src/shared/recurrence'
+import { defaultRecurrence, describeRecurrence, localCalendarZone, nextRecurrence, recurrenceEnded, recurrenceError, sameRecurrence } from '../src/shared/recurrence'
 
 const at = (text: string): number => new Date(text).getTime()
 const weekly: CalendarRecurrence = { start: '2026-10-13', time: '09:00', interval: 2, unit: 'week', weekdays: [2, 4], monthly: 'day', end: { kind: 'never' } }
@@ -67,12 +67,14 @@ describe('calendar recurrence', () => {
 
   it('retains finite endpoints for more than 64 immutable rules and reuses them on repeated list queries', () => {
     const rules: CalendarRecurrence[] = Array.from({ length: 65 }, (_item, index) => ({ ...weekly, start: new Date(Date.UTC(2026, 9, 13 + index)).toISOString().slice(0, 10), interval: 1, unit: 'day', end: { kind: 'after', count: 100 } }))
+    // The computer's own zone takes a shortcut that never formats, so the count needs another zone.
+    const away = localCalendarZone() === 'America/New_York' ? 'Europe/Berlin' : 'America/New_York'
     const parts = vi.spyOn(Intl.DateTimeFormat.prototype, 'formatToParts')
     try {
-      for (const rule of rules) nextRecurrence(rule, at('2026-10-13T00:00Z'), 'America/New_York')
+      for (const rule of rules) nextRecurrence(rule, at('2026-10-13T00:00Z'), away)
       const cold = parts.mock.calls.length
       parts.mockClear()
-      for (const rule of rules) nextRecurrence(rule, at('2026-10-13T00:00Z'), 'America/New_York')
+      for (const rule of rules) nextRecurrence(rule, at('2026-10-13T00:00Z'), away)
       expect(parts.mock.calls.length).toBeLessThan(cold / 10)
     } finally { parts.mockRestore() }
   })

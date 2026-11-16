@@ -23,12 +23,14 @@ type Selected = Employee['id'] | 'none' | 'manager'
 const draftOf = (employee: Employee): EmployeeDraft => ({ id: employee.id, revision: employee.revision, name: employee.name, role: employee.role, description: employee.description, avatar: employee.avatar })
 const sameFields = (one: EmployeeDraft, other: EmployeeDraft): boolean => one.name === other.name && one.role === other.role && one.description === other.description && one.avatar === other.avatar
 
-export function Team({ chat, first, onClose, onOpen, onShortcut }: {
+export function Team({ chat, first, onClose, onOpen, onShortcut, place = false }: {
   readonly chat: TeamChat
   readonly first?: Selected | undefined
   readonly onClose: () => void
   readonly onOpen: (id: ChatSession['id']) => void
   readonly onShortcut: (edit: Shortcut['id'] | ShortcutDraft) => void
+  /** Shown as a place of the Chat window: no way back, and Escape leaves it where it is. */
+  readonly place?: boolean
 }): React.JSX.Element {
   const { view, take, loading, loadError, reload } = useEmployees()
   const manager = useManager()
@@ -68,6 +70,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
     if (dirty) setDiscarding(() => action)
     else action()
   }
+  const placed = useRef(place)
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
@@ -76,7 +79,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
       event.preventDefault()
       if (guard.current.dirty) setDiscarding(() => close.current)
       else if (guard.current.editing) { setDraft(undefined); setOriginal(undefined); setAvatars(false) }
-      else close.current()
+      else if (!placed.current) close.current()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -216,7 +219,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
 
   return <section className="team-page" aria-label="Team" aria-busy={saving}>
     <header className="team-bar">
-      <button type="button" className="icon-button" aria-label="Back to tasks" title="Back to tasks (Esc)" onClick={() => request(onClose)}><Icon name="left" size={13} /></button>
+      {place ? null : <button type="button" className="icon-button" aria-label="Back to tasks" title="Back to tasks (Esc)" onClick={() => request(onClose)}><Icon name="left" size={13} /></button>}
       <h2>Team</h2>
       <span className="spacer" />
       {empty ? null : <button type="button" className="quiet employee-new" disabled={saving} onClick={() => request(make)}><Icon name="plus" size={11} />New employee</button>}

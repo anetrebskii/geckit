@@ -17,6 +17,10 @@ import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
 import { Board, keptTask, NewTask, TopBar } from './Board'
 import { movedOrder, ordered } from '../../../shared/order'
 import { CutOffDialog } from './CutOff'
+import { AppNav, PlacePage, useWidth } from './PlacePages'
+import { NAMES_FOLD, keptPlace, namesShown, togglesNames } from './places'
+import type { Place } from './places'
+import { MANAGER_CHAT_EVENT } from './manager-chat-open'
 import { PhoneHome } from './PhoneHome'
 import { EdgeBack } from './PhoneKit'
 import { EdgeInfo, PhoneNav } from './PhoneNav'
@@ -94,7 +98,55 @@ export function Chat(): React.JSX.Element {
   // The shortcuts dialog and what it opened on; `at` makes a second ask from the tray open it afresh.
   const [managing, setManaging] = useState<{ readonly edit: string | ShortcutDraft; readonly at: number; readonly only?: true } | undefined>()
   const [team, setTeam] = useState<{ readonly first?: string } | undefined>()
-  const openTeam = useCallback((first?: string) => { setSetting(undefined); setTeam({ ...(first === undefined ? {} : { first }) }) }, [])
+  // The place the window shows, kept in the settings so the window opens on it again; the phone has its own menu.
+  const width = useWidth()
+  const place: Place = ON_PHONE ? 'tasks' : keptPlace(chat.settings.chatPlace)
+  const [navOver, setNavOver] = useState(false)
+  const [teamFirst, setTeamFirst] = useState<string | undefined>()
+  const { change } = chat
+  const go = useCallback((next: Place) => {
+    setNavOver(false)
+    change({ chatPlace: next })
+  }, [change])
+  const rail = !namesShown(width, chat.settings.navNames)
+  const navNames = chat.settings.navNames
+  const toggleNames = useCallback((): void => {
+    if (width < NAMES_FOLD) setNavOver((shown) => !shown)
+    else change({ navNames: !navNames })
+  }, [width, change, navNames])
+  // Cmd+P from another place searches the board once it is no longer covered.
+  const searchAfter = useRef(false)
+  useEffect(() => {
+    const parts = frame.current?.querySelectorAll<HTMLElement>(':scope > .board-head, :scope > .board, :scope > .sidebar, :scope > .talk') ?? []
+    for (const part of parts) part.inert = place !== 'tasks'
+    if (place === 'tasks' && searchAfter.current) {
+      searchAfter.current = false
+      document.querySelector<HTMLInputElement>('.board-search-field')?.focus()
+    }
+  }, [place])
+  const openTeam = useCallback((first?: string) => {
+    setSetting(undefined)
+    if (ON_PHONE) {
+      setTeam({ ...(first === undefined ? {} : { first }) })
+      return
+    }
+    setTeamFirst(first)
+    go('team')
+  }, [go])
+  useEffect(() => {
+    if (ON_PHONE) return
+    const open = (): void => go('manager')
+    window.addEventListener(MANAGER_CHAT_EVENT, open)
+    return () => window.removeEventListener(MANAGER_CHAT_EVENT, open)
+  }, [go])
+  const openShortcuts = useCallback((edit: string | ShortcutDraft) => {
+    if (!ON_PHONE && edit === 'list') go('shortcuts')
+    else setManaging({ edit, at: Date.now() })
+  }, [go])
+  const openSettings = useCallback((section: Section) => {
+    if (ON_PHONE) setSetting(section)
+    else go(section === 'checklists' ? 'checklists' : section === 'secrets' ? 'secrets' : section === 'integrations' ? 'browsers' : 'settings')
+  }, [go])
   useEffect(() => {
     const open = (event: Event): void => openTeam((event as CustomEvent<string | undefined>).detail)
     window.addEventListener(TEAM_EVENT, open)
@@ -183,7 +235,6 @@ export function Chat(): React.JSX.Element {
   const closeSettings = useCallback(() => {
     setSetting(undefined)
   }, [])
-  const managerSettings = useCallback(() => openTeam('manager'), [openTeam])
   const closeKeys = useCallback(() => setKeys(false), [])
   const closeShortcuts = useCallback(() => setManaging(undefined), [])
   const shortcutFrom = useCallback(
@@ -307,7 +358,7 @@ export function Chat(): React.JSX.Element {
       }),
     [making, asking],
   )
-  useEffect(() => window.geckit.shortcuts.onManage((edit) => setManaging({ edit, at: Date.now() })), [])
+  useEffect(() => window.geckit.shortcuts.onManage(openShortcuts), [openShortcuts])
   // After every listener here and in useChat, which effects are set up in the order they are written.
   useEffect(() => window.geckit.chat.listening(), [])
 
@@ -383,10 +434,15 @@ export function Chat(): React.JSX.Element {
           return
         }
       }
+      if (!ON_PHONE && togglesNames(event, window.geckit.platform === 'darwin')) {
+        event.preventDefault()
+        toggleNames()
+        return
+      }
       const meta = event.metaKey || event.ctrlKey
       if (meta && event.key === ',') {
         event.preventDefault()
-        setSetting('general')
+        openSettings('general')
         return
       }
       if (meta && event.key === '/') {
@@ -401,7 +457,7 @@ export function Chat(): React.JSX.Element {
       }
       if (meta && event.key === 'j') {
         event.preventDefault()
-        setManaging({ edit: 'list', at: Date.now() })
+        openShortcuts('list')
         return
       }
       if (meta && event.altKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
@@ -420,19 +476,26 @@ export function Chat(): React.JSX.Element {
         // The board has the search as a field of its own; the key goes to it rather than opening a second one over it.
         const inBoard = document.querySelector<HTMLInputElement>('.board-search-field')
         if (inBoard === null) setSwitching(true)
-        else inBoard.focus()
+        else if (place === 'tasks') inBoard.focus()
+        else {
+          searchAfter.current = true
+          go('tasks')
+        }
       }
       if (meta && event.shiftKey && event.key.toLowerCase() === 'n') {
         event.preventDefault()
+        if (!ON_PHONE) go('questions')
         setAsking(true)
         return
       }
       if (meta && event.key === 'n') {
         event.preventDefault()
+        if (place !== 'tasks') go('tasks')
         setMaking(true)
       }
       if (meta && event.key === 'k') {
         event.preventDefault()
+        if (place !== 'tasks') go('tasks')
         // The button is the control; pressing it is what opens the menu in its place.
         const folder = document.querySelector<HTMLButtonElement>('.project')
         if (folder === null) window.dispatchEvent(new Event('geckit:folders'))
@@ -481,7 +544,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, servers, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut, team])
+  }, [chat, servers, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut, team, place, go, toggleNames, openSettings, openShortcuts])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -511,7 +574,7 @@ export function Chat(): React.JSX.Element {
 
   const remoteView = servers === undefined ? null : <Servers key={signIn?.token ?? servers} initialServer={servers} {...(signIn === undefined ? {} : { signIn })} onWorkspace={setRemote} onClose={() => { setServers(undefined); setSignIn(undefined); setRemote(false) }} />
 
-  return (
+  const content = (
     <>
     {servers !== undefined && remote ? null : (
     <div
@@ -542,13 +605,7 @@ export function Chat(): React.JSX.Element {
         <TopBar
           chat={chat}
           onNew={() => setMaking(true)}
-          onAsk={() => setAsking(true)}
           onSeek={setSeek}
-          onSettings={() => setSetting('general')}
-          onShortcuts={() => setManaging({ edit: 'list', at: Date.now() })}
-          onServers={(id) => setServers(id ?? ':add')}
-          onTeam={() => team === undefined ? openTeam() : setTeam(undefined)}
-          teamOn={team !== undefined}
         />
       )}
       {board && ON_PHONE ? (
@@ -575,7 +632,7 @@ export function Chat(): React.JSX.Element {
       {making ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
-          <NewTask onEmployees={() => openTeam()} onChecklists={() => setSetting('checklists')} chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
+          <NewTask onEmployees={() => openTeam()} onChecklists={() => openSettings('checklists')} chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {team === undefined || ON_PHONE ? null : <Team chat={chat} first={team.first} onClose={() => setTeam(undefined)} onOpen={(id) => { setTeam(undefined); chat.open({ kind: 'session', id }) }} onShortcut={(edit) => setManaging({ edit, at: Date.now(), only: true })} />}
@@ -946,7 +1003,7 @@ export function Chat(): React.JSX.Element {
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
-      <Status chat={chat} onManagerSettings={managerSettings} />
+      <Status chat={chat} />
 
       <Notices chat={chat} />
       {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}
@@ -1067,5 +1124,23 @@ export function Chat(): React.JSX.Element {
     )}
     {remoteView}
     </>
+  )
+
+  // A GeckIt computer's workspace is that computer's own Chat window in a frame, with its own sidebar.
+  if (ON_PHONE || (servers !== undefined && remote)) return content
+
+  return (
+    <div className={`app${place === 'tasks' ? '' : ' placed'}${asking ? ' asking' : ''}`}>
+      <AppNav chat={chat} place={place} rail={rail} over={navOver} onPlace={go} onToggle={toggleNames} reading={servers ?? ''} onComputer={(id) => { go('tasks'); setServers(id ?? ':add') }} />
+      {navOver ? <div className="nav-catch" onMouseDown={() => { setNavOver(false) }} /> : null}
+      <div className="app-main">
+        {content}
+        {place === 'tasks' ? null : (
+          <section className="place-page">
+            <PlacePage chat={chat} place={place} teamFirst={teamFirst} onPlace={go} onAsk={() => { setAsking(true) }} onKeys={() => { setKeys(true) }} onTeam={openTeam} onShortcut={(edit) => { setManaging({ edit, at: Date.now(), only: true }) }} />
+          </section>
+        )}
+      </div>
+    </div>
   )
 }

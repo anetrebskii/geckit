@@ -17,50 +17,157 @@
   display: none;
 }
 
-/* The tab bar stands under the lists, so they end above it rather than under the home indicator. */
+/* With no tab bar under them, the lists end above the home indicator. */
 .phone-home .phone-list {
-  padding-bottom: 24px;
+  padding-bottom: calc(var(--bottom) + 24px);
 }
 
-.phone-tabs {
-  display: grid;
-  flex: none;
-  grid-template-columns: repeat(4, 1fr);
-  padding-bottom: var(--bottom);
-  background: var(--ground);
-  box-shadow: inset 0 0.5px 0 var(--separator);
-}
-
-html.keyboard .phone-tabs {
-  display: none;
-}
-
-.phone-tabs button {
+.phone-home {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  justify-content: center;
-  height: 50px;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-faint);
 }
 
-.phone-tabs button.on {
-  color: var(--accent);
+/* The left menu: the Mac sidebar's places in a panel over the screen from the left edge. */
+.phone-menu {
+  position: relative;
+  margin-inline: -10px 2px;
 }
 
-.phone-tab-badge {
+.phone-menu-dot {
   position: absolute;
-  top: 6px;
-  left: calc(50% + 9px);
+  top: 9px;
+  right: 7px;
   width: 9px;
   height: 9px;
   background: var(--asks, #d97706);
   border: 1.5px solid var(--ground);
   border-radius: 50%;
+}
+
+.phone-menu-dot.unread {
+  background: var(--accent);
+}
+
+.place-menu-scrim {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  background: rgb(0 0 0 / 28%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+}
+
+.place-menu-scrim.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.place-menu {
+  position: absolute;
+  z-index: 21;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(300px, 82vw);
+  padding: calc(var(--top) + 12px) 12px calc(var(--bottom) + 8px);
+  background: var(--bg-raised);
+  box-shadow: 0 0 40px rgb(0 0 0 / 20%);
+  transform: translateX(-104%);
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.place-menu.open {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .place-menu,
+  .place-menu-scrim {
+    transition: none;
+  }
+}
+
+.place-menu-items {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.place-menu-group {
+  margin: 18px 12px 6px;
+  font-size: 13px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.place-menu-item {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  font-size: 17px;
+  color: var(--text);
+  text-align: start;
+  border-radius: 10px;
+}
+
+.place-menu-item svg {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.place-menu-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.place-menu-item.on {
+  font-weight: 600;
+  background: var(--fill);
+}
+
+.place-menu-item.on svg {
+  color: var(--accent);
+}
+
+.place-menu-count {
+  flex: none;
+  min-width: 22px;
+  padding: 1px 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+  background: var(--asks, #d97706);
+  border-radius: 11px;
+}
+
+.place-menu-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.place-menu-foot {
+  padding-top: 8px;
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+/* A Mac settings section drawn on a phone page. */
+.phone-section {
+  padding: 0 16px calc(var(--bottom) + 24px);
+  font-size: 15px;
 }
 
 /* Rows of a grouped list: a label, what it says under it, and its value or control at the end. */
@@ -625,10 +732,6 @@ html.keyboard .phone-tabs {
 
 .phone-remove {
   color: var(--danger);
-}
-
-.phone-tab-badge.unread {
-  background: var(--accent);
 }
 
 /* The New task sheet: the ways to start one, then the shortcuts. See docs/ux/phone-tabs.md. */

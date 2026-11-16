@@ -20,7 +20,7 @@ const liveApi: LiveViewApi = {
 const said = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
 /** Settings > Web Browser on the phone: the host's Camoufox profiles, made, renamed and deleted from here, and each opened live to sign in by hand. See docs/ux/browser-profile-management.md. */
-export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat; readonly host: string; readonly back: string; readonly onBack: () => void }): React.JSX.Element {
+export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat; readonly host: string; readonly back?: string; readonly onBack?: () => void }): React.JSX.Element {
   const [state, setState] = useState<BrowserBridgeState>()
   const [problem, setProblem] = useState('')
   const [editing, setEditing] = useState<Editing>()
@@ -47,7 +47,7 @@ export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat
   const open = (name: Profile['name']): void => { if (!enabled) return; tap('light'); setLive(name) }
 
   return (
-    <Page title="Web Browser" back={back} onBack={onBack} actions={<button type="button" className="phone-icon" aria-label="New profile" disabled={testing?.supported === false} onClick={() => setEditing({})}><Icon name="plus" size={24} /></button>}>
+    <Page title="Browsers" {...(back === undefined ? {} : { back })} {...(onBack === undefined ? {} : { onBack })} actions={<button type="button" className="phone-icon" aria-label="New profile" disabled={testing?.supported === false} onClick={() => setEditing({})}><Icon name="plus" size={24} /></button>}>
       <div className="phone-head">Browser profiles</div>
       {state === undefined && problem === '' ? (
         <div className="phone-group" aria-busy="true">

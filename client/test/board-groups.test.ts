@@ -23,7 +23,7 @@ function drawn(phone: boolean, rows: readonly ChatSession[]): string {
     const defaults = useChat()
     const chat = { ...defaults, settings: { ...DEFAULT_SETTINGS, projects: [session.root] }, sessions: rows, everyone: rows, listed: true, lineup: { working: rows.filter((row) => row.state === 'working').length, limit: 6 } }
     return phone
-      ? createElement(PhoneBoard, { chat, onNew: () => undefined, onScreen: () => undefined, onSay: () => undefined, onShortcut: () => undefined, onShortcuts: () => undefined })
+      ? createElement(PhoneBoard, { chat, onNew: () => undefined, onScreen: () => undefined, onSay: () => undefined, onShortcut: () => undefined, onShortcuts: () => undefined, onSearch: () => undefined })
       : createElement(Board, { chat, onShortcutFrom: () => undefined })
   }
   return renderToStaticMarkup(createElement(Fixture))

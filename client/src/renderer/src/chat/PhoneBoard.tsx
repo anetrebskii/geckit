@@ -1,6 +1,5 @@
 import { awaitingApproval, checklistDone, checklistProgress } from '../../../shared/checklists'
 import { AssignSheet, EmployeeAvatar, EmployeeFilter } from '../employees/Employees'
-import { managerFace } from '../employees/TeamManager'
 import { ProviderIcon } from './ProviderIcon'
 import { Tags } from './Tags'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
@@ -15,10 +14,7 @@ import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { PhoneScope, ScopeButton } from './PhoneScope'
-import { Cell } from './PhoneKit'
-import { openManagerChat } from './manager-chat-open'
-import { managerStand } from './manager-label'
-import { useManager } from './useManager'
+import { MenuButton } from './PhoneKit'
 import { startedLine } from './Request'
 import { Ways } from './PhoneShortcuts'
 import { macs } from '../macs'
@@ -65,6 +61,7 @@ export function PhoneBoard({
   onSay,
   onShortcut,
   onShortcuts,
+  onSearch,
 }: {
   readonly chat: Chat
   readonly onNew: (how?: 'record') => void
@@ -75,9 +72,8 @@ export function PhoneBoard({
   readonly onShortcut: (session: ChatSession) => void
   /** All shortcuts, over the board: from the bolt in the bar or the end of the New task sheet. */
   readonly onShortcuts: () => void
+  readonly onSearch: () => void
 }): React.JSX.Element {
-  const manager = useManager()
-  const managerState = managerStand(manager)
   const [shown, setShown] = useState<Column>(() => {
     const kept = localStorage.getItem('phoneColumn')
     return BOARD_COLUMNS.find((one) => one.id === kept)?.id ?? columnOf(undefined).id
@@ -262,6 +258,7 @@ export function PhoneBoard({
     >
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
+          <MenuButton />
           <span className="phone-bar-small">Tasks</span>
           {/* How many work against the limit, as the Mac's In progress head says it; full, a new message waits. */}
           {chat.lineup.limit === 0 ? null : (
@@ -279,8 +276,8 @@ export function PhoneBoard({
               {`${String(chat.lineup.working)}/${String(chat.lineup.limit)}`}
             </button>
           )}
-          <button type="button" className="phone-icon" aria-label="Shortcuts" onClick={onShortcuts}>
-            <Icon name="bolt" size={24} />
+          <button type="button" className="phone-icon" aria-label="Search" onClick={onSearch}>
+            <Icon name="search" size={24} />
           </button>
           <button type="button" className="phone-icon" aria-label="Say it" onClick={onSay}>
             <Icon name="mic" size={24} />
@@ -349,7 +346,6 @@ export function PhoneBoard({
         className="phone-list"
         onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 30)}
       >
-        {manager?.config.enabled !== true && manager?.session === undefined ? null : <div className="phone-group phone-team-group"><Cell label={<span className="phone-team-person"><EmployeeAvatar employee={managerFace(chat.settings)} size="medium" /><span><b>Manager</b><small>{managerState.short}</small></span></span>} value={managerState.tone === 'working' ? <span className="team-live" title="Working now" /> : undefined} onPress={openManagerChat} /></div>}
         <TaskListStatus chat={chat} />
         {!chat.listed && chat.sessions.length === 0 && chat.listProblem === undefined ? (
           <div className="phone-group" aria-busy="true" aria-label="Reading the conversations">

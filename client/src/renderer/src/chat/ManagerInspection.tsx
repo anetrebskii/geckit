@@ -9,7 +9,7 @@ import { Icon } from '../ui/Icon'
 import { EmployeeAvatar } from '../employees/Employees'
 import { managerFace } from '../employees/TeamManager'
 import { ManagerChat } from './ManagerChat'
-import { EdgeBack } from './PhoneKit'
+import { EdgeBack, MenuButton } from './PhoneKit'
 import { MANAGER_CHAT_EVENT } from './manager-chat-open'
 import { managerStand } from './manager-label'
 import { managerLabel, useManager } from './useManager'
@@ -58,16 +58,16 @@ export function ManagerInspection({ view, settings, onClose, onSettings, onOpen 
   </div></div>, document.body)
 }
 
-export function ManagerPhone({ settings, onBack, onSettings, onOpen, back = 'Back' }: { readonly settings: Settings; readonly onBack: () => void; readonly onSettings?: () => void; readonly onOpen?: ((id: string) => void) | undefined; readonly back?: string }): React.JSX.Element {
+export function ManagerPhone({ settings, onBack, onSettings, onOpen, back = 'Back' }: { readonly settings: Settings; readonly onBack?: () => void; readonly onSettings?: () => void; readonly onOpen?: ((id: string) => void) | undefined; readonly back?: string }): React.JSX.Element {
   const page = useRef<HTMLElement>(null)
   useBack(onBack, page)
   const view = useManager()
   const [connected, setConnected] = useState(() => phoneCalls()?.connected() ?? true)
   useEffect(() => phoneCalls()?.onConnection(setConnected), [])
   return <section ref={page} className="manager-phone phone-page" aria-label="Manager chat">
-    <EdgeBack onBack={onBack} />
+    {onBack === undefined ? null : <EdgeBack onBack={onBack} />}
     <header className="phone-nav manager-phone-nav">
-      <button type="button" className="phone-back" onClick={onBack}><Icon name="left" size={22} />{back}</button>
+      {onBack === undefined ? <MenuButton /> : <button type="button" className="phone-back" onClick={onBack}><Icon name="left" size={22} />{back}</button>}
       <div className="phone-nav-title"><b>Manager</b>{view === undefined ? null : <Stand view={view} />}</div>
       <div className="phone-nav-end">{onSettings === undefined ? null : <button type="button" className="phone-icon" aria-label="Manager settings" onClick={onSettings}><Icon name="settings" size={22} /></button>}</div>
     </header>

@@ -48,8 +48,8 @@ export function PhoneShortcuts({
   onEdit,
 }: {
   readonly chat: ShortcutChat
-  readonly back: string
-  readonly onBack: () => void
+  readonly back?: string
+  readonly onBack?: () => void
   readonly onEdit: (draft: ShortcutDraft) => void
 }): React.JSX.Element {
   const lastRuns = useShortcutRuns(chat.settings)
@@ -82,8 +82,7 @@ export function PhoneShortcuts({
   return (
     <Page
       title="Shortcuts"
-      back={back}
-      onBack={onBack}
+      {...(back === undefined ? {} : { back })} {...(onBack === undefined ? {} : { onBack })}
       actions={
         <button type="button" className="phone-icon" aria-label="New shortcut" onClick={() => onEdit(blank())}>
           <Icon name="plus" size={24} />

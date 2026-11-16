@@ -6,7 +6,7 @@ export const PREFERENCE_SECTIONS = {
   general: ['theme', 'nativeLanguage', 'secondLanguage', 'analytics', 'analyticsAsked', 'sendErrors', 'showGecko', 'autoUpdate', 'updateChannel', 'anywhereOff', 'flashFor', 'soundFor', 'workingAtOnce', 'welcomed', 'managerAvatar'],
   assistants: ['correctPlanModel', 'correctProvider', 'correctCodexModel', 'chatModel', 'providerModels', 'chatTransport', 'chatProvider', 'chatProviders', 'providerPlugins', 'providerAutoUpdate', 'codexModel', 'codexReasoning', 'chatMode'],
   projects: ['projects', 'projectAssistants', 'newTaskRoot', 'profiles', 'profile', 'projectColors', 'chatAll', 'chatProjects', 'employeeFilter'],
-  conversation: ['chatGrouping', 'chatView', 'conversationPlace', 'boardHeight', 'boardColumns', 'openWith', 'chatBounds', 'panelBounds', 'geckoBounds', 'sidebarWidth'],
+  conversation: ['chatGrouping', 'chatView', 'chatPlace', 'navNames', 'conversationPlace', 'boardHeight', 'boardColumns', 'openWith', 'chatBounds', 'panelBounds', 'geckoBounds', 'sidebarWidth'],
   speech: ['microphoneDeviceId'],
   integrations: ['browserNames', 'guideClaude', 'guideCodex', 'guidePlugins', 'chromeBridge', 'chromeBridgeDefault', 'phone', 'vpnIpCheck', 'vpnAllowedIps', 'channels', 'channelAutoUpdate'],
 } as const satisfies { readonly [section: string]: readonly (keyof Settings)[] }

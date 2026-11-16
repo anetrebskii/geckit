@@ -1,7 +1,4 @@
-import { Computer } from '../remote/Computer'
-import { EmployeeAvatar, EmployeeCardAssign, EmployeeFilter, EmployeeSelect, TeamButton } from '../employees/Employees'
-import { managerFace } from '../employees/TeamManager'
-import { openManagerChat } from './manager-chat-open'
+import { EmployeeCardAssign, EmployeeFilter, EmployeeSelect } from '../employees/Employees'
 import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -16,7 +13,6 @@ import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictat
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
-import geckoGlyph from '../gecko/frames/hA.webp'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
@@ -33,7 +29,6 @@ import { Preview } from './Preview'
 import { From, startedLine, StartedMenu } from './Request'
 import { Projects } from './Projects'
 import { queueWhy } from './Queued'
-import { QuestionsMenu } from './Questions'
 import { HostTag } from './HostTag'
 import { emptyProfile, hostName, projectLabel, projectName, tint } from './project'
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
@@ -67,26 +62,13 @@ function landingAt(column: HTMLElement, x: number, y: number, tiled: boolean): n
 export function TopBar({
   chat,
   onNew,
-  onAsk,
   onSeek,
-  onSettings,
-  onShortcuts,
-  onTeam,
-  onServers,
-  teamOn = false,
 }: {
   readonly chat: Chat
   readonly onNew: () => void
-  readonly onAsk: () => void
   /** A conversation opened on something said in it, marked there as the Cmd+P panel marks it. */
   readonly onSeek: (seek: Seek) => void
-  readonly onSettings: () => void
-  readonly onShortcuts: () => void
-  readonly onServers?: (id?: string) => void
-  readonly onTeam?: (() => void) | undefined
-  readonly teamOn?: boolean
 }): React.JSX.Element {
-  const [asked, setAsked] = useState<DOMRect | undefined>()
   const [ways, setWays] = useState<DOMRect | undefined>()
   return (
     <div className="board-head drag">
@@ -95,52 +77,7 @@ export function TopBar({
       </div>
       {ON_PHONE ? <><Projects chat={chat} /><EmployeeFilter chat={chat} /></> : <TaskFilters chat={chat} />}
       <BoardSearch chat={chat} onSeek={onSeek} />
-      <button
-        type="button"
-        className="icon-button no-drag"
-        aria-label="Shortcuts"
-        title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
-        onClick={onShortcuts}
-      >
-        <Icon name="bolt" />
-      </button>
-      <Computer {...(onServers === undefined ? {} : { onConnect: onServers })} />
-      {onTeam === undefined ? null : <TeamButton chat={chat} on={teamOn} onTeam={onTeam} />}
-      <button type="button" className="manager-open no-drag" aria-label="Chat with Manager" aria-haspopup="dialog" title="Chat with Manager" onClick={openManagerChat}><EmployeeAvatar employee={managerFace(chat.settings)} /><span>Manager</span></button>
-      {chat.settings.showGecko || ON_PHONE ? null : (
-        <button type="button" className="icon-button no-drag" aria-label="Show the gecko" title="Show the gecko" onClick={() => chat.change({ showGecko: true })}>
-          <img className="gecko-glyph" src={geckoGlyph} alt="" />
-        </button>
-      )}
-      <button
-        type="button"
-        className="icon-button no-drag"
-        aria-label="Settings"
-        title={`Settings (${MOD}+,)`}
-        onClick={onSettings}
-      >
-        <Icon name="settings" />
-      </button>
       <span className="spacer" />
-      <button
-        type="button"
-        className={`icon-button no-drag board-questions${asked === undefined ? '' : ' on'}`}
-        aria-label={chat.questions.length === 0 ? 'Ask a question' : `Questions (${String(chat.questions.length)})`}
-        aria-haspopup={chat.questions.length === 0 ? undefined : 'menu'}
-        aria-expanded={chat.questions.length === 0 ? undefined : asked !== undefined}
-        title={`${chat.questions.length === 0 ? 'Ask a question' : `Questions (${String(chat.questions.length)})`} (${MOD}+Shift+N)`}
-        data-focus-tip
-        onClick={(event) => {
-          if (chat.questions.length === 0) onAsk()
-          else setAsked(event.currentTarget.getBoundingClientRect())
-        }}
-      >
-        <Icon name="chat" />
-        {chat.questions.length === 0 ? null : <span className="board-question-count" aria-hidden="true">{chat.questions.length}</span>}
-      </button>
-      {asked === undefined ? null : (
-        <QuestionsMenu chat={chat} anchor={asked} autoFocus onAsk={onAsk} onClose={() => setAsked(undefined)} />
-      )}
       {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
       <span className="board-split no-drag">
         <button type="button" className="new-session board-new" onClick={onNew}>
