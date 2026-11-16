@@ -59,12 +59,12 @@ function Preview(): React.JSX.Element {
     mode: 'auto', transport: 'stream', provider: 'claude', showProviders: true, reasoning: '', setReasoning: noop, model: '', working: true, focusSeed: 0, chosen: [session.root],
     setDraft,
     say: (text: string) => setLog((was) => [...was, text]),
-    setChecklist: (_id: string, next: TaskChecklist) => {
+    setChecklist: (_id: string, next: TaskChecklist, typing = false) => {
       const kept = next.items.length === 0 ? undefined : next
       setChecklist(kept)
       const now = kept === undefined ? undefined : nextCondition(kept)
-      if (now !== goal) { setGoal(now); if (now !== undefined) setLog((was) => [...was, `/goal ${now}`]) }
-      setLog((was) => [...was, `saved ${String(next.items.length)} items`])
+      if (!typing && now !== goal) { setGoal(now); if (now !== undefined) setLog((was) => [...was, `/goal ${now}`]) }
+      setLog((was) => [...was, `saved ${String(next.items.length)} items${typing ? ' while typing' : ''}`])
     },
   }
   const fake = new Proxy(chat, { get: (target, key) => (key in target ? target[key as keyof typeof target] : key === 'tasksShown' ? false : noop) }) as unknown as Chat
@@ -78,7 +78,7 @@ function Preview(): React.JSX.Element {
       <header className="talk-head"><strong>{session.title}</strong><span className="place">geckit / client</span></header>
       <div className="talk-main">
         <div className="talk-column"><Transcript at={session.id} items={items} working onAnswer={noop} onAgain={noop} onFile={noop} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} onRetry={noop} tasks={undefined} onTasks={noop} find={query.has('find') ? 0 : undefined} onFindClose={noop} /></div>
-        {shown && !phone ? <TaskChecklistEditor key={session.id} panel goal={session.goal?.condition} checklist={shownChecklist(session.checklist, session.goal?.condition, session.goalMet)} onSave={(next) => fake.setChecklist(session.id, next)} onClear={() => fake.setChecklist(session.id, { items: [] })} onClose={() => setShown(false)} /> : null}
+        {shown && !phone ? <TaskChecklistEditor key={session.id} panel goal={session.goal?.condition} checklist={shownChecklist(session.checklist, session.goal?.condition, session.goalMet)} onSave={(next, typing) => fake.setChecklist(session.id, next, typing)} onClear={() => fake.setChecklist(session.id, { items: [] })} onClose={() => setShown(false)} /> : null}
       </div>
       <Composer chat={fake} onChecklist={phone ? undefined : () => setShown(!shown)} checklistShown={shown} />
     </div>

@@ -1156,6 +1156,19 @@ describe('a task checklist', () => {
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Page loads fast' }))
     expect(built.fake.sent.slice(before).filter((one) => one.text.startsWith('/goal'))).toHaveLength(1)
   })
+
+  it('keeps the goal while an item is still being typed and sets it once the typing ends', async () => {
+    const built = build({ later: soon })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    const before = built.fake.sent.length
+    for (const title of ['Pa', 'Page lo']) built.sessions.setChecklist(id, { items: [{ id: 'a', title, check: 'none' }] }, true)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(built.fake.sent.slice(before).filter((one) => one.text.startsWith('/goal'))).toHaveLength(0)
+    built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads fast', check: 'none' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Page loads fast' }))
+    expect(built.fake.sent.slice(before).filter((one) => one.text.startsWith('/goal'))).toHaveLength(1)
+  })
 })
 
 describe('a goal', () => {

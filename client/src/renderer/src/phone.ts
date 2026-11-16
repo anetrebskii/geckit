@@ -676,7 +676,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       transport: (id, transport) => send('chat.transport', id, transport),
       assignEmployee: (id, employeeId) => call('chat.assignEmployee', id, employeeId),
       rename: (id, title) => send('chat.rename', id, title),
-      setChecklist: (id, checklist) => send('chat.setChecklist', id, checklist),
+      setChecklist: (id, checklist, typing) => send('chat.setChecklist', id, checklist, typing),
       mark: (id, status) => send('chat.mark', id, status),
       hide: (id) => send('chat.hide', id),
       keep: (id, stays) => send('chat.keep', id, stays),

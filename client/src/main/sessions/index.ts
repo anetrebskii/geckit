@@ -441,6 +441,9 @@ const pause = (): number => PAUSE.least + Math.random() * (PAUSE.most - PAUSE.le
 /** How long a checklist edit rests before its goal is set: long enough for typing to finish. */
 const CHECKLIST_SETTLE = 3_000
 
+/** How long a checklist saved while its item is still being typed waits for the person to leave the field before its goal is set anyway. */
+const CHECKLIST_TYPING = 60_000
+
 function after(run: () => void, ms: number): () => void {
   const timer = setTimeout(run, ms)
   return () => clearTimeout(timer)
@@ -864,7 +867,7 @@ export class Sessions {
   #advance(id: string): void {
     const note = this.#deps.notes.all()[id]
     const checklist = note?.checklist
-    if (checklist === undefined || note?.prepared !== undefined) return
+    if (checklist === undefined || note?.prepared !== undefined || this.#settling.has(id)) return
     const live = this.#live.get(id)
     if (live !== undefined && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) return
     const next = nextCondition(checklist)
@@ -881,8 +884,8 @@ export class Sessions {
     await this.send(isCodexProvider(providerOf(id)) ? { ...base, text: `Next on the checklist: ${condition}`, goal: condition } : { ...base, text: `/goal ${condition}` })
   }
 
-  /** The person's edit of a task's checklist: kept as is, and the goal moves to its current item once the conversation rests. */
-  setChecklist(id: string, checklist: TaskChecklist): void {
+  /** The person's edit of a task's checklist: kept as is, and the goal moves to its current item once the conversation rests. While `typing`, the goal waits for the person to finish. */
+  setChecklist(id: string, checklist: TaskChecklist, typing = false): void {
     this.#ordinary(id)
     const kept = taskChecklist(checklist)
     const before = this.#deps.notes.all()[id]?.checklist
@@ -891,7 +894,7 @@ export class Sessions {
     this.#changed()
     // The checklist saves as it is edited, so the goal follows only once the edits stop.
     this.#settling.get(id)?.()
-    this.#settling.set(id, (this.#deps.later ?? after)(() => { this.#settling.delete(id); this.#advance(id) }, CHECKLIST_SETTLE))
+    this.#settling.set(id, (this.#deps.later ?? after)(() => { this.#settling.delete(id); this.#advance(id) }, typing ? CHECKLIST_TYPING : CHECKLIST_SETTLE))
   }
 
   /** The person approves the item their checklist waits on; false when it no longer waits on that item. */

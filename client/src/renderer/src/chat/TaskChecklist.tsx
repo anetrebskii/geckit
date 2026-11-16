@@ -34,7 +34,8 @@ export function TaskChecklistEditor({ checklist, goal, onSave, onClear, onClose,
   readonly checklist: TaskChecklist
   /** The conversation's goal now, so the item it was set from stands out. */
   readonly goal?: string | undefined
-  readonly onSave: (checklist: TaskChecklist) => void
+  /** `typing` while an item is still being typed: saved, but not made the goal yet. */
+  readonly onSave: (checklist: TaskChecklist, typing: boolean) => void
   readonly onClear: () => void
   readonly onClose: () => void
   /** Beside the conversation on the desktop, shown and hidden from the header. */
@@ -45,6 +46,8 @@ export function TaskChecklistEditor({ checklist, goal, onSave, onClear, onClose,
   const [waiting, setWaiting] = useState(false)
   const [seen, setSeen] = useState(checklist)
   const [focus, setFocus] = useState<string | undefined>()
+  const typing = useRef(false)
+  const held = useRef(false)
   if (seen !== checklist) {
     setSeen(checklist)
     setTicked((was) => (was.size === 0 ? was : new Map([...was].filter(([id, passed]) => (checklist.items.find((one) => one.id === id)?.state === 'passed') !== passed))))
@@ -76,15 +79,28 @@ export function TaskChecklistEditor({ checklist, goal, onSave, onClear, onClose,
     if (!waiting) return
     const timer = setTimeout(() => {
       const { draft: next, ready: some, onSave: save } = pending.current
-      if (some) save(next)
+      if (some) {
+        save(next, typing.current)
+        held.current = typing.current
+      }
       setWaiting(false)
     }, SAVE_AFTER)
     return () => clearTimeout(timer)
   }, [waiting, items, ticked])
   useEffect(() => () => {
     const { draft: next, ready: some, waiting: unsaved, onSave: save } = pending.current
-    if (unsaved && some) save(next)
+    if ((unsaved || held.current) && some) save(next, false)
   }, [])
+  const field = (target: EventTarget | null): boolean => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
+  const typed = (event: React.FocusEvent): void => {
+    if (!field(event.target) || (field(event.relatedTarget) && event.currentTarget.contains(event.relatedTarget as Node))) return
+    typing.current = false
+    const { draft: next, ready: some, waiting: unsaved } = pending.current
+    if (!unsaved && !held.current) return
+    held.current = false
+    setWaiting(false)
+    if (some) onSave(next, false)
+  }
   const edit = (next: readonly ChecklistItem[]): void => {
     setItems(next)
     setWaiting(true)
@@ -102,17 +118,19 @@ export function TaskChecklistEditor({ checklist, goal, onSave, onClear, onClose,
   }
   const body = (
     <>
-      <ChecklistItems
-        items={merged}
-        current={now?.id}
-        active={now !== undefined && goal !== undefined && itemCondition(now) === goal.trim()}
-        focus={focus}
-        onChange={edit}
-        onTick={(id, passed) => {
-          setTicked((was) => new Map(was).set(id, passed))
-          setWaiting(true)
-        }}
-      />
+      <div className="task-checklist-items" onFocus={(event) => { if (field(event.target)) typing.current = true }} onBlur={typed}>
+        <ChecklistItems
+          items={merged}
+          current={now?.id}
+          active={now !== undefined && goal !== undefined && itemCondition(now) === goal.trim()}
+          focus={focus}
+          onChange={edit}
+          onTick={(id, passed) => {
+            setTicked((was) => new Map(was).set(id, passed))
+            setWaiting(true)
+          }}
+        />
+      </div>
       <button type="button" className="shortcut-add-goal checklist-add" onClick={add}>
         <Icon name="plus" size={11} />
         Add an item

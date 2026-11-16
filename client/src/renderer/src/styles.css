@@ -16782,6 +16782,7 @@ html.phone .phone-checklist-done { width: 100%; min-height: 50px; font-size: 17p
 .checklist-approve:hover:not(:disabled) { color: var(--accent-text); background: var(--accent); }
 .task-checklist-editor { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; }
 .task-checklist-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
+.task-checklist-items { display: contents; }
 .task-checklist-hint { margin: 0; }
 .task-checklist-phone { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 16px; }
 .task-checklist-editor .danger,
