@@ -1293,8 +1293,10 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly name: string
   readonly root: string
   readonly prompt: string
-  /** What being finished means, sent as `/goal` after the prompt. Nothing is no goal. */
+  /** What being finished means, from before shortcuts kept a checklist; read as a one-item checklist and replaced by one when saved. */
   readonly goal?: string
+  /** The results each run works through one goal at a time, a copy kept with the shortcut. Nothing is no goal. */
+  readonly checklist?: TaskChecklist
   readonly mode: SessionMode
   /** The model the conversation is handed. Nothing is Default. */
   readonly model?: string

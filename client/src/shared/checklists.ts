@@ -166,10 +166,12 @@ export function taskPlan(all: readonly Checklist[], root: string, asked: GoalAsk
   return fallback === undefined ? {} : { checklist: copyChecklist(fallback) }
 }
 
-/** The same as one goal line, for a shortcut, which keeps a goal and not a checklist. */
-export function taskGoal(all: readonly Checklist[], root: string, asked: GoalAsked): string | undefined {
-  const plan = taskPlan(all, root, asked)
-  return plan.goal ?? (plan.checklist === undefined ? undefined : checklistGoal(plan.checklist) || undefined)
+/** A shortcut's checklist: its own, or the goal an older shortcut kept as one item. */
+export function shortcutChecklist(shortcut: { readonly checklist?: TaskChecklist | undefined; readonly goal?: string | undefined }): TaskChecklist | undefined {
+  const kept = shortcut.checklist === undefined ? undefined : taskChecklist({ ...shortcut.checklist, items: shortcut.checklist.items.map(({ state: _state, ...one }) => one) })
+  if (kept !== undefined && kept.items.length > 0) return kept
+  const goal = shortcut.goal?.trim() ?? ''
+  return goal === '' ? undefined : { items: [{ ...newItem(goal), id: 'goal' }] }
 }
 
 /** What one item says as a goal: the result, how to prove it, and its check. A single plain item reads as a plain goal. */

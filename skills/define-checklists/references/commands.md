@@ -34,6 +34,6 @@ At most 50 items. Unknown fields are refused.
 
 ## Starting tasks from a checklist
 
-`start` (ordinary conversations), `sessions start` (Manager) and `employees shortcut add|edit` take one of `--goal <condition>`, `--checklist <id-or-name>` or `--items <JSON array>`. A name is looked up among the folder's own checklists first, then the shared ones. With none of the three, the folder's default checklist applies when it has one. A shortcut copies the checklist into its goal when saved.
+`start` (ordinary conversations), `sessions start` (Manager) and `employees shortcut add|edit` take one of `--goal <condition>`, `--checklist <id-or-name>` or `--items <JSON array>`. A name is looked up among the folder's own checklists first, then the shared ones. With none of the three, the folder's default checklist applies when it has one. A shortcut keeps its own copy of the checklist, and each run works through it one item at a time as a task does; `--goal` saves a one-item checklist and `--goal ""` removes it.
 
 The same checklists are in Settings > Checklists, and in `checklists` of the configuration GeckIt exports and imports.

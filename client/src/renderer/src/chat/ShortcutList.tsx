@@ -9,6 +9,8 @@ import { cronOf, describeCron, describeStartWindow, describeTime, nextRun, nextT
 import type { When } from '../../../shared/schedule'
 import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceError } from '../../../shared/recurrence'
 import { saveShortcut } from '../../../shared/shortcut-save'
+import { shortcutChecklist } from '../../../shared/checklists'
+import { ChecklistField } from './ChecklistField'
 import { CustomRecurrence } from './CustomRecurrence'
 import { destinationSummary, ShortcutDelivery, ShortcutDestinationFields, useShortcutDestination, useShortcutRuns } from './ShortcutDestinations'
 import { Icon } from '../ui/Icon'
@@ -243,7 +245,11 @@ function Editor({
   readonly now: number
   readonly onDone: () => void
 }): React.JSX.Element {
-  const [draft, setDraft] = useState<ShortcutDraft>(given)
+  const [draft, setDraft] = useState<ShortcutDraft>(() => {
+    const { goal: _goal, checklist: _checklist, ...rest } = given
+    const checklist = shortcutChecklist(given)
+    return checklist === undefined ? rest : { ...rest, checklist }
+  })
   const destination = useShortcutDestination(chat.settings, draft.destination, (destination) => {
     const { destination: _destination, ...rest } = draft
     setDraft(destination === undefined ? rest : { ...rest, destination })
@@ -333,9 +339,7 @@ function Editor({
     }
   }
   const scheduled = repeats !== 'never'
-  const [goalOpen, setGoalOpen] = useState(() => (given.goal ?? '').trim() !== '')
   const owner = draft.employeeId === undefined ? undefined : chat.employees.find((one) => one.id === draft.employeeId)
-  const agent = isCodexProvider(provider) ? 'Codex' : 'Claude'
   const summary = [
     manager ? `Sends this prompt to Manager with ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)} as context. Manager uses its configured assistant and approvals.` : `Each run starts a new task in ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)}${owner === undefined ? '' : `, assigned to ${owner.name}`}, with ${assistant}.`,
     !scheduled ? 'It runs when you start it.' : draft.recurrence !== undefined ? ruleError === undefined ? next === undefined ? 'Its timetable has ended.' : draft.on ? `Next run ${describeTime(next, now, zone)}.` : 'Its timetable is paused.' : '' : next === undefined ? '' : !draft.on ? 'Its timetable is paused.' : draft.startWindowMinutes !== undefined && kept === undefined ? `${describeStartWindow(draft)}.` : `Next run ${describeTime(next, now, draft.startWindowMinutes === undefined ? undefined : zone)}.`,
@@ -383,35 +387,14 @@ function Editor({
             placeholder="Look through the pull requests waiting for my review and tell me which ones need me first."
             onChange={(event) => change({ prompt: event.target.value })}
           />
-          {manager ? null : goalOpen ? (
-            <div className="shortcut-goal">
-              <label htmlFor="shortcut-goal" className="shortcut-label">Goal</label>
-              <input
-                id="shortcut-goal"
-                type="text"
-                autoFocus={(given.goal ?? '').trim() === ''}
-                value={draft.goal ?? ''}
-                placeholder="The tests pass and the PR is open"
-                onChange={(event) => change({ goal: event.target.value })}
-              />
-              <span className="shortcut-next">
-                {(draft.goal ?? '').trim() === '' ? `Empty: ${agent} stops when it is done.` : `${agent} keeps working until this holds, then the card shows Goal reached.`}
-              </span>
-            </div>
-          ) : (
-            <button type="button" className="shortcut-add-goal" onClick={() => setGoalOpen(true)}>
-              <Icon name="plus" size={11} />
-              Add a goal
-              <span>keep working until a condition holds</span>
-            </button>
-          )}
+          {manager ? null : <ChecklistField checklists={chat.settings.checklists ?? []} root={draft.root} value={draft.checklist ?? { items: [] }} onChange={(checklist) => change({ checklist })} />}
         </div>
 
         <aside className="shortcut-editor-side" aria-label="Settings">
           <div className="shortcut-setting">
             <span>Target</span>
             <Picker label={manager ? 'Manager' : 'New task'} chosen={manager ? 'manager' : 'task'} choices={[{ value: 'task', label: 'New task' }, { value: 'manager', label: 'Manager' }]} className="select" onPick={(value) => {
-              const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+              const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, checklist: _checklist, ...rest } = draft
               setFailedDraft(undefined)
               setDraft(value === 'manager' ? { ...rest, target: 'manager' } : rest)
             }} />
@@ -454,7 +437,7 @@ function Editor({
               disabled={enabled.length === 1 && enabled.includes(provider)}
               onPick={(value) => {
                 if (value === provider) return
-                const { model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+                const { model: _model, reasoning: _reasoning, ...rest } = draft
                 const nextProvider = value as SessionProvider
                 setDraft({ ...rest, provider: nextProvider, model: providerModel(chat.settings, nextProvider), ...(isCodexProvider(nextProvider) ? { reasoning: chat.settings.codexReasoning } : {}) })
               }}

@@ -13,7 +13,7 @@ employees shortcut resume <shortcut-id>
 employees shortcut run <shortcut-id>
 ```
 
-A worker shortcut takes one of `--goal <condition>`, `--checklist <id-or-name>` or `--items <JSON array>`; a checklist is copied into the shortcut's goal when saved, so later edits to the saved checklist need the shortcut edited again. The examples' times and cadence are illustrative, not defaults. Select `task` for worker execution or `manager` for a coordination request. Manager uses its configured assistant and approvals. Its shortcut prompt is a Manager request, not instructions to run implementation itself.
+A worker shortcut takes one of `--goal <condition>`, `--checklist <id-or-name>` or `--items <JSON array>`; the shortcut keeps its own copy of the checklist and each run works through it one item at a time, so later edits to the saved checklist need the shortcut edited again. The examples' times and cadence are illustrative, not defaults. Select `task` for worker execution or `manager` for a coordination request. Manager uses its configured assistant and approvals. Its shortcut prompt is a Manager request, not instructions to run implementation itself.
 
 `--every` supports `hour`, `hour 15`, `day 9:00`, `weekdays 9:00` and `week monday 9:00`. Edit accepts `--every none` to remove a timetable. Use either `--every` or `--cron`. Preserve enabled state unless asked to pause or resume.
 

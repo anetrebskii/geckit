@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Checklist } from '../src/shared/checklists'
-import { checklistContext, checklistDone, checklistGoal, checklistItems, checklistMet, checklistsFor, copyChecklist, defaultChecklist, itemCondition, nextCondition, taskGoal, taskPlan } from '../src/shared/checklists'
+import { checklistContext, checklistDone, checklistGoal, checklistItems, checklistMet, checklistsFor, copyChecklist, defaultChecklist, itemCondition, nextCondition, shortcutChecklist, taskPlan } from '../src/shared/checklists'
 import type { Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import { checklistsCommand } from '../src/main/checklists-cli'
@@ -59,15 +59,12 @@ describe('checklists from the command line', () => {
     expect(() => checklistItems('[{"name": "x"}]')).toThrow(/unknown field name/)
   })
 
-  it('turns a goal, a saved checklist, typed items or the folder default into the goal', () => {
-    const all = [feature, shared]
-    expect(taskGoal(all, '/work/app', { goal: ' Done ' })).toBe('Done')
-    expect(taskGoal(all, '/work/other', { checklist: 'release' })).toContain('All 2 items of Release hold')
-    expect(taskGoal(all, '/work/app', { items: ['Only this'] })).toBe('Only this')
-    expect(taskGoal(all, '/work/app', {})).toContain('of Feature flow')
-    expect(taskGoal(all, '/work/other', {})).toBeUndefined()
-    expect(() => taskGoal(all, '/work/other', { checklist: 'Feature flow' })).toThrow('There are: Release')
-    expect(() => taskGoal(all, '/work/app', { goal: 'x', items: ['y'] })).toThrow(/one of/)
+  it('keeps a shortcut checklist without states, and reads an older shortcut goal as one item', () => {
+    expect(shortcutChecklist({ checklist: { from: { id: 'c1', name: 'Feature flow' }, items: [{ id: 'a', title: ' Tests pass ', check: 'none', state: 'passed' }, { id: 'b', title: ' ', check: 'none' }] } })).toEqual({ from: { id: 'c1', name: 'Feature flow' }, items: [{ id: 'a', title: 'Tests pass', check: 'none' }] })
+    expect(shortcutChecklist({ goal: ' Done ' })).toEqual({ items: [{ id: 'goal', title: 'Done', check: 'none' }] })
+    expect(shortcutChecklist({ checklist: { items: [] }, goal: 'Done' })?.items.map((one) => one.title)).toEqual(['Done'])
+    expect(shortcutChecklist({ goal: ' ' })).toBeUndefined()
+    expect(shortcutChecklist({})).toBeUndefined()
   })
 
   it('lists, adds, edits and removes saved checklists, one default per folder', () => {
