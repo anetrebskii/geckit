@@ -28,7 +28,7 @@ describe('checklists', () => {
   it('writes several items as one line, in order, with their checks and the items checked again', () => {
     const goal = checklistGoal(copyChecklist(feature))
     expect(goal).not.toContain('\n')
-    expect(goal).toBe('All 3 items of Feature flow hold, in this order, one at a time: (1) UX doc approved - check: stop and ask the person to approve before going on; (2) Tests pass - No test file is skipped - check: `npm test` exits with 0; (3) Lint clean - check: `npm run lint` exits with 0. After each item holds, print "[n/3 passed] <item>" with its evidence. Before finishing, check (3) again.')
+    expect(goal).toBe('All 3 items of Feature flow hold, in this order, one at a time: (1) UX doc approved - check: ready for the person to approve; do not ask them, GeckIt does; (2) Tests pass - No test file is skipped - check: `npm test` exits with 0; (3) Lint clean - check: `npm run lint` exits with 0. After each item holds, print "[n/3 passed] <item>" with its evidence. Before finishing, check (3) again.')
   })
 
   it('offers a folder its own checklists before the shared ones, and its default', () => {
@@ -113,7 +113,7 @@ describe('a running task checklist', () => {
       task = checklistMet(task, next) ?? task
     }
     expect(conditions).toEqual([
-      'UX doc approved - check: stop and ask the person to approve before going on',
+      'UX doc approved - check: ready for the person to approve; do not ask them, GeckIt does',
       'Tests pass - No test file is skipped - check: `npm test` exits with 0',
       'Lint clean - check: `npm run lint` exits with 0',
       'Still true after the later work: Lint clean - check: `npm run lint` exits with 0',

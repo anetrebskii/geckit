@@ -48,7 +48,7 @@ const filled = (items: readonly ChecklistItem[]): readonly ChecklistItem[] => it
 
 const proof = (item: ChecklistItem): string => {
   if (item.check === 'command' && item.command?.trim()) return `check: \`${item.command.trim()}\` exits with 0`
-  if (item.check === 'person') return 'check: stop and ask the person to approve before going on'
+  if (item.check === 'person') return 'check: ready for the person to approve; do not ask them, GeckIt does'
   if (item.check === 'review') return 'check: show the evidence in the conversation'
   return ''
 }
@@ -220,7 +220,8 @@ export const checklistProgress = (checklist: TaskChecklist): { readonly passed: 
 export function checklistContext(checklist: TaskChecklist): string {
   const items = filled(checklist.items)
   if (items.length < 2) return ''
-  return [`Checklist${checklist.from === undefined ? '' : ` (${checklist.from.name})`}, worked one item at a time: GeckIt sets each item as the goal in turn and ticks it when the goal is met.`, ...items.map((item, at) => `${String(at + 1)}. ${itemCondition(item)}`)].join('\n')
+  const person = items.some((item) => item.check === 'person') ? ' For an item the person approves, stop when it is ready and say so; do not ask them to approve it, GeckIt asks them and sends any changes as a message.' : ''
+  return [`Checklist${checklist.from === undefined ? '' : ` (${checklist.from.name})`}, worked one item at a time: GeckIt sets each item as the goal in turn and ticks it when the goal is met.${person}`, ...items.map((item, at) => `${String(at + 1)}. ${itemCondition(item)}`)].join('\n')
 }
 
 /** A task's checklist as kept: filled items only, a typed one plain. */

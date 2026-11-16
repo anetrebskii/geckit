@@ -1108,7 +1108,7 @@ describe('a task checklist', () => {
       { id: 'c', title: 'Docs updated', check: 'none' },
     ] } })
     built.fake.hear({ signals: [{ kind: 'started', session: id, key: false }] })
-    expect(built.fake.sent[0]?.text).toContain('1. Tests pass\n2. Lint clean - check: stop and ask the person to approve before going on\n3. Docs updated')
+    expect(built.fake.sent[0]?.text).toContain('1. Tests pass\n2. Lint clean - check: ready for the person to approve; do not ask them, GeckIt does\n3. Docs updated')
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Tests pass' }))
 
@@ -1118,14 +1118,14 @@ describe('a task checklist', () => {
     await settled()
     read = metNote('Tests pass')
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Lint clean - check: stop and ask the person to approve before going on' }))
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Lint clean - check: ready for the person to approve; do not ask them, GeckIt does' }))
     expect(of(built.rows, id)?.checklist?.items.map((one) => one.state)).toEqual(['passed', undefined, undefined])
 
-    read = { goal: { condition: 'Lint clean - check: stop and ask the person to approve before going on', checks: 0 } }
+    read = { goal: { condition: 'Lint clean - check: ready for the person to approve; do not ask them, GeckIt does', checks: 0 } }
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(of(built.rows, id)?.goal).toBeDefined())
     await settled()
-    read = metNote('Lint clean - check: stop and ask the person to approve before going on')
+    read = metNote('Lint clean - check: ready for the person to approve; do not ask them, GeckIt does')
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(of(built.rows, id)?.checklist?.items.map((one) => one.state)).toEqual(['passed', 'approval', undefined]))
     expect(built.notes.at(-1)).toMatchObject({ session: id, body: 'Lint clean', asks: true, title: expect.stringContaining('Waiting for your approval') })
@@ -1173,7 +1173,7 @@ describe('a task checklist', () => {
     await settled()
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await settled()
-    await vi.waitFor(() => expect(built.fake.sent.slice(before).map((one) => one.text)).toEqual(['/compact', 'Split the table by person', '/goal Report ready - check: stop and ask the person to approve before going on']))
+    await vi.waitFor(() => expect(built.fake.sent.slice(before).map((one) => one.text)).toEqual(['/compact', 'Split the table by person', '/goal Report ready - check: ready for the person to approve; do not ask them, GeckIt does']))
   })
 
   it('keeps the goal while an item is still being typed and sets it once the typing ends', async () => {
