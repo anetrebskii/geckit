@@ -834,9 +834,9 @@ export function Chat(): React.JSX.Element {
           </div>
         )}
 
-        {chat.session === undefined ? null : <StatusHistory {...(chat.session.moves === undefined ? {} : { moves: chat.session.moves })} />}
         <div className={`talk-main${panelSizing === undefined ? '' : ' sizing'}`} style={{ '--panel': `${String(panelSizing ?? panelWidth)}px` } as React.CSSProperties}>
           <div className="talk-column">
+          {chat.session === undefined ? null : <StatusHistory {...(chat.session.moves === undefined ? {} : { moves: chat.session.moves })} />}
           {chat.shown.kind === 'new' && chat.items.length === 0 ? (
             <div className="transcript">
               <div className="turn" role={chat.checkingIp ? 'status' : undefined} style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
@@ -907,6 +907,7 @@ export function Chat(): React.JSX.Element {
               </RequestChat>
             </Files>
           )}
+          <Composer chat={chat} onContinue={() => setTransferring(chat.session)} onChecklist={ON_PHONE ? undefined : () => showChecklist(!checklistShown)} checklistShown={checklistShown} />
           </div>
           {checklistShown && !ON_PHONE && chat.session !== undefined && chat.root !== undefined ? (
             <div
@@ -942,7 +943,6 @@ export function Chat(): React.JSX.Element {
           ) : null}
         </div>
 
-        <Composer chat={chat} onContinue={() => setTransferring(chat.session)} onChecklist={ON_PHONE ? undefined : () => showChecklist(!checklistShown)} checklistShown={checklistShown} />
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 
