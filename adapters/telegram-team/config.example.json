@@ -1,0 +1,11 @@
+{
+  "version":1,
+  "botId":123456789,
+  "tokenFile":"/etc/geckit/telegram-team.env",
+  "stateFile":"/var/lib/geckit/telegram-team/state.sqlite",
+  "users":[111111111,222222222],
+  "topic":{"chatId":-1001234567890,"topicId":42,"actors":[111111111,222222222],"approvers":[111111111]},
+  "queueTotal":1000,
+  "queuePerChat":100,
+  "maxActiveConversations":null
+}
