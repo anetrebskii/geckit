@@ -5973,12 +5973,17 @@ html.phone .queued-one .icon-button.queue-inject {
 
 /* The editor: the prompt is the shortcut, so it takes the room; everything about where and when it runs is a narrow column beside it. */
 .dialog.shortcut-list:has(> .shortcut-editor) {
-  width: min(820px, 94vw);
-  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 94vw);
+  height: min(760px, 90vh);
+  max-height: none;
+  overflow: hidden;
 }
 
 .shortcut-editor {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
@@ -6020,7 +6025,9 @@ html.phone .queued-one .icon-button.queue-inject {
 
 .shortcut-editor-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 288px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 20px;
   min-height: 0;
 }
@@ -6030,6 +6037,7 @@ html.phone .queued-one .icon-button.queue-inject {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  min-height: 0;
 }
 
 .shortcut-label {
@@ -6040,9 +6048,9 @@ html.phone .queued-one .icon-button.queue-inject {
 
 .shortcut-editor-main textarea {
   flex: 1;
-  min-height: clamp(120px, 24vh, 240px);
+  min-height: 120px;
   line-height: 1.5;
-  resize: vertical;
+  resize: none;
 }
 
 .shortcut-goal {
@@ -6077,6 +6085,9 @@ html.phone .queued-one .icon-button.queue-inject {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px;
   background: var(--bg-sunken);
   border: 1px solid var(--border);
@@ -6097,7 +6108,14 @@ html.phone .queued-one .icon-button.queue-inject {
 
 .shortcut-setting > .select {
   width: 100%;
+  max-inline-size: none;
   min-width: 0;
+}
+
+.shortcut-setting .employee-badge {
+  max-inline-size: none;
+  color: inherit;
+  font-size: inherit;
 }
 
 .shortcut-editor-side > .shortcut-next {
@@ -6131,6 +6149,26 @@ html.phone .queued-one .icon-button.queue-inject {
   width: 100%;
 }
 
+.shortcut-when-block > .shortcut-minute {
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  font-size: 12px;
+}
+
+.shortcut-when-block > .shortcut-minute input {
+  width: 48px;
+  text-align: right;
+  appearance: textfield;
+}
+
+.shortcut-when-block > .shortcut-minute input::-webkit-inner-spin-button {
+  appearance: none;
+}
+
+.shortcut-editor > .dialog-actions {
+  margin-top: 0;
+}
+
 .shortcut-when-block > label.check.shortcut-on {
   display: flex;
   align-items: center;
@@ -6151,10 +6189,22 @@ html.phone .queued-one .icon-button.queue-inject {
 @media (max-width: 700px) {
   .shortcut-editor-body {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    overflow-y: auto;
+  }
+
+  .shortcut-editor-main {
+    min-height: auto;
   }
 
   .shortcut-editor-main textarea {
-    min-height: 140px;
+    flex: none;
+    min-height: 200px;
+  }
+
+  .shortcut-editor-side {
+    min-height: auto;
+    overflow-y: visible;
   }
 }
 
