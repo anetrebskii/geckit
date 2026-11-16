@@ -4650,6 +4650,26 @@ html.phone .request-foot .request-reply {
   border-style: dashed;
 }
 
+.approval-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 6px 6px 6px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+}
+
+.approval-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .queued {
   display: flex;
   flex-direction: column;

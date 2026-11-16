@@ -897,6 +897,18 @@ export class Sessions {
     this.#settling.set(id, (this.#deps.later ?? after)(() => { this.#settling.delete(id); this.#advance(id) }, typing ? CHECKLIST_TYPING : CHECKLIST_SETTLE))
   }
 
+  /** A message to a task waiting for approval says the item is not approved: it goes back to being worked, and the condition to set as its goal again is returned. */
+  #sendBack(id: string): string | undefined {
+    const checklist = this.#deps.notes.all()[id]?.checklist
+    const waiting = awaitingApproval(checklist)
+    if (checklist === undefined || waiting === undefined) return undefined
+    const back: TaskChecklist = { ...checklist, items: checklist.items.map((one) => (one.id === waiting.id ? (({ state: _state, ...rest }) => rest)(one) : one)) }
+    this.#note(id, { checklist: back, goalMet: undefined })
+    this.#deps.notify({ session: id, title: '', subtitle: '', body: '', asks: false })
+    this.#changed()
+    return nextCondition(back)
+  }
+
   /** The person approves the item their checklist waits on; false when it no longer waits on that item. */
   approveItem(id: string, item: string): boolean {
     const checklist = this.#deps.notes.all()[id]?.checklist
@@ -2257,6 +2269,12 @@ export class Sessions {
       } finally { this.#preparedSending.delete(id) }
     }
     if (message.session !== undefined && this.#holders.has(message.session)) throw new Error('Answer the request first: nothing is said in its card.')
+    const correcting = message.session !== undefined && guardSource === undefined && queued === undefined && message.again === undefined && !this.isManager(message.session) && !/^[!/]/.test(message.text.trim()) ? this.#sendBack(message.session) : undefined
+    if (correcting !== undefined) {
+      const sent = await this.send(message, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
+      await this.#sendGoal(sent, correcting)
+      return sent
+    }
     if (message.session !== undefined && this.isManager(message.session) && !this.#managerMessages.has(message)) {
       if (this.#managerSend === undefined) this.#ordinary(message.session)
       else return this.#managerSend(message)

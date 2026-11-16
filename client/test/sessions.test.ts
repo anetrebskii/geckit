@@ -1157,6 +1157,25 @@ describe('a task checklist', () => {
     expect(built.fake.sent.slice(before).filter((one) => one.text.startsWith('/goal'))).toHaveLength(1)
   })
 
+  it('takes a message to a task waiting for approval as not approved and sets the item as the goal again after it', async () => {
+    const built = build({ later: soon })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Tests pass', check: 'none', state: 'passed' }, { id: 'b', title: 'Report ready', check: 'person', state: 'approval' }] })
+    await settled()
+    const before = built.fake.sent.length
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: '/compact' })
+    expect(of(built.rows, id)?.checklist?.items[1]?.state).toBe('approval')
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Split the table by person' })
+    expect(of(built.rows, id)?.checklist?.items[1]?.state).toBeUndefined()
+    expect(built.notes.at(-1)).toMatchObject({ session: id, asks: false })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await settled()
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await settled()
+    await vi.waitFor(() => expect(built.fake.sent.slice(before).map((one) => one.text)).toEqual(['/compact', 'Split the table by person', '/goal Report ready - check: stop and ask the person to approve before going on']))
+  })
+
   it('keeps the goal while an item is still being typed and sets it once the typing ends', async () => {
     const built = build({ later: soon })
     const id = await started(built)

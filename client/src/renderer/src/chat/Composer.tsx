@@ -16,7 +16,7 @@ import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
 import { checklistLabel, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
-import { currentItem } from '../../../shared/checklists'
+import { awaitingApproval, currentItem } from '../../../shared/checklists'
 import { MOD } from '../ui/Shortcuts'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
@@ -433,6 +433,12 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
   }
   const goal = chat.session?.goal
   const taskList = shownChecklist(chat.session?.checklist, goal?.condition, chat.session?.goalMet)
+  const approval = ON_PHONE || !checklistShown ? awaitingApproval(chat.session?.checklist) : undefined
+  const approve = (): void => {
+    const session = chat.session
+    if (session?.checklist === undefined || approval === undefined) return
+    chat.setChecklist(session.id, { ...session.checklist, items: session.checklist.items.map((one) => (one.id === approval.id ? { ...one, state: 'passed' as const } : one)) })
+  }
   const command = chat.root !== undefined && chat.draft.trim().startsWith('!')
   // A first message, or one to a conversation not working, waits in the queue where as many are working as the limit allows.
   const idle = chat.shown.kind !== 'session' || (chat.session !== undefined && chat.session.state !== 'working' && chat.session.state !== 'asks')
@@ -630,6 +636,12 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {approval === undefined ? null : (
+        <div className="approval-bar" role="status">
+          <span className="approval-bar-text">Waiting for your approval: <strong>{approval.title.trim()}</strong></span>
+          <button type="button" className="primary" onClick={approve}>Approve</button>
         </div>
       )}
       {queued.length === 0 ? null : (
@@ -908,6 +920,8 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
           placeholder={
             chat.root === undefined
               ? 'Add a folder first'
+              : approval !== undefined && !recorder.recording && !hearing && listening === undefined && !writing
+                ? 'Or write what to change'
               : ON_PHONE
                 ? listening !== undefined
                   ? `Listening in ${listening}`
