@@ -339,6 +339,7 @@ export function application(runtime: CoreRuntime) {
     'chat:mode': (...args: Parameters<Sessions['mode']>) => sessions.mode(...args),
     'chat:transport': (...args: Parameters<Sessions['transport']>) => sessions.transport(...args),
     'chat:rename': (...args: Parameters<Sessions['rename']>) => sessions.rename(...args),
+    'chat:setChecklist': (...args: Parameters<Sessions['setChecklist']>) => sessions.setChecklist(...args),
     'chat:mark': (id: string, status: Parameters<Sessions['mark']>[1]) => sessions.mark(id, status, { executor: 'user', origin: 'desktop' }),
     'chat:markPhone': (id: string, status: Parameters<Sessions['mark']>[1]) => sessions.mark(id, status, { executor: 'user', origin: 'phone' }),
     'chat:keep': (...args: Parameters<Sessions['keep']>) => sessions.keep(...args),

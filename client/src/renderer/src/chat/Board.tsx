@@ -19,9 +19,14 @@ import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/ho
 import geckoGlyph from '../gecko/frames/hA.webp'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import { Sheet } from '../ui/Sheet'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { NameField } from './NameField'
+import { ChecklistField } from './ChecklistField'
+import { checklistLabel } from './TaskChecklist'
+import type { TaskChecklist } from '../../../shared/checklists'
+import { checklistDone, checklistGoal, copyChecklist, defaultChecklist, newItem } from '../../../shared/checklists'
 import { PhoneProject } from './PhoneProject'
 import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
@@ -762,7 +767,12 @@ function Card({
           onClose={() => setListing(undefined)}
         />
       )}
-      {goal === undefined ? null : (
+      {session.checklist !== undefined && session.checklist.items.length > 0 ? (
+        <div className={`board-card-goal${checklistDone(session.checklist) ? ' met' : ''}`} title={session.checklist.items.map((one, at) => `${one.state === 'passed' ? '✓' : String(at + 1)} ${one.title}`).join('\n')}>
+          <Icon name={checklistDone(session.checklist) ? 'done' : 'goal'} size={10} />
+          <span>{checklistLabel(session.checklist)}</span>
+        </div>
+      ) : goal === undefined ? null : (
         <div className={`board-card-goal${goalMet(session) ? ' met' : ''}`} title={goalMet(session) ? `Goal reached: ${goal}` : goal}>
           <Icon name={goalMet(session) ? 'done' : 'goal'} size={10} />
           <span>{goalMet(session) ? (goal === '' ? 'Goal reached' : `Goal reached: ${goal}`) : goal}</span>
@@ -831,8 +841,24 @@ const BoardCard = memo(
 interface KeptTask {
   readonly root: string
   readonly text: string
-  readonly goal: string
+  /** What an earlier build kept: a goal, brought back as a one-item checklist. */
+  readonly goal?: string
+  readonly checklist?: TaskChecklist
   readonly employeeId?: Employee['id']
+}
+
+/** What Start will do about the checklist, said under the form. */
+const checklistHint = (goal: string, checklist: TaskChecklist, assistant: string): string => {
+  if (goal === '') return `No checklist: it stops when ${assistant} is done`
+  return checklist.items.filter((one) => one.title.trim() !== '').length === 1 ? `${assistant} keeps working until this holds, then the card shows Goal reached` : `${assistant} works through these in order, then the card shows Goal reached`
+}
+
+/** A checklist in one line, for the phone's cell. */
+const checklistSaid = (checklist: TaskChecklist): string => {
+  const count = checklist.items.filter((one) => one.title.trim() !== '').length
+  if (count === 0) return 'None'
+  if (checklist.from !== undefined) return `${checklist.from.name}, ${String(count)}`
+  return count === 1 ? (checklist.items.find((one) => one.title.trim() !== '')?.title.trim() ?? 'None') : `${String(count)} items`
 }
 
 const keptKey = (question: boolean): string => (question ? 'newQuestion' : 'newTask')
@@ -841,7 +867,7 @@ const keptKey = (question: boolean): string => (question ? 'newQuestion' : 'newT
 export function keptTask(question: boolean): KeptTask | undefined {
   try {
     const kept = JSON.parse(localStorage.getItem(keptKey(question)) ?? 'null') as KeptTask | null
-    return kept === null || (kept.text.trim() === '' && kept.goal.trim() === '') ? undefined : kept
+    return kept === null || (kept.text.trim() === '' && (kept.goal ?? '').trim() === '' && !(kept.checklist?.items ?? []).some((one) => one.title.trim() !== '')) ? undefined : kept
   } catch {
     return undefined
   }
@@ -869,9 +895,12 @@ export function NewTask({
   onSwitch,
   onStarting,
   onEmployees,
+  onChecklists,
 }: {
   readonly chat: Chat
   readonly onClose: () => void
+  /** Opens Settings at Checklists, from the checklist picker. */
+  readonly onChecklists?: (() => void) | undefined
   /** A general question: no project, no goal, and no card. */
   readonly question?: boolean
   /** On the phone: opened to be filled from a recording, whose picker comes up at once. */
@@ -895,9 +924,19 @@ export function NewTask({
     const remembered = chat.settings.newTaskRoot
     return given ?? kept?.root ?? (projects.includes(remembered) ? remembered : undefined) ?? chat.root ?? projects[0] ?? ''
   })
-  const pickRoot = (root: string): void => {
-    setRoot(root)
-    chat.change({ newTaskRoot: root })
+  const folderDefault = (folder: string): TaskChecklist => {
+    const found = question ? undefined : defaultChecklist(chat.settings.checklists ?? [], folder)
+    return found === undefined ? { items: [] } : copyChecklist(found)
+  }
+  const [checklist, setChecklist] = useState<TaskChecklist>(() => kept?.checklist ?? (kept?.goal !== undefined && kept.goal.trim() !== '' ? { items: [newItem(kept.goal.trim())] } : folderDefault(root)))
+  const goal = checklistGoal(checklist)
+  // A checklist of the folder left behind, or none at all, gives way to the new folder's default; typed items and shared ones stay.
+  const pickRoot = (next: string): void => {
+    const from = checklist.from === undefined ? undefined : (chat.settings.checklists ?? []).find((one) => one.id === checklist.from?.id)
+    const empty = !checklist.items.some((one) => one.title.trim() !== '')
+    if (next !== root && (empty || (from?.root !== undefined && from.root === root))) setChecklist(folderDefault(next))
+    setRoot(next)
+    chat.change({ newTaskRoot: next })
   }
   const provider = assistantFor(chat.settings, question ? '' : root)
   const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
@@ -957,14 +996,11 @@ export function NewTask({
     const said = seedText.trim()
     return said === '' ? was : was.trim() === '' ? said : `${was.trimEnd()}\n${said}`
   })
-  const [goal, setGoal] = useState(kept?.goal ?? '')
-  const [goalOpen, setGoalOpen] = useState(false)
-  const goalField = useRef<HTMLInputElement>(null)
   const [employeeId, setEmployeeId] = useState(kept?.employeeId ?? '')
   const chosenEmployee = chat.employeesById.get(employeeId)
   const unavailableEmployee = employeeId !== '' && (chosenEmployee === undefined || chosenEmployee.archived)
 
-  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal, employeeId })), [question, root, text, goal, employeeId])
+  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, checklist, employeeId })), [question, root, text, checklist, employeeId])
   // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
   useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
   const [pictures, setPictures] = useState<readonly SessionImage[]>(seed)
@@ -1085,7 +1121,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void (question ? chat.ask(said, sent) : chat.startTask(root, said, goal.trim(), sent, employeeId || undefined)).then(onClose, (error: Error) => {
+    void (question ? chat.ask(said, sent) : chat.startTask(root, said, checklist, sent, employeeId || undefined)).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1101,7 +1137,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void chat.planTask(root, text.trim(), goal.trim(), employeeId || undefined).then(onClose, (error: Error) => {
+    void chat.planTask(root, text.trim(), checklist, employeeId || undefined).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1109,7 +1145,7 @@ export function NewTask({
     })
   }
   const planWhy = pictures.length > 0 || recorded !== undefined ? 'Pictures are sent at once; Start it, or plan without them' : 'Put it in To do without sending. Open it and send when it is time'
-  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? 'Deleted a day after the last answer' : goal.trim() === '' ? `No goal: it stops when ${providerInfo.shortName} is done` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached`
+  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? 'Deleted a day after the last answer' : checklistHint(goal, checklist, providerInfo.shortName)
 
   if (ON_PHONE) {
     return (
@@ -1118,11 +1154,12 @@ export function NewTask({
         question={question}
         root={root}
         text={text}
-        goal={goal}
+        checklist={checklist}
         pictures={pictures}
         onRoot={pickRoot}
         onText={setText}
-        onGoal={setGoal}
+        onChecklist={setChecklist}
+        onChecklists={onChecklists}
         onPictures={take}
         onDrop={(at) => setPictures((held) => held.filter((_one, index) => index !== at))}
         onStart={start}
@@ -1189,7 +1226,7 @@ export function NewTask({
                 disabled={starting}
                 onClick={() => {
                   if (kind === question) return
-                  localStorage.setItem(keptKey(kind), JSON.stringify({ root, text, goal }))
+                  localStorage.setItem(keptKey(kind), JSON.stringify({ root, text, checklist }))
                   onSwitch(pictures)
                 }}
               >
@@ -1261,23 +1298,7 @@ export function NewTask({
             </div>
           </div>
           {copying === undefined ? null : <p className={copying.failed ? 'error' : 'new-task-why'}>{copying.text}</p>}
-          {question ? null : goalOpen || goal !== '' ? (
-            <label className="new-task-label new-task-goal-field">
-              Goal
-              <input
-                ref={goalField}
-                className="new-task-goal"
-                value={goal}
-                onChange={(event) => setGoal(event.target.value)}
-                onBlur={() => { if (goal.trim() === '') setGoalOpen(false) }}
-                placeholder="When it is done, as a condition"
-              />
-            </label>
-          ) : (
-            <button type="button" className="shortcut-add-goal" onClick={() => { setGoalOpen(true); requestAnimationFrame(() => goalField.current?.focus()) }}>
-              <Icon name="plus" size={11} />Add a goal<span>it keeps working until this holds</span>
-            </button>
-          )}
+          {question ? null : <ChecklistField checklists={chat.settings.checklists ?? []} root={root} value={checklist} onChange={setChecklist} onManage={onChecklists} disabled={starting} />}
         </div>
         <aside className="new-task-side" aria-label="Settings">
           {question ? null : (
@@ -1326,11 +1347,12 @@ function PhoneNewTask({
   question,
   root,
   text,
-  goal,
+  checklist,
   pictures,
   onRoot,
   onText,
-  onGoal,
+  onChecklist,
+  onChecklists,
   onPictures,
   onDrop,
   onStart,
@@ -1349,7 +1371,7 @@ function PhoneNewTask({
   readonly question: boolean
   readonly root: string
   readonly text: string
-  readonly goal: string
+  readonly checklist: TaskChecklist
   readonly pictures: readonly SessionImage[]
   readonly record: boolean
   /** A recording's frames, which go with the pictures. */
@@ -1360,7 +1382,8 @@ function PhoneNewTask({
   readonly copying: { readonly text: string; readonly failed: boolean } | undefined
   readonly onRoot: (root: string) => void
   readonly onText: (text: string) => void
-  readonly onGoal: (goal: string) => void
+  readonly onChecklist: (checklist: TaskChecklist) => void
+  readonly onChecklists?: (() => void) | undefined
   readonly onPictures: (files: readonly File[]) => void
   readonly onDrop: (at: number) => void
   readonly onStart: () => void
@@ -1376,6 +1399,7 @@ function PhoneNewTask({
   const provider = assistantFor(chat.settings, question ? '' : root)
   const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
   const [choosing, setChoosing] = useState(false)
+  const [editingChecklist, setEditingChecklist] = useState(false)
   const [recording, setRecording] = useState(record)
   const [listening, setListening] = useState(false)
   const [writing, setWriting] = useState(false)
@@ -1469,14 +1493,21 @@ function PhoneNewTask({
                     <Icon name="right" size={14} />
                   </span>
                 </button>
-                <label className="phone-task-cell">
-                  Goal
-                  <input className="phone-task-goal" value={goal} placeholder="None" onChange={(event) => onGoal(event.target.value)} />
-                </label>
+                <button type="button" className="phone-task-cell" disabled={starting} onClick={() => setEditingChecklist(true)}>
+                  Checklist
+                  <span>
+                    <span className="phone-task-cell-text">{checklistSaid(checklist)}</span>
+                    <Icon name="right" size={14} />
+                  </span>
+                </button>
               </div>
-              <div className="phone-task-note">
-                {goal.trim() === '' ? `Without a goal, it stops when ${providerInfo.shortName} is done.` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached.`}
-              </div>
+              {editingChecklist ? (
+                <Sheet title="Checklist" onClose={() => setEditingChecklist(false)} cancel={false} className="phone-checklist-sheet">
+                  <ChecklistField checklists={chat.settings.checklists ?? []} root={root} value={checklist} onChange={onChecklist} onManage={onChecklists === undefined ? undefined : () => { setEditingChecklist(false); onChecklists() }} />
+                  <button type="button" className="primary phone-checklist-done" onClick={() => setEditingChecklist(false)}>Done</button>
+                </Sheet>
+              ) : null}
+              <div className="phone-task-note">{`${checklistHint(checklistGoal(checklist), checklist, providerInfo.shortName)}.`}</div>
               <div className="phone-task-group">
                 <button type="button" className="phone-task-cell" disabled={onPlan === undefined || starting} onClick={onPlan}>
                   Plan in To do

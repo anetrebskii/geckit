@@ -18,12 +18,12 @@ export type ConfiguredShortcut = Omit<Shortcut, Exclude<keyof ShortcutHistory, '
 export type LocalSettings = Partial<Pick<Settings, typeof LOCAL_SETTINGS[number]>> & { readonly shortcutHistory?: readonly ShortcutHistory[] }
 type PreferenceSections = { readonly [Section in keyof typeof PREFERENCE_SECTIONS]?: Partial<Pick<Settings, typeof PREFERENCE_SECTIONS[Section][number]>> }
 
-export type Configuration = PreferenceSections & Partial<Pick<Settings, 'hosts' | 'phrases'>> & {
+export type Configuration = PreferenceSections & Partial<Pick<Settings, 'hosts' | 'phrases' | 'checklists'>> & {
   readonly version: 1
   readonly shortcuts?: readonly ConfiguredShortcut[]
   readonly employees?: readonly Employee[]
   readonly manager?: Partial<ManagerConfig>
 }
 
-type CoveredSettings = typeof PREFERENCE_SECTIONS[keyof typeof PREFERENCE_SECTIONS][number] | typeof LOCAL_SETTINGS[number] | 'shortcuts' | 'hosts' | 'phrases' | 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'shortcutDestinationsVersion'
+type CoveredSettings = typeof PREFERENCE_SECTIONS[keyof typeof PREFERENCE_SECTIONS][number] | typeof LOCAL_SETTINGS[number] | 'shortcuts' | 'hosts' | 'phrases' | 'checklists' | 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'shortcutDestinationsVersion'
 export type UnsectionedSettings = Exclude<keyof Settings, CoveredSettings>

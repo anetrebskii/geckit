@@ -5,6 +5,7 @@ import { assistantsIn } from '../shared/api'
 import { AGENT_SETTING_RULES, AGENT_SETTINGS_SCHEMA } from '../shared/agent-settings'
 import type { AgentSettings, AgentSettingsPatch } from '../shared/agent-settings'
 import { validateVpnIps, VPN_IP_CONFIGURATION_ERROR } from '../shared/vpn-ip'
+import { checklistsCommand } from './checklists-cli'
 
 type Json = string | number | boolean | null | readonly Json[] | JsonObject
 interface JsonObject { readonly [key: string]: Json }
@@ -59,8 +60,9 @@ function patch(text: string, settings: Settings): AgentSettingsPatch {
 
 export function settingsCommand(args: readonly string[], read: () => Settings, save: (change: Partial<Settings>) => Settings): string {
   const [command, ...rest] = args
+  if (command === 'checklists') return checklistsCommand(rest, read, save)
   if ((command === 'show' || command === 'schema') && (rest.length === 0 || rest.length === 1 && rest[0] === '--json')) return JSON.stringify(command === 'schema' ? AGENT_SETTINGS_SCHEMA : agentSettings(read()))
-  if (command !== 'edit') throw new Error('Use settings show, settings schema or settings edit --patch <JSON object> [--expected <JSON object>].')
+  if (command !== 'edit') throw new Error('Use settings show, settings schema, settings checklists or settings edit --patch <JSON object> [--expected <JSON object>].')
   const flags = new Map<string, string>()
   for (let at = 0; at < rest.length; at += 2) {
     const flag = rest[at]

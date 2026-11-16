@@ -4,6 +4,7 @@ export const PRODUCT_COMMANDS = [
   'capabilities',
   'speech status|fetch', 'browser-config status|fetch-model|delete-model', 'browser-config start-test|delete-test --name <test-name>',
   'settings schema|show|manager', 'settings manager-edit --instructions <text> --expected-instructions <last-read-text>', 'settings edit --patch <JSON> [--expected <JSON>]',
+  'checklists list [--project <root-or-name>]', 'checklists show|remove --id <id-or-name>', 'checklists add --name <name> --items <JSON array> [--project <root-or-name>] [--default]', 'checklists edit --id <id-or-name> [--name] [--items] [--project|--shared] [--default|--no-default]',
   'providers list', 'providers enable|disable --provider <id> --expected <enabled-provider-JSON-array>',
   'providers models|account --provider <enabled-id>', 'providers install --url <library> (installed disabled)', 'providers reinstall|uninstall|update --id <library-id>', 'providers check-updates|failures',
   'projects list', 'projects add|create --path <absolute-folder>', 'projects provider --project <root> [--provider <enabled-id|none> --expected <JSON-provider-or-null>]', 'projects remove --project <registered-root>',

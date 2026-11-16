@@ -24,6 +24,7 @@ const initialProvider: SessionProvider = query.get('provider') === 'codex' ? 'co
 const initialModel = initialProvider === 'codex' ? 'gpt-fixture' : initialProvider === 'plugin:fixture' ? 'library-model' : 'sonnet'
 let backing: ChatSession = { id: initialProvider === 'claude' ? 'manager-fixture-1' : `${initialProvider}:manager-fixture-1`, manager: true, root: '/Users/alex/Library/Application Support/geckit/manager', title: 'Manager', stands: 'Ready', state: query.get('state') === 'working' ? 'working' : 'idle', at: Date.now(), here: true, mode: 'manual', model: initialModel }
 let worker: ChatSession = { id: 'codex:worker-fixture', parent: backing.id, managerManaged: true, root, title: 'Add project provider preferences', stands: 'Waiting for your answer', state: 'asks', at: Date.now(), here: true, mode: 'auto' }
+if (query.has('checklistApproval')) worker = { ...worker, state: 'idle', stands: 'Design approved is waiting for your approval.', checklist: { items: [{ id: 'a', title: 'Tests pass', check: 'none', state: 'passed' }, { id: 'b', title: 'Design approved', check: 'person', state: 'approval' }, { id: 'c', title: 'Shipped', check: 'none' }] } }
 if (query.has('statusHistory')) {
   worker = { ...worker, status: 'blocked', moves: [
     { status: 'review', at: 1793912400000 },

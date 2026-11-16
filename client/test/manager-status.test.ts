@@ -37,6 +37,16 @@ describe('threadActivity', () => {
     ])
   })
 
+  it('says a worker waits for the person to approve a checklist item, without a secret title', () => {
+    const waiting = (title: string, language?: 'ru'): string | undefined => {
+      const one = worker('w1', 'Ship', { checklist: { items: [{ id: 'a', title, check: 'person', state: 'approval' }, { id: 'b', title: 'Deploy', check: 'none' }] } } as Partial<ChatSession>)
+      return threadActivity(view([thread({ owns: ['w1'], ...(language === undefined ? {} : { language }) })], [one]), 'slack:C1:3.0')?.workers[0]?.line
+    }
+    expect(waiting('Design approved')).toBe('• Ship: waiting for your approval: Design approved')
+    expect(waiting('Design approved', 'ru')).toBe('• Ship: ждёт вашего одобрения: Design approved')
+    expect(waiting('token xoxb-1234567890-abcdefghij')).toBe('• Ship: waiting for your approval')
+  })
+
   it('speaks in the language the person last wrote in, says what a tmux worker is doing in words and never shows its commands', () => {
     const tmux = (stands: string, extra: Partial<ChatSession> = {}): ChatSession => worker('plugin:claude-tmux:1', 'Ответы менеджера', { state: 'working', stands, provider: 'plugin:claude-tmux', ...extra } as Partial<ChatSession>)
     const line = (one: ChatSession, language?: 'ru'): string | undefined => threadActivity(view([thread({ id: 'telegram:81', owns: [one.id], ...(language === undefined ? {} : { language }) })], [one]), 'telegram:81')?.workers[0]?.line

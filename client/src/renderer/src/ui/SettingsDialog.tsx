@@ -19,6 +19,7 @@ import { AddAssistantButton, AddLibrary, FailedLibraryRow, LibraryActions, Libra
 import { Channels } from './Channels'
 import { VpnIpSettings } from './VpnIpSettings'
 import { ConfigurationSettings } from './ConfigurationSettings'
+import { ChecklistsSection } from './Checklists'
 
 /**
  * Settings, a section at a time: General, Profiles, Hosts, Phrases, Correct and dictation, Phone, Version.
@@ -48,7 +49,7 @@ export const LANGUAGES = [
   'Japanese',
 ]
 
-export type Section = 'general' | 'vpn' | 'assistants' | 'integrations' | 'secrets' | 'channels' | 'profiles' | 'hosts' | 'phrases' | 'correct' | 'phone' | 'version'
+export type Section = 'general' | 'vpn' | 'assistants' | 'integrations' | 'secrets' | 'channels' | 'profiles' | 'hosts' | 'checklists' | 'phrases' | 'correct' | 'phone' | 'version'
 
 const SECTIONS: readonly { readonly value: Section; readonly label: string }[] = [
   { value: 'general', label: 'General' },
@@ -59,6 +60,7 @@ const SECTIONS: readonly { readonly value: Section; readonly label: string }[] =
   { value: 'channels', label: 'Channels' },
   { value: 'profiles', label: 'Profiles' },
   { value: 'hosts', label: 'Hosts' },
+  { value: 'checklists', label: 'Checklists' },
   { value: 'phrases', label: 'Phrases' },
   { value: 'correct', label: 'Correct and dictation' },
   { value: 'phone', label: 'Phone' },
@@ -157,6 +159,7 @@ export function SettingsDialog({
             {section === 'secrets' ? <SecretsSection /> : null}
             {section === 'channels' ? <Channels settings={settings} change={change} /> : null}
             {section === 'hosts' ? <HostsSection /> : null}
+            {section === 'checklists' ? <ChecklistsSection settings={settings} change={change} /> : null}
             {section === 'phrases' ? <Phrases settings={settings} change={change} /> : null}
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
             {section === 'phone' ? <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} /> : null}

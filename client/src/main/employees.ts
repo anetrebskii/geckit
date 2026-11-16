@@ -1,3 +1,4 @@
+import { taskGoal } from '../shared/checklists'
 import { shortcutDestinationError } from '../shared/shortcut-destination-validation'
 import { randomUUID } from 'node:crypto'
 import { configuration, setConfiguration } from '../core/configuration'
@@ -11,7 +12,7 @@ import { cronOf, describeCron, describeStartWindow, isCron, nextTimed, startWind
 
 /** What the write commands of `geckit employees` reach beyond the catalog. */
 export interface TeamDeps {
-  readonly settings: () => Pick<Settings, 'shortcuts' | 'chatProviders' | 'chatProvider' | 'chatMode' | 'providerPlugins'>
+  readonly settings: () => Pick<Settings, 'shortcuts' | 'chatProviders' | 'chatProvider' | 'chatMode' | 'providerPlugins'> & Partial<Pick<Settings, 'checklists'>>
   /** The folder a project is called by, as `geckit start` names it; throws naming the ones there are. */
   readonly project: (name: string) => string
   readonly projectName: (root: string) => string
@@ -88,7 +89,7 @@ function options(args: readonly string[], allowed: readonly string[]): { readonl
   return { words, flags }
 }
 
-const SHORTCUT_FLAGS = ['--destination', '--target', '--name', '--project', '--prompt', '--goal', '--every', '--cron', '--start-window-minutes', '--provider', '--model', '--reasoning', '--mode']
+const SHORTCUT_FLAGS = ['--destination', '--target', '--name', '--project', '--prompt', '--goal', '--checklist', '--items', '--every', '--cron', '--start-window-minutes', '--provider', '--model', '--reasoning', '--mode']
 const quoted = (text: string): string => `"${text}"`
 const brief = (text: string): string => (text.length > 200 ? `${text.slice(0, 199)}...` : text).replace(/\s+/g, ' ')
 const scheduled = (one: Shortcut): boolean => one.on && (one.cron !== undefined || one.recurrence !== undefined)
@@ -374,7 +375,7 @@ export class Employees {
     const [action, said, ...rest] = args
     if (action === 'add' || action === 'edit') {
       const { words, flags } = options(rest, SHORTCUT_FLAGS)
-      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--destination <JSON|none>] [--goal <text>] [--every <when>|--cron <expr>] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --destination, --name, --project, --prompt, --prompt-file, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning, --mode.')
+      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--destination <JSON|none>] [--goal <text>|--checklist <id-or-name>|--items <JSON array>] [--every <when>|--cron <expr>] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --destination, --name, --project, --prompt, --prompt-file, --goal, --checklist, --items, --every, --cron, --start-window-minutes, --provider, --model, --reasoning, --mode.')
       const destinationSaid = flags.get('--destination')
       const destination = destinationSaid === undefined || destinationSaid === 'none' ? undefined : JSON.parse(destinationSaid) as NonNullable<Shortcut['destination']>
       const destinationError = shortcutDestinationError(destination)
@@ -384,7 +385,7 @@ export class Employees {
       if (target !== undefined && target !== 'manager' && target !== 'task') throw new Error('Use --target manager or task.')
       const manager = target === 'manager' || target === undefined && was?.target === 'manager'
       if (manager && action === 'add' && said !== 'none') throw new Error('Use none with --target manager; Manager is not an employee.')
-      if (manager && ['--provider', '--model', '--reasoning', '--mode', '--goal'].some((flag) => flags.has(flag))) throw new Error('Manager uses its configured assistant, model and approvals.')
+      if (manager && ['--provider', '--model', '--reasoning', '--mode', '--goal', '--checklist', '--items'].some((flag) => flags.has(flag))) throw new Error('Manager uses its configured assistant, model and approvals.')
       const owner = action === 'add' && said !== 'none' ? this.#employee(said) : undefined
       if (owner?.archived === true) throw new Error('Choose an active employee or None.')
       const name = flags.get('--name')?.trim()
@@ -412,11 +413,12 @@ export class Employees {
       const mode = flags.get('--mode') as SessionMode | undefined
       if (mode !== undefined && !MODES.includes(mode)) throw new Error('Use --mode manual, auto or plan.')
       const model = flags.get('--model')?.trim()
-      const goal = flags.get('--goal')?.trim()
+      const goalSaid = flags.get('--goal')?.trim()
       const reasoningSaid = flags.get('--reasoning')?.trim().toLowerCase()
       if (reasoningSaid !== undefined && reasoningSaid !== 'default' && !EFFORTS.includes(reasoningSaid as ReasoningEffort)) throw new Error(`Use --reasoning default, ${EFFORTS.join(', ')}.`)
       const reasoning = reasoningSaid === undefined ? undefined : reasoningSaid === 'default' ? '' : reasoningSaid as ReasoningEffort
       const root = project === undefined ? was?.root : team.project(project)
+      const goal = flags.has('--checklist') || flags.has('--items') ? taskGoal(team.settings().checklists ?? [], root ?? '', { goal: goalSaid, checklist: flags.get('--checklist'), items: flags.get('--items') }) ?? '' : goalSaid
       if (reasoning !== undefined && !isCodexProvider(provider ?? was?.provider ?? assistantFor(team.settings(), root))) throw new Error('--reasoning is for Codex shortcuts only. Claude Code takes its effort from the model.')
       if (action === 'add' && (name === undefined || root === undefined || prompt === undefined)) throw new Error('A shortcut needs --name, --project and --prompt or --prompt-file.')
       if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --destination, --name, --project, --prompt, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning or --mode.')

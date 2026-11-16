@@ -1091,6 +1091,73 @@ describe('when a turn ends', () => {
   })
 })
 
+describe('a task checklist', () => {
+  const soon = (run: () => void, ms: number): (() => void) => { const timer = ms <= 10_000 ? setTimeout(run, 0) : undefined; return () => clearTimeout(timer) }
+  const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5))
+  const metNote = (condition: string): GoalRead => ({ ended: { kind: 'note', id: '', note: 'goal', text: `Goal met: ${condition}` }, met: true })
+
+  it('sets each item as the goal in turn, ticks it when met, and waits for the person on their item', async () => {
+    let read: GoalRead = {}
+    const built = build({
+      later: soon,
+      disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => read },
+    })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'do the thing', checklist: { items: [
+      { id: 'a', title: 'Tests pass', check: 'none' },
+      { id: 'b', title: 'Lint clean', check: 'person' },
+      { id: 'c', title: 'Docs updated', check: 'none' },
+    ] } })
+    built.fake.hear({ signals: [{ kind: 'started', session: id, key: false }] })
+    expect(built.fake.sent[0]?.text).toContain('1. Tests pass\n2. Lint clean - check: stop and ask the person to approve before going on\n3. Docs updated')
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Tests pass' }))
+
+    read = { goal: { condition: 'Tests pass', checks: 0 } }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.goal?.condition).toBe('Tests pass'))
+    await settled()
+    read = metNote('Tests pass')
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Lint clean - check: stop and ask the person to approve before going on' }))
+    expect(of(built.rows, id)?.checklist?.items.map((one) => one.state)).toEqual(['passed', undefined, undefined])
+
+    read = { goal: { condition: 'Lint clean - check: stop and ask the person to approve before going on', checks: 0 } }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.goal).toBeDefined())
+    await settled()
+    read = metNote('Lint clean - check: stop and ask the person to approve before going on')
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.checklist?.items.map((one) => one.state)).toEqual(['passed', 'approval', undefined]))
+    expect(built.notes.at(-1)).toMatchObject({ session: id, body: 'Lint clean', asks: true, title: expect.stringContaining('Waiting for your approval') })
+    const sent = built.fake.sent.length
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(built.fake.sent.length).toBe(sent)
+
+    const checklist = of(built.rows, id)?.checklist
+    built.sessions.setChecklist(id, { ...checklist, items: (checklist?.items ?? []).map((one) => (one.id === 'b' ? { ...one, state: 'passed' as const } : one)) })
+    expect(built.notes.at(-1)).toMatchObject({ session: id, title: '', asks: false })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Docs updated' }))
+  })
+
+  it('moves the goal to an edited current item once the conversation rests', async () => {
+    const built = build({ later: soon })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads', check: 'none' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Page loads' }))
+  })
+
+  it('sets one goal for edits made one after another, from the last of them', async () => {
+    const built = build({ later: soon })
+    const id = await started(built)
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    const before = built.fake.sent.length
+    for (const title of ['Pa', 'Page', 'Page loads fast']) built.sessions.setChecklist(id, { items: [{ id: 'a', title, check: 'none' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Page loads fast' }))
+    expect(built.fake.sent.slice(before).filter((one) => one.text.startsWith('/goal'))).toHaveLength(1)
+  })
+})
+
 describe('a goal', () => {
   const condition = 'the tests pass'
   const met: GoalRead['ended'] = { kind: 'note', id: '', note: 'goal', text: `Goal met: ${condition}`, detail: 'All 12 pass.' }

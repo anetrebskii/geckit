@@ -52,7 +52,7 @@ const chat: Chat = {
   send: noop, ask: async () => undefined, startTask: async () => undefined, planTask: async () => undefined, say: noop, answer: noop, stop: noop,
   unqueue: noop, injectQueued: async () => undefined, requeue: noop, reorderQueued: noop,
   delegate: noop, stopShell: noop, typeShell: noop, toBackground: noop, stopTask: noop, clearTask: noop, tasksShown: false, showTasks: noop, compacting: undefined, setCompacting: noop,
-  rename: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, letGo: noop, refresh: noop,
+  rename: noop, setChecklist: noop, mark: noop, hide: noop, keep: noop, remove: noop, terminal: noop, copyTerminal: async () => false, letGo: noop, refresh: noop,
 }
 
 /** Each pose the gecko is drawn in, as its window shows it, on a stand-in desktop. */

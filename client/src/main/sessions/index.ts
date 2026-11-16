@@ -10,6 +10,8 @@ import { homedir } from 'node:os'
 import { basename } from 'node:path'
 
 import { letGo, taken } from '../lineup'
+import type { TaskChecklist } from '../../shared/checklists'
+import { awaitingApproval, checklistContext, checklistMet, currentItem, nextCondition, taskChecklist } from '../../shared/checklists'
 import { importedNote } from '../session-migration'
 import type { Standing } from '../lineup'
 
@@ -154,6 +156,7 @@ readonly vpnGoalPaused?: true | undefined
   readonly goal?: SessionGoal | undefined
   /** The goal that held; cleared when another goal is set. */
   readonly goalMet?: string | undefined
+  readonly checklist?: TaskChecklist | undefined
   /** A turn is running, where and since when; still here on a start, it was cut off by GeckIt closing. */
   readonly cut?: { readonly root: string; readonly at: number }
   /** Messages waiting for the turn before them, kept so a restart does not lose them. */
@@ -435,6 +438,9 @@ const PAUSE = { least: 3_000, most: 10_000 }
 
 const pause = (): number => PAUSE.least + Math.random() * (PAUSE.most - PAUSE.least)
 
+/** How long a checklist edit rests before its goal is set: long enough for typing to finish. */
+const CHECKLIST_SETTLE = 3_000
+
 function after(run: () => void, ms: number): () => void {
   const timer = setTimeout(run, ms)
   return () => clearTimeout(timer)
@@ -550,6 +556,7 @@ export class Sessions {
   readonly #providers: { codex: LlmProvider; readonly stream: LlmProvider; readonly plugins: Map<string, LlmProvider> }
   readonly #dispatching = new Set<string>()
   readonly #closingSessions = new Set<string>()
+  readonly #settling = new Map<string, () => void>()
   readonly #preparedSending = new Set<string>()
   readonly #live = new Map<string, Live>()
   readonly #retiredProviders = new Set<LlmProvider>()
@@ -835,8 +842,87 @@ export class Sessions {
    * on, it is for the person to unblock. A mark made by hand is left as it is - it says what they decided.
    */
   #goalEnded(id: string, ended: 'met' | 'blocked', condition: string): void {
-    if (ended === 'met') this.#note(id, { goalMet: condition })
-    else if (this.#deps.notes.all()[id]?.status === undefined) this.#note(id, { status: 'blocked' })
+    if (ended === 'met') {
+      const checklist = this.#deps.notes.all()[id]?.checklist
+      const ticked = checklist === undefined ? undefined : checklistMet(checklist, condition)
+      this.#note(id, { goalMet: condition, ...(ticked === undefined ? {} : { checklist: ticked }) })
+      const waiting = ticked === undefined ? undefined : currentItem(ticked)
+      if (waiting?.state === 'approval') this.#askApproval(id, waiting.title)
+      if (checklist !== undefined) (this.#deps.later ?? after)(() => this.#advance(id), pause())
+    } else if (this.#deps.notes.all()[id]?.status === undefined) this.#note(id, { status: 'blocked' })
+  }
+
+  /** A person's item is reached: like a question, it waits on them, so they are told wherever they are. */
+  #askApproval(id: string, item: string): void {
+    if (this.#watching === id) return
+    const root = this.#live.get(id)?.root ?? this.#rows.get(id)?.root ?? this.#deps.notes.all()[id]?.unborn ?? ''
+    const note = this.#deps.notes.all()[id]
+    this.#deps.notify({ session: id, title: `Waiting for your approval - ${basename(root)}`, subtitle: note?.title ?? this.#rows.get(id)?.title ?? '', body: item, asks: true })
+  }
+
+  /** A checklist moves on by itself: once a conversation rests, the next item not passed becomes its goal. */
+  #advance(id: string): void {
+    const note = this.#deps.notes.all()[id]
+    const checklist = note?.checklist
+    if (checklist === undefined || note?.prepared !== undefined) return
+    const live = this.#live.get(id)
+    if (live !== undefined && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) return
+    const next = nextCondition(checklist)
+    if (next === undefined || (live?.goal ?? note?.goal)?.condition === next && note?.goalMet !== next) return
+    void this.#sendGoal(id, next).catch(() => undefined)
+  }
+
+  async #sendGoal(id: string, condition: string): Promise<void> {
+    const live = this.#live.get(id)
+    const note = this.#deps.notes.all()[id]
+    const root = live?.root ?? this.#rows.get(id)?.root ?? note?.unborn
+    if (root === undefined) return
+    const base = { session: id, root, mode: live?.mode ?? note?.mode ?? 'auto', ...(live?.chosen === undefined ? {} : { model: live.chosen }) } as const
+    await this.send(isCodexProvider(providerOf(id)) ? { ...base, text: `Next on the checklist: ${condition}`, goal: condition } : { ...base, text: `/goal ${condition}` })
+  }
+
+  /** The person's edit of a task's checklist: kept as is, and the goal moves to its current item once the conversation rests. */
+  setChecklist(id: string, checklist: TaskChecklist): void {
+    this.#ordinary(id)
+    const kept = taskChecklist(checklist)
+    const before = this.#deps.notes.all()[id]?.checklist
+    this.#note(id, { checklist: kept.items.length === 0 ? undefined : kept })
+    if (before !== undefined && currentItem(before)?.state === 'approval' && (kept.items.length === 0 || currentItem(kept)?.state !== 'approval')) this.#deps.notify({ session: id, title: '', subtitle: '', body: '', asks: false })
+    this.#changed()
+    // The checklist saves as it is edited, so the goal follows only once the edits stop.
+    this.#settling.get(id)?.()
+    this.#settling.set(id, (this.#deps.later ?? after)(() => { this.#settling.delete(id); this.#advance(id) }, CHECKLIST_SETTLE))
+  }
+
+  /** The person approves the item their checklist waits on; false when it no longer waits on that item. */
+  approveItem(id: string, item: string): boolean {
+    const checklist = this.#deps.notes.all()[id]?.checklist
+    if (checklist === undefined || awaitingApproval(checklist)?.id !== item) return false
+    this.setChecklist(id, { ...checklist, items: checklist.items.map((one) => (one.id === item ? { ...one, state: 'passed' as const } : one)) })
+    return true
+  }
+
+  /** A new task with a checklist: the list goes with the first message, and its first item is the goal. */
+  async #startChecklist(message: SessionMessage, go: boolean, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
+    const { checklist: given, ...rest } = message
+    const checklist = taskChecklist(given ?? { items: [] })
+    const goal = nextCondition(checklist)
+    const context = checklistContext(checklist)
+    if (goal === undefined) {
+      const waiting = await this.send({ ...rest, text: context === '' ? rest.text : `${rest.text}\n\n${context}` }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
+      if (checklist.items.length > 0) this.#note(waiting, { checklist })
+      this.#changed()
+      return waiting
+    }
+    const codex = rest.provider !== undefined && isCodexProvider(rest.provider)
+    const sent = await this.send({ ...rest, text: context === '' ? rest.text : `${rest.text}\n\n${context}`, ...(codex ? { goal } : {}) }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
+    this.#note(sent, { checklist })
+    if (!codex) {
+      if (isCodexProvider(providerOf(sent))) await this.#sendGoal(sent, goal)
+      else await this.send({ session: sent, root: rest.root, mode: rest.mode, text: `/goal ${goal}`, ...(rest.model === undefined ? {} : { model: rest.model }) })
+    }
+    this.#changed()
+    return sent
   }
 
   #note(id: string, change: SessionNote): void {
@@ -1186,6 +1272,7 @@ export class Sessions {
         ...(tasks.length === 0 ? {} : { tasks }),
         ...(goal === undefined ? {} : { goal }),
         ...(note?.goalMet === undefined ? {} : { goalMet: note.goalMet }),
+        ...(note?.checklist === undefined ? {} : { checklist: note.checklist }),
         ...(moved === undefined ? {} : { since: moved.at }),
         ...(note?.moves === undefined ? {} : { moves: note.moves }),
         ...(runs === undefined ? {} : { runs: runs.command }),
@@ -1511,11 +1598,11 @@ export class Sessions {
         const text = note === undefined ? task.text : `${task.text}\n\nNote: ${note}`
         const noted = note === undefined ? {} : { note }
         if (tasks.some((one) => one.started !== undefined)) await new Promise<void>((resolve) => (this.#deps.later ?? after)(resolve, pause()))
-        const id = await this.send({ root, mode: pending.mode, text, provider: task.provider ?? providerOf(live.id) })
+        const id = await this.send({ root, mode: pending.mode, text, provider: task.provider ?? providerOf(live.id), ...(task.checklist === undefined ? {} : { checklist: task.checklist }) })
         this.rename(id, task.title)
         // A program's card is gone in a moment, so there is no conversation to be the parent.
         if (!this.#holders.has(live.id)) this.#note(id, { parent: live.id })
-        if (task.goal !== undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
+        if (task.goal !== undefined && task.checklist === undefined) await this.send({ session: id, root, mode: pending.mode, text: `/goal ${task.goal}` })
         const child = this.#live.get(id)
         if (child !== undefined && (this.#waiting(child) || child.heldOperation !== undefined)) waits.add(id)
         tasks.push({ ...task, started: id, ...noted })
@@ -1619,9 +1706,11 @@ export class Sessions {
 
   /** A task put in To do: its text waits in the composer and its goal on the card, and nothing is sent until the person sends it. */
   schedule(message: SessionMessage): string {
-    const id = this.prepare(message)
-    const goal = message.goal?.trim() ?? ''
-    this.#note(id, { status: 'todo', ...(goal === '' ? {} : { goal: { condition: goal, checks: 0 } }) })
+    const { checklist: given, ...plain } = message
+    const id = this.prepare(plain)
+    const checklist = given === undefined ? undefined : taskChecklist(given)
+    const goal = (checklist === undefined ? undefined : nextCondition(checklist)) ?? message.goal?.trim() ?? ''
+    this.#note(id, { status: 'todo', ...(goal === '' ? {} : { goal: { condition: goal, checks: 0 } }), ...(checklist === undefined || checklist.items.length === 0 ? {} : { checklist }) })
     const live = this.#live.get(id)
     if (live !== undefined) live.stands = 'Planned'
     this.#changed()
@@ -2143,6 +2232,7 @@ export class Sessions {
   /** `go` is a message that is part of a turn already given its slot, so the limit never holds it. */
   async send(message: SessionMessage, go = false, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
     if ([message.session, guardSource, delegateFrom].some((id) => id !== undefined && this.#closingSessions.has(id))) throw new Error('This conversation is being closed. Nothing was sent.')
+    if (message.checklist !== undefined) return this.#startChecklist(message, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
     if (message.session === undefined && guardSource === undefined && message.employeeId !== undefined) this.#deps.validateEmployee?.(message.employeeId)
     if (message.session !== undefined && this.#deps.notes.all()[message.session]?.preparedDestination !== undefined) throw new Error('This copy was already sent. Open its new conversation before sending again.')
     if (message.session !== undefined && this.#deps.notes.all()[message.session]?.prepared !== undefined) {
@@ -2153,10 +2243,12 @@ export class Sessions {
       // A planned task's goal goes with its first message, as New task sends one.
       const goal = this.#deps.notes.all()[id]?.status === 'todo' ? this.#deps.notes.all()[id]?.goal?.condition : undefined
       const provider = message.provider ?? providerOf(id)
+      const planned = this.#deps.notes.all()[id]?.checklist
+      const context = planned === undefined ? '' : checklistContext(planned)
       this.#preparedSending.add(id)
       try {
         const employeeId = this.#deps.notes.all()[id]?.employeeId
-        const sent = await this.send({ ...first, ...(employeeId === undefined ? {} : { employeeId }), ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
+        const sent = await this.send({ ...first, ...(context === '' ? {} : { text: `${first.text}\n\n${context}` }), ...(employeeId === undefined ? {} : { employeeId }), ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
         if (goal !== undefined && !isCodexProvider(provider)) await this.send({ session: sent, root: message.root, mode: message.mode, text: `/goal ${goal}`, ...(message.model === undefined ? {} : { model: message.model }) })
         return sent
       } finally { this.#preparedSending.delete(id) }

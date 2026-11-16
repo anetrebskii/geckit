@@ -5,6 +5,7 @@ import { application } from './application'
 import type { CoreRuntime } from './runtime'
 import { getSettings, forgetProject, rememberProject, setSettings } from '../main/store'
 import { settingsCommand } from '../main/agent-settings'
+import { checklistsCommand } from '../main/checklists-cli'
 import { assertProviderUnused, providerSettings } from '../main/provider-settings'
 import { requestedProvider } from '../cli/start'
 import type { HostDraft } from '../shared/hosts'
@@ -45,6 +46,7 @@ export async function dispatchProduct(runtime: CoreRuntime, args: readonly strin
   }
   if (domain === 'settings' && command === 'schema' && (rest.length === 0 || rest.length === 1 && rest[0] === '--json')) return json({ ...AGENT_SETTINGS_SCHEMA, target, authority })
   if (domain === 'settings') return settingsCommand(args.slice(1), getSettings, setSettings)
+  if (domain === 'checklists') return checklistsCommand(args.slice(1), getSettings, setSettings)
   if (domain === 'providers') {
     if (command === 'models' || command === 'account') {
       const flags = flagsFrom(rest, ['--provider'])

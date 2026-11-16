@@ -1,15 +1,16 @@
+import { shownChecklist, TaskChecklistEditor } from './TaskChecklist'
 import { StatusHistory } from './StatusHistory'
 import { Servers } from '../remote/Servers'
 import { readSignIn } from '../../../shared/live-view'
 import type { SignInLink } from '../../../shared/live-view'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { DEFAULT_SETTINGS, homeOf, inProgress, providerOf, resumeCommand, SESSION_STATUSES, shownProjects } from '../../../shared/api'
+import { DEFAULT_SETTINGS, homeOf, inProgress, providerOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
 import type { ChatSession, CutOff, SessionImage, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { llmProviderInfo, registerProviderInfo } from '../../../shared/providers'
 import { Icon } from '../ui/Icon'
-import { Picker } from '../ui/Menu'
+import { Menu, Picker } from '../ui/Menu'
 import { SettingsDialog } from '../ui/SettingsDialog'
 import type { Section } from '../ui/SettingsDialog'
 import { MOD, ShortcutsDialog } from '../ui/Shortcuts'
@@ -56,6 +57,13 @@ interface Recently {
 
 /** A sidebar as wide as the pointer says, leaving the conversation room to be read. */
 const sidebarAt = (x: number): number => Math.round(Math.min(Math.max(x, 220), window.innerWidth - 420))
+const PANEL_WIDTH = 380
+/** The checklist panel's width for a pointer at x: at least 280, and the conversation keeps at least 360. */
+const panelAt = (grip: HTMLElement, x: number): number => {
+  const area = grip.parentElement?.getBoundingClientRect()
+  if (area === undefined) return PANEL_WIDTH
+  return Math.round(Math.max(280, Math.min(area.right - x, area.width - 360)))
+}
 
 /** The bar across the top of the window, which the strip of board below a conversation starts under: `--bar` in the stylesheet. */
 const TOP_BAR = 45
@@ -118,6 +126,7 @@ export function Chat(): React.JSX.Element {
   const [transferring, setTransferring] = useState<ChatSession>()
   // The conversation whose terminal command was just copied, for the check that says so.
   const [copied, setCopied] = useState<string | undefined>()
+  const [more, setMore] = useState<DOMRect | undefined>()
   // The board's New task form is open.
   const [making, setMaking] = useState(() => keptTask(false) !== undefined)
   const [infoing, setInfoing] = useState(false)
@@ -206,6 +215,18 @@ export function Chat(): React.JSX.Element {
   }, [])
   // A file pressed on the phone, shown here since the phone has nothing to open it in.
   const [viewing, setViewing] = useState<{ readonly root: string; readonly path: string } | undefined>()
+  // Open or shut, the checklist panel stays as it was left in this window.
+  const [checklistShown, setChecklistShown] = useState(() => { try { return localStorage.getItem('checklistPanel') === 'open' } catch { return false } })
+  const [panelWidth, setPanelWidth] = useState(() => { try { return Number(localStorage.getItem('checklistPanelWidth')) || PANEL_WIDTH } catch { return PANEL_WIDTH } })
+  const [panelSizing, setPanelSizing] = useState<number | undefined>()
+  const keepPanelWidth = (width: number): void => {
+    setPanelWidth(width)
+    try { localStorage.setItem('checklistPanelWidth', String(width)) } catch { /* a window without storage just forgets */ }
+  }
+  const showChecklist = (open: boolean): void => {
+    setChecklistShown(open)
+    try { localStorage.setItem('checklistPanel', open ? 'open' : 'shut') } catch { /* a window without storage just forgets */ }
+  }
   const file = useCallback(
     (path: string, how: FileHow) => {
       if (root === undefined) return
@@ -240,25 +261,6 @@ export function Chat(): React.JSX.Element {
   )
   const links = useMemo(() => linksIn(chat.items), [chat.items])
 
-  // What Copy the terminal command puts on the clipboard: a local `cd` and resume, known at once; a host's own terminal line, asked for.
-  const sessionRoot = chat.session?.root
-  const sessionId = chat.session?.id
-  const localLine =
-    sessionRoot === undefined || sessionId === undefined || isRemote(sessionRoot)
-      ? undefined
-      : resumeCommand(sessionId) === undefined ? undefined : `cd ${JSON.stringify(sessionRoot)} && ${resumeCommand(sessionId)}`
-  const [hostLine, setHostLine] = useState<{ readonly id: string; readonly line: string | undefined } | undefined>()
-  useEffect(() => {
-    if (sessionRoot === undefined || sessionId === undefined || !isRemote(sessionRoot)) return
-    let here = true
-    void window.geckit.hosts.resumeLine(sessionRoot, sessionId).then((said) => {
-      if (here) setHostLine({ id: sessionId, line: said })
-    })
-    return () => {
-      here = false
-    }
-  }, [sessionRoot, sessionId, host?.state])
-  const terminalLine = localLine ?? (sessionId !== undefined && hostLine?.id === sessionId ? hostLine.line : undefined)
 
   useEffect(() => {
     const modifier = MOD === 'Cmd' ? 'Meta' : 'Control'
@@ -573,7 +575,7 @@ export function Chat(): React.JSX.Element {
       {making ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
-          <NewTask onEmployees={() => openTeam()} chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
+          <NewTask onEmployees={() => openTeam()} onChecklists={() => setSetting('checklists')} chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {team === undefined || ON_PHONE ? null : <Team chat={chat} first={team.first} onClose={() => setTeam(undefined)} onOpen={(id) => { setTeam(undefined); chat.open({ kind: 'session', id }) }} onShortcut={(edit) => setManaging({ edit, at: Date.now(), only: true })} />}
@@ -700,9 +702,6 @@ export function Chat(): React.JSX.Element {
                 onPick={chat.setRoot}
               />
             )}
-            {chat.session?.model === undefined ? null : (
-              <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{chat.session.model}</span>
-            )}
             <div className="spacer" />
             {chat.session === undefined ? null : <Back chat={chat} session={chat.session} />}
             {chat.session === undefined || startedCount(chat.sessions, chat.session.id) === 0 ? null : (
@@ -754,29 +753,6 @@ export function Chat(): React.JSX.Element {
                 <button
                   type="button"
                   className="icon-button no-drag"
-                  title={
-                    copied === chat.session.id
-                      ? 'Copied'
-                      : terminalLine === undefined
-                        ? 'Copy the command that continues it in a terminal'
-                        : `Copy the command that continues it in a terminal: ${terminalLine}`
-                  }
-                  aria-label="Copy the terminal command"
-                  onClick={() => {
-                    if (chat.session === undefined) return
-                    const id = chat.session.id
-                    void chat.copyTerminal(id).then((done) => {
-                      if (!done) return
-                      setCopied(id)
-                      setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
-                    })
-                  }}
-                >
-                  <Icon name={copied === chat.session.id ? 'check' : 'terminal'} />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button no-drag"
                   title={`Find in this conversation (${MOD}+F)`}
                   aria-label="Find in this conversation"
                   onClick={find}
@@ -786,53 +762,64 @@ export function Chat(): React.JSX.Element {
                 <button
                   type="button"
                   className="icon-button no-drag"
-                  title={`Refresh (${MOD}+R)`}
-                  aria-label="Refresh"
-                  onClick={chat.refresh}
+                  title={copied === chat.session.id ? 'Copied' : 'More'}
+                  aria-label="More"
+                  aria-haspopup="menu"
+                  aria-expanded={more !== undefined}
+                  onClick={(event) => {
+                    const anchor = event.currentTarget.getBoundingClientRect()
+                    setMore((was) => (was === undefined ? anchor : undefined))
+                  }}
                 >
-                  <Icon name="refresh" />
+                  <Icon name={copied === chat.session.id ? 'check' : 'more'} />
                 </button>
+                {more === undefined ? null : (
+                  <Menu
+                    anchor={more}
+                    autoFocus
+                    choices={[
+                      { value: 'terminal', label: 'Copy terminal command', icon: 'terminal' },
+                      { value: 'refresh', label: `Refresh (${MOD}+R)`, icon: 'refresh' },
+                      ...(overBoard && inProgress(chat.session.status)
+                        ? [
+                            { value: 'top', label: 'Move to top of In progress', icon: 'ahead', disabled: topOrder === undefined },
+                            { value: 'bottom', label: 'Move to bottom of In progress', icon: 'behind', disabled: bottomOrder === undefined },
+                          ]
+                        : []),
+                      ...(overBoard ? [{ value: 'place', label: below ? 'Open conversations over the board' : 'Open conversations below the board', icon: below ? 'over' : 'below' }] : []),
+                    ]}
+                    onPick={(value) => {
+                      setMore(undefined)
+                      const id = chat.session?.id
+                      if (id === undefined) return
+                      if (value === 'terminal') {
+                        void chat.copyTerminal(id).then((done) => {
+                          if (!done) return
+                          setCopied(id)
+                          setTimeout(() => setCopied((now) => (now === id ? undefined : now)), 1500)
+                        })
+                      } else if (value === 'refresh') chat.refresh()
+                      else if (value === 'top' && topOrder !== undefined) chat.change({ progressOrder: topOrder })
+                      else if (value === 'bottom' && bottomOrder !== undefined) chat.change({ progressOrder: bottomOrder })
+                      else if (value === 'place') chat.change({ conversationPlace: below ? 'over' : 'below' })
+                    }}
+                    onClose={() => setMore(undefined)}
+                  />
+                )}
+                {chat.root === undefined ? null : (
+                  <button
+                    type="button"
+                    className={`icon-button no-drag inspector-toggle${checklistShown ? ' on' : ''}`}
+                    title={checklistShown ? 'Hide checklist' : 'Show checklist'}
+                    aria-label="Checklist"
+                    aria-pressed={checklistShown}
+                    onClick={() => showChecklist(!checklistShown)}
+                  >
+                    <Icon name="sidebar" />
+                  </button>
+                )}
               </>
             )}
-            {overBoard && chat.session !== undefined && inProgress(chat.session.status) ? (
-              <>
-                <button
-                  type="button"
-                  className="icon-button no-drag"
-                  title="Move to the top of In progress"
-                  aria-label="Move to the top"
-                  disabled={topOrder === undefined}
-                  onClick={() => {
-                    if (topOrder !== undefined) chat.change({ progressOrder: topOrder })
-                  }}
-                >
-                  <Icon name="ahead" />
-                </button>
-                <button
-                  type="button"
-                  className="icon-button no-drag"
-                  title="Move to the bottom of In progress"
-                  aria-label="Move to the bottom"
-                  disabled={bottomOrder === undefined}
-                  onClick={() => {
-                    if (bottomOrder !== undefined) chat.change({ progressOrder: bottomOrder })
-                  }}
-                >
-                  <Icon name="behind" />
-                </button>
-              </>
-            ) : null}
-            {overBoard ? (
-              <button
-                type="button"
-                className="icon-button no-drag"
-                title={below ? 'Open conversations over the board: a popup, the board dimmed behind it' : 'Open conversations below the board: the board stays as a strip across the top, as tall as you drag it'}
-                aria-label={below ? 'Open conversations over the board' : 'Open conversations below the board'}
-                onClick={() => chat.change({ conversationPlace: below ? 'over' : 'below' })}
-              >
-                <Icon name={below ? 'over' : 'below'} />
-              </button>
-            ) : null}
             {overBoard ? (
               <button
                 type="button"
@@ -848,78 +835,113 @@ export function Chat(): React.JSX.Element {
         )}
 
         {chat.session === undefined ? null : <StatusHistory {...(chat.session.moves === undefined ? {} : { moves: chat.session.moves })} />}
-        {chat.shown.kind === 'new' && chat.items.length === 0 ? (
-          <div className="transcript">
-            <div className="turn" role={chat.checkingIp ? 'status' : undefined} style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
-              {chat.checkingIp ? 'Checking public IP...' : chat.root === undefined
-                ? 'Choose a folder on the left. Everything asked here runs in that folder.'
-                : host !== undefined
-                  ? host.state === 'lost'
-                    ? `Reconnecting to ${host.name}`
-                    : host.state === 'connecting'
-                      ? `Connecting to ${host.name}`
-                      : host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
-                        ? ON_PHONE
-                          ? needsComputer(host, chat.prompts)
-                            ? `${host.name} needs you on ${computerName()}${host.problem === undefined ? '.' : `: ${host.problem}`}`
-                            : `${host.name} needs you`
-                          : `${host.name} needs you, above`
-                        : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`
-                  : chat.account === undefined
-                    ? `Looking for ${assistant}...`
-                    : chat.account.here !== true
-                    ? `${assistant} is not on this computer. Install it, then reopen this window.`
-                    : chat.account.signedIn === false
-                    ? providerInfo.loginCommand === '' ? `Nobody is signed in to ${assistant}.` : `Nobody is signed in. Run ${providerInfo.loginCommand} in a terminal, then return here.`
-                      : chat.account.key === true && providerInfo.planName !== ''
-                        ? `${assistant} is signed in with an API key. Sign in with your ${providerInfo.planName} plan.`
-                        : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`}
+        <div className={`talk-main${panelSizing === undefined ? '' : ' sizing'}`} style={{ '--panel': `${String(panelSizing ?? panelWidth)}px` } as React.CSSProperties}>
+          <div className="talk-column">
+          {chat.shown.kind === 'new' && chat.items.length === 0 ? (
+            <div className="transcript">
+              <div className="turn" role={chat.checkingIp ? 'status' : undefined} style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
+                {chat.checkingIp ? 'Checking public IP...' : chat.root === undefined
+                  ? 'Choose a folder on the left. Everything asked here runs in that folder.'
+                  : host !== undefined
+                    ? host.state === 'lost'
+                      ? `Reconnecting to ${host.name}`
+                      : host.state === 'connecting'
+                        ? `Connecting to ${host.name}`
+                        : host.state === 'needs' || host.state === 'missing' || host.state === 'signin'
+                          ? ON_PHONE
+                            ? needsComputer(host, chat.prompts)
+                              ? `${host.name} needs you on ${computerName()}${host.problem === undefined ? '.' : `: ${host.problem}`}`
+                              : `${host.name} needs you`
+                            : `${host.name} needs you, above`
+                          : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`
+                    : chat.account === undefined
+                      ? `Looking for ${assistant}...`
+                      : chat.account.here !== true
+                      ? `${assistant} is not on this computer. Install it, then reopen this window.`
+                      : chat.account.signedIn === false
+                      ? providerInfo.loginCommand === '' ? `Nobody is signed in to ${assistant}.` : `Nobody is signed in. Run ${providerInfo.loginCommand} in a terminal, then return here.`
+                        : chat.account.key === true && providerInfo.planName !== ''
+                          ? `${assistant} is signed in with an API key. Sign in with your ${providerInfo.planName} plan.`
+                          : `Ask anything about ${projectLabel(chat.root)}. What it may do without asking is under the field.`}
+              </div>
             </div>
+          ) : chat.shown.kind === 'session' && chat.itemsFor !== chat.shown.id && chat.items.length === 0 ? (
+            <div className="transcript" aria-busy="true" aria-label="Reading the conversation">
+              <div className="turn">
+                <div className="skeleton-bubble" />
+              </div>
+              <div className="turn">
+                <div className="skeleton-line" />
+                <div className="skeleton-line" />
+                <div className="skeleton-line short" />
+              </div>
+            </div>
+          ) : (
+            <Files value={files}>
+              <RequestChat value={chat}>
+              <Transcript
+                at={chat.itemsFor}
+                items={chat.items}
+                working={chat.working}
+                onAnswer={chat.answer}
+                onAgain={again}
+                onFile={file}
+                onStopShell={chat.stopShell}
+                onTypeShell={chat.typeShell}
+                onBackground={chat.toBackground}
+                onContinue={proceed}
+                onRetry={chat.retry}
+                checkingIp={chat.checkingIp}
+                retrying={chat.retrying}
+                queued={chat.session?.queued}
+                heldSend={chat.session?.heldSend === true}
+                tasks={chat.session?.tasks}
+                onTasks={chat.showTasks}
+                seek={seek}
+                earlier={chat.earlier}
+                onEarlier={chat.showEarlier}
+                onSteps={chat.loadSteps}
+                find={finding?.id === chat.itemsFor ? finding.at : undefined}
+                onFindClose={closeFind}
+              />
+              </RequestChat>
+            </Files>
+          )}
           </div>
-        ) : chat.shown.kind === 'session' && chat.itemsFor !== chat.shown.id && chat.items.length === 0 ? (
-          <div className="transcript" aria-busy="true" aria-label="Reading the conversation">
-            <div className="turn">
-              <div className="skeleton-bubble" />
-            </div>
-            <div className="turn">
-              <div className="skeleton-line" />
-              <div className="skeleton-line" />
-              <div className="skeleton-line short" />
-            </div>
-          </div>
-        ) : (
-          <Files value={files}>
-            <RequestChat value={chat}>
-            <Transcript
-              at={chat.itemsFor}
-              items={chat.items}
-              working={chat.working}
-              onAnswer={chat.answer}
-              onAgain={again}
-              onFile={file}
-              onStopShell={chat.stopShell}
-              onTypeShell={chat.typeShell}
-              onBackground={chat.toBackground}
-              onContinue={proceed}
-              onRetry={chat.retry}
-              checkingIp={chat.checkingIp}
-              retrying={chat.retrying}
-              queued={chat.session?.queued}
-              heldSend={chat.session?.heldSend === true}
-              tasks={chat.session?.tasks}
-              onTasks={chat.showTasks}
-              seek={seek}
-              earlier={chat.earlier}
-              onEarlier={chat.showEarlier}
-              onSteps={chat.loadSteps}
-              find={finding?.id === chat.itemsFor ? finding.at : undefined}
-              onFindClose={closeFind}
+          {checklistShown && !ON_PHONE && chat.session !== undefined && chat.root !== undefined ? (
+            <div
+              className={`panel-grip${panelSizing === undefined ? '' : ' on'}`}
+              title="Drag to resize, double-click for the usual width"
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId)
+                setPanelSizing(panelAt(event.currentTarget, event.clientX))
+              }}
+              onPointerMove={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelSizing(panelAt(event.currentTarget, event.clientX))
+              }}
+              onPointerUp={(event) => {
+                if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+                keepPanelWidth(panelAt(event.currentTarget, event.clientX))
+                setPanelSizing(undefined)
+              }}
+              onLostPointerCapture={() => setPanelSizing(undefined)}
+              onDoubleClick={() => keepPanelWidth(PANEL_WIDTH)}
             />
-            </RequestChat>
-          </Files>
-        )}
+          ) : null}
+          {checklistShown && !ON_PHONE && chat.session !== undefined && chat.root !== undefined ? (
+            <TaskChecklistEditor
+              key={chat.session.id}
+              panel
+              checklist={shownChecklist(chat.session.checklist, chat.session.goal?.condition, chat.session.goalMet)}
+              goal={chat.session.goal?.condition}
+              onSave={(next) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next) }}
+              onClear={() => { if (chat.session === undefined) return; chat.setChecklist(chat.session.id, { items: [] }); if (chat.session.goal !== undefined) chat.say('/goal clear') }}
+              onClose={() => showChecklist(false)}
+            />
+          ) : null}
+        </div>
 
-        <Composer chat={chat} onContinue={() => setTransferring(chat.session)} />
+        <Composer chat={chat} onContinue={() => setTransferring(chat.session)} onChecklist={ON_PHONE ? undefined : () => showChecklist(!checklistShown)} checklistShown={checklistShown} />
         {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
       </div>
 

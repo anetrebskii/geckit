@@ -126,6 +126,7 @@ export function MANAGER_WORKFLOWS(claude: boolean): string {
     lifecycleSkill: skillSaid('manage-worker-lifecycle', claude), lifecyclePath: skillPath('manage-worker-lifecycle', claude),
     progressSkill: skillSaid('review-progress-tasks', claude), progressPath: skillPath('review-progress-tasks', claude),
     scheduleSkill: skillSaid('schedule-tasks', claude), schedulePath: skillPath('schedule-tasks', claude),
+    checklistsSkill: skillSaid('define-checklists', claude), checklistsPath: skillPath('define-checklists', claude),
     employeesSkill: skillSaid('manage-employees', claude), employeesPath: skillPath('manage-employees', claude),
     slackReplySkill: skillSaid('send-slack-reply', claude), slackReplyPath: skillPath('send-slack-reply', claude),
     telegramReplySkill: skillSaid('send-telegram-reply', claude), telegramReplyPath: skillPath('send-telegram-reply', claude),
@@ -146,6 +147,7 @@ export function skillFiles(command: string, sourceName: string, name: string): R
     profilesSkill: skillSaid('configure-browser-profile', claude), profilesPath: skillPath('configure-browser-profile', claude),
     lifecycleSkill: skillSaid('manage-worker-lifecycle', claude), lifecyclePath: skillPath('manage-worker-lifecycle', claude),
     scheduleSkill: skillSaid('schedule-tasks', claude), schedulePath: skillPath('schedule-tasks', claude),
+    checklistsSkill: skillSaid('define-checklists', claude), checklistsPath: skillPath('define-checklists', claude),
   }
   const prefix = `../../../skills/${sourceName}/`
   return Object.fromEntries(Object.entries(SKILL_TEMPLATES)
@@ -307,6 +309,7 @@ const COMMAND = (path: string, claude = true): string => {
     lifecycleSkill: skillSaid('manage-worker-lifecycle', claude), lifecyclePath: skillPath('manage-worker-lifecycle', claude),
     progressSkill: skillSaid('review-progress-tasks', claude), progressPath: skillPath('review-progress-tasks', claude),
     scheduleSkill: skillSaid('schedule-tasks', claude), schedulePath: skillPath('schedule-tasks', claude),
+    checklistsSkill: skillSaid('define-checklists', claude), checklistsPath: skillPath('define-checklists', claude),
   })}\n`
 }
 

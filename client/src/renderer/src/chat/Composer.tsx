@@ -15,6 +15,8 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
+import { checklistLabel, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
+import { currentItem } from '../../../shared/checklists'
 import { MOD } from '../ui/Shortcuts'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
@@ -108,59 +110,19 @@ const MCP = /^\s*\/mcp\s*$/
 const GOAL = /^\s*\/goal(\s|$)/
 const COMPACT = /^\s*\/compact(\s|$)/
 
-function GoalEditor({ condition, onSave, onClear, onClose }: {
-  readonly condition: string | undefined
-  readonly onSave: (value: string) => void
-  readonly onClear: () => void
-  readonly onClose: () => void
-}): React.JSX.Element {
-  const [value, setValue] = useState(condition ?? '')
-  useEffect(() => {
-    if (ON_PHONE) return
-    const escape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', escape)
-    return () => window.removeEventListener('keydown', escape)
-  }, [onClose])
-  const save = (): void => {
-    const text = value.trim()
-    if (text !== '') onSave(text)
-  }
-  const field = <textarea autoFocus className="goal-edit-field" value={value} placeholder="What should be true when this is done?" aria-label="Goal condition" onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (!ON_PHONE && event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); save() } }} />
-  if (ON_PHONE) return (
-    <Sheet title="Goal" onClose={onClose} cancel={false}>
-      <div className="goal-edit-phone">
-        {field}
-        <button type="button" className="primary" disabled={value.trim() === ''} onClick={save}>Save goal</button>
-        {condition === undefined ? null : <button type="button" className="quiet danger" onClick={onClear}>Clear goal</button>}
-        <button type="button" className="quiet" onClick={onClose}>Cancel</button>
-      </div>
-    </Sheet>
-  )
-  return (
-    <div className="dialog-scrim" onMouseDown={onClose}>
-      <div className="dialog goal-editor" role="dialog" aria-label="Goal" onMouseDown={(event) => event.stopPropagation()}>
-        <h2>Goal</h2>
-        {field}
-        <div className="dialog-actions">
-          {condition === undefined ? null : <button type="button" className="quiet danger" onClick={onClear}>Clear goal</button>}
-          <span className="spacer" />
-          <button type="button" className="quiet" onClick={onClose}>Cancel</button>
-          <button type="button" className="primary" disabled={value.trim() === ''} onClick={save}>Save goal</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /**
  * The field a message is written in, with what it will be sent to under it.
  *
  * Whose plan is about to answer is said here and not in a settings page,
  * because here is where the question is asked.
  */
-export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly onContinue?: () => void }): React.JSX.Element {
+export function Composer({ chat, onContinue, onChecklist, checklistShown = false }: {
+  readonly chat: Chat
+  readonly onContinue?: () => void
+  /** On the desktop the checklist opens in the panel beside the conversation, not a dialog. */
+  readonly onChecklist?: (() => void) | undefined
+  readonly checklistShown?: boolean
+}): React.JSX.Element {
   const providerInfo = llmProviderInfo(chat.provider, chat.transport, chat.settings.providerPlugins)
   const providers = selectableProviders(chat.settings)
   const assistant = providerInfo.shortName
@@ -470,6 +432,7 @@ export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly o
       .finally(() => setWriting(false))
   }
   const goal = chat.session?.goal
+  const taskList = shownChecklist(chat.session?.checklist, goal?.condition, chat.session?.goalMet)
   const command = chat.root !== undefined && chat.draft.trim().startsWith('!')
   // A first message, or one to a conversation not working, waits in the queue where as many are working as the limit allows.
   const idle = chat.shown.kind !== 'session' || (chat.session !== undefined && chat.session.state !== 'working' && chat.session.state !== 'asks')
@@ -535,7 +498,15 @@ export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly o
 
   return (
     <div className="composer">
-      {chat.session !== undefined && editingGoal === chat.session.id ? <GoalEditor condition={goal?.condition} onSave={(value) => { if (value !== goal?.condition) chat.say(`/goal ${value}`); setEditingGoal(undefined) }} onClear={() => { chat.say('/goal clear'); setEditingGoal(undefined) }} onClose={() => setEditingGoal(undefined)} /> : null}
+      {chat.session !== undefined && editingGoal === chat.session.id ? (
+        <TaskChecklistEditor
+          checklist={taskList}
+          goal={goal?.condition}
+          onSave={(next) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next); setEditingGoal(undefined) }}
+          onClear={() => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, { items: [] }); if (goal !== undefined) chat.say('/goal clear'); setEditingGoal(undefined) }}
+          onClose={() => setEditingGoal(undefined)}
+        />
+      ) : null}
       {dropped === undefined ? null : ON_PHONE ? (
         <Sheet title="Cancel this message?" onClose={() => setDropping(undefined)} cancel={false}>
           <p className="branch-quote">{dropped.text}</p>
@@ -1118,20 +1089,31 @@ export function Composer({ chat, onContinue }: { readonly chat: Chat; readonly o
             onStop={chat.stopTask}
             onClear={chat.clearTask}
           />
-          {chat.root === undefined ? null : goal === undefined ? (
+          {chat.root === undefined ? null : taskList.items.length === 0 ? (
             <button
               type="button"
               className="picker goal-control"
               disabled={cannot || chat.session === undefined}
-              title="Set a goal"
-              onClick={() => setEditingGoal(chat.session?.id)}
+              title="Results this task works through, one goal at a time"
+              aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}
             >
-              Goal
+              Checklist
             </button>
-          ) : (
-            <button type="button" className="picker goal-picker goal-control" title={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`} onClick={() => setEditingGoal(chat.session?.id)}>
+          ) : chat.session?.checklist === undefined && goal !== undefined ? (
+            <button type="button" className="picker goal-picker goal-control" title={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`} aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}>
               <span className="remote-dot" />
               <span className="goal-text">{`Goal: ${goal.condition}`}</span>
+              <Icon name="down" size={11} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`picker goal-picker goal-control${currentItem(taskList)?.state === 'approval' ? ' approval' : ''}`}
+              title={goal === undefined ? checklistLabel(taskList) : `Now: ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`}
+              aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}
+            >
+              {goal === undefined ? null : <span className="remote-dot" />}
+              <span className="goal-text">{checklistLabel(taskList)}</span>
               <Icon name="down" size={11} />
             </button>
           )}

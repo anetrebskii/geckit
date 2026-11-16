@@ -1,5 +1,6 @@
 import type { ChatSession } from '../shared/api'
 import type { ManagerThread, ManagerView } from '../shared/manager'
+import { awaitingApproval } from '../shared/checklists'
 import { containsSecret } from '../shared/channel-safety'
 import { commandSaid, say, workerDoing } from './manager-voice'
 import type { Speech } from './manager-voice'
@@ -32,6 +33,8 @@ function workerSaid(worker: ChatSession, speech?: Speech): { readonly said: stri
   const said = say(speech).worker
   if (worker.state === 'working') return { said: said.working, active: true }
   if (worker.state === 'asks') return { said: said.asks, active: false }
+  const approve = awaitingApproval(worker.checklist)
+  if (approve !== undefined) return { said: containsSecret(approve.title) ? said.approval : `${said.approval}: ${clip(approve.title, TITLE)}`, active: false }
   if (worker.delivery?.status === 'pending') return { said: said.pending, active: true }
   if (worker.waits === true || (worker.queued?.length ?? 0) > 0) return { said: said.slot, active: true }
   if (worker.state === 'limit') return { said: said.limit, active: true }

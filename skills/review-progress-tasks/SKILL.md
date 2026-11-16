@@ -15,10 +15,10 @@ Use the person's requested project, employee or board scope. Load [Manager comma
 
 ## Work
 
-1. For every candidate, read fresh state, latest request and replies, delivery, queued follow-ups, running tasks and completion evidence. Recover the original goal and later corrections before deciding. Do not change unrelated or other-thread workers.
+1. For every candidate, read fresh state, latest request and replies, delivery, queued follow-ups, running tasks, checklist progress and completion evidence. Recover the original goal and later corrections before deciding. Do not change unrelated or other-thread workers.
 2. If the worker is running and has work to do, leave it In progress. Elapsed time alone is not a reason to stop it. Inspect pending permission, blocked delivery or held operations instead of sending another copy of its task.
 3. If execution ended and the requested result is verified, mark Done and read it back. Use the same evidence threshold as `manage-worker-lifecycle`: the original outcome, all corrections and observable results must agree.
-4. If execution ended with work remaining, continue the same outcome with a concrete next step when authorized. For an active correction, use Steer only when supported. Report an unresolved permission, unavailable provider or missing decision as blocked; preserve the request and state what would unblock it.
+4. If execution ended with work remaining, continue the same outcome with a concrete next step when authorized. For an active correction, use Steer only when supported. Report an unresolved permission, unavailable provider, missing decision or checklist item waiting for the person as blocked; preserve the request and state what would unblock it.
 5. Archive cancelled work when cancellation is established by the person or retained instructions. An old date, duplicate-looking title or inactive employee does not establish cancellation. Preserve history. Do not delete tasks, purge transcripts or remove temporary files as a cleanup shortcut.
 6. If several workers appear to duplicate one outcome, compare their requests and results. Identify the owner and which work remains before proposing consolidation. Do not cancel running work or discard a result merely because another title matches.
 7. Read back every changed worker. On a failed or uncertain mutation, reconcile its receipt and state before retrying. Continue independent candidates and report unresolved cases individually.

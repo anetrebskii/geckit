@@ -4,6 +4,8 @@ import type { StartAsked, StartAnswered } from '../main/asked'
 import { firstLine } from '../main/sessions/wording'
 import { projectSaid } from '../main/orders'
 import { getSettings } from '../main/store'
+import type { TaskChecklist } from '../shared/checklists'
+import { taskPlan } from '../shared/checklists'
 
 export async function requestTasks(held: Sessions, ask: StartAsked, gone: AbortSignal, hostNamed: (id: string) => string | undefined): Promise<StartAnswered> {
   // A program names itself; the name is only shown, since nothing starts before the person says so.
@@ -28,11 +30,17 @@ export async function requestTasks(held: Sessions, ask: StartAsked, gone: AbortS
     const text = typeof task.text === 'string' ? task.text.trim() : ''
     if (text === '') return { ok: false, error: `Task ${String(index + 1)} has no text.` }
     const title = typeof task.title === 'string' && task.title.trim() !== '' ? task.title.trim() : text.split(/(?<=[.!?])\s/)[0] ?? text
-    const goal = typeof task.goal === 'string' && task.goal.trim() !== '' ? task.goal.trim() : undefined
+    let goal: string | undefined
+    let checklist: TaskChecklist | undefined
+    try {
+      ({ goal, checklist } = taskPlan(getSettings().checklists ?? [], root, { goal: typeof task.goal === 'string' ? task.goal : undefined, checklist: typeof task.checklist === 'string' ? task.checklist : undefined, items: task.items }))
+    } catch (error) {
+      return { ok: false, error: `Task ${String(index + 1)}: ${error instanceof Error ? error.message : String(error)}` }
+    }
     const enabled = assistantsIn(getSettings())
     const provider = task.provider ?? (from === undefined ? enabled[0] ?? 'claude' : providerOf(from))
     if (!enabled.includes(provider)) return { ok: false, error: `Task ${String(index + 1)}: provider ${provider} is not enabled.` }
-    asking.push({ provider, project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }) })
+    asking.push({ provider, project: task.project, root, title: firstLine(title, 100), text, ...(goal === undefined ? {} : { goal }), ...(checklist === undefined ? {} : { checklist }) })
   }
   const mode = getSettings().chatMode
   const answered = from === undefined ? await held.requestFromApp(app, asking, mode, gone) : await held.request(from, asking, mode, gone)

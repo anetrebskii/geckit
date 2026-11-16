@@ -7,6 +7,7 @@ import { llmProviderInfo } from './providers'
 import type { ProjectAssistant } from './manager'
 import type { Employee } from './employees'
 import type { ChannelSetting } from './channels'
+import type { Checklist, TaskChecklist } from './checklists'
 
 /**
  * The contract between the main process and the windows.
@@ -196,6 +197,8 @@ export interface RequestTask {
   readonly title: string
   readonly text: string
   readonly goal?: string
+  /** Its checklist: each item becomes the goal in turn once it starts. */
+  readonly checklist?: TaskChecklist
   /** The conversation it was started as, once it was. */
   readonly started?: string
   readonly note?: string
@@ -441,6 +444,8 @@ export interface ChatSession {
   readonly goal?: SessionGoal
   /** The goal that held; the card stays where it is and says so. */
   readonly goalMet?: string
+  /** The task's own checklist, each item set as the goal in turn. */
+  readonly checklist?: TaskChecklist
   /** When it was last moved into the column it stands in, which is the day Done shows it under. */
   readonly since?: number
   /** A command typed after ! that is still running in it, the first where there are more. */
@@ -620,6 +625,8 @@ export interface SessionMessage {
   readonly text: string
   /** A new Codex task's finish condition, attached before its first turn. */
   readonly goal?: string
+  /** A new task's checklist: GeckIt sets each item as the goal in turn. */
+  readonly checklist?: TaskChecklist
   readonly images?: readonly SessionImage[]
   /** The model the tool is handed. Nothing is Default: the tool is handed nothing. */
   readonly model?: string
@@ -1265,6 +1272,8 @@ export interface Settings {
   readonly phoneKey: string
   /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
   readonly shortcuts: readonly Shortcut[]
+  /** Saved checklists a new task can start from, shared or tied to a folder. */
+  readonly checklists: readonly Checklist[]
   readonly calendarTimeZone?: string
   readonly calendarRecurrenceVersion?: 1
   readonly cronStartWindowVersion?: 1
@@ -1424,6 +1433,7 @@ export const DEFAULT_SETTINGS: Settings = {
   phoneKey: '',
   sidebarWidth: 264,
   shortcuts: [],
+  checklists: [],
   phrases: [],
   hosts: [],
 }

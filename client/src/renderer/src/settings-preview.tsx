@@ -34,6 +34,20 @@ registerProviderInfo(libraries)
 document.documentElement.dataset.theme = theme
 Object.assign(window.geckit, { chat: { openLink: () => undefined, getProviderPluginFailures: async (): Promise<readonly ProviderPluginFailure[]> => failedLibraries, account: async (provider: SessionProvider): Promise<ClaudeAccount> => ({ provider, here: true, signedIn: true, plan: provider === 'codex' ? 'Plus' : 'Max', program: { version: 'preview' }, usage: { quotas: [{ id: 'five-hour', name: '5h', part: 0.24 }, { id: 'week', name: 'Week', part: 0.63 }], measuredAt: Date.now() } }), onAccount: () => () => undefined } })
 
+const PREVIEW_CHECKLISTS: Settings['checklists'] = [
+  { id: 'c1', name: 'Feature flow', root: '/Users/alex/Projects/app', isDefault: true, items: [
+    { id: 'i1', title: 'UX doc approved', description: 'docs/ux has the change and Alex said yes', check: 'person' },
+    { id: 'i2', title: 'Tests pass', check: 'command', command: 'npm test' },
+    { id: 'i3', title: 'Lint clean', check: 'command', command: 'npm run lint', final: true },
+    { id: 'i4', title: 'UI checked in light and dark', check: 'review' },
+    { id: 'i5', title: 'Pushed to main', check: 'none' },
+  ] },
+  { id: 'c2', name: 'Bug fix', items: [
+    { id: 'j1', title: 'Cause found and reproduced', check: 'review' },
+    { id: 'j2', title: 'Regression test fails before the fix and passes after', check: 'command', command: 'npm test' },
+  ] },
+  { id: 'c3', name: 'Release notes', items: [{ id: 'k1', title: 'Changelog has every merged PR since the last tag', check: 'none' }] },
+]
 const chrome = query.get('chrome') ?? 'waiting'
 let chromeConnected = chrome === 'connected'
 let chromeReceived = ['ready', 'kept', 'connected'].includes(chrome) ? 2_497_281_120 : 1_210_000_000
@@ -193,7 +207,7 @@ const { Cell, Page } = await import('./chat/PhoneKit')
 function Preview(): React.JSX.Element {
   const [open, setOpen] = useState(true)
   const trigger = useRef<HTMLButtonElement>(null)
-  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, chromeBridge: !['off', 'kept', 'windows'].includes(chrome), vpnIpCheck: query.has('vpnEnabled'), vpnAllowedIps: query.has('vpnLong') ? Array.from({ length: 64 }, (_one, index) => `8.8.4.${String(index + 1)}`) : query.has('vpnSaved') ? ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'] : DEFAULT_SETTINGS.vpnAllowedIps, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [], channels: channelSettings, projects: ['/Users/alex/Projects/app', '/Users/alex/Projects/notula', '/Users/alex/Projects/private'] })
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS, theme, chromeBridge: !['off', 'kept', 'windows'].includes(chrome), vpnIpCheck: query.has('vpnEnabled'), vpnAllowedIps: query.has('vpnLong') ? Array.from({ length: 64 }, (_one, index) => `8.8.4.${String(index + 1)}`) : query.has('vpnSaved') ? ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'] : DEFAULT_SETTINGS.vpnAllowedIps, providerPlugins: libraries, chatProviders: query.has('libraries') ? ['claude', 'codex', 'plugin:codex-mirror', 'plugin:kimi', 'plugin:claude-tmux'] : DEFAULT_SETTINGS.chatProviders, providerUpdatesReady: query.has('libraries') ? ['plugin:kimi'] : [], channels: channelSettings, projects: ['/Users/alex/Projects/app', '/Users/alex/Projects/notula', '/Users/alex/Projects/private'], checklists: query.has('noChecklists') ? [] : PREVIEW_CHECKLISTS })
   useEffect(() => { channelSettingsChanged = (channels) => setSettings((current) => ({ ...current, channels })) }, [])
   const [failed, setFailed] = useState(failedLibraries)
   useEffect(() => {
@@ -245,7 +259,7 @@ function Preview(): React.JSX.Element {
   if (query.has('phone')) return open ? <PhoneVpnSettings settings={settings} save={save} back="Settings" onBack={() => setOpen(false)} /> : <Page title="Settings"><div className="phone-group"><Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} onPress={() => setOpen(true)} /></div></Page>
   return <>
     <header className="board-head"><h1>GeckIt</h1><button ref={trigger} type="button" className="quiet" onClick={() => setOpen(true)}>Settings</button></header>
-    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : query.get('section') === 'channels' ? 'channels' : query.get('section') === 'secrets' ? 'secrets' : 'assistants'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
+    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : query.get('section') === 'channels' ? 'channels' : query.get('section') === 'secrets' ? 'secrets' : query.get('section') === 'checklists' ? 'checklists' : 'assistants'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
   </>
 }
 

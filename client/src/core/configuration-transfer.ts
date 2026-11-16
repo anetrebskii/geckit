@@ -68,6 +68,7 @@ export function importableConfiguration(text: string): Configuration {
       const sample = samples[key]
       if (json[key] !== undefined && sample !== undefined && !sameShape(json[key], sample)) throw new Error(INVALID)
     }
+    if (json.checklists !== undefined && !(Array.isArray(json.checklists) && json.checklists.every((one) => object(one) && typeof one.id === 'string' && typeof one.name === 'string' && (one.root === undefined || typeof one.root === 'string') && Array.isArray(one.items) && one.items.every((item) => object(item) && typeof item.id === 'string' && typeof item.title === 'string' && ['none', 'command', 'review', 'person'].includes(String(item.check)))))) throw new Error(INVALID)
     if (Array.isArray(json.shortcuts)) for (const shortcut of json.shortcuts) {
       const sample = Array.isArray(samples.shortcuts) ? samples.shortcuts[0] : undefined
       if (!object(shortcut) || sample === undefined || !sameShape({ ...shortcut, since: 0 }, sample)) throw new Error(INVALID)

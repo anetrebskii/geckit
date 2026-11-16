@@ -1,3 +1,4 @@
+import { awaitingApproval, checklistDone, checklistProgress } from '../../../shared/checklists'
 import { AssignSheet, EmployeeAvatar, EmployeeFilter } from '../employees/Employees'
 import { managerFace } from '../employees/TeamManager'
 import { ProviderIcon } from './ProviderIcon'
@@ -624,7 +625,7 @@ export function RowBody({
           {employee === undefined ? null : <span className="phone-row-employee"><EmployeeAvatar employee={employee} />{employee.name.split(/\s+/)[0]}</span>}
           <Tags session={session} marked={false} />
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
-          {goalMet(session) ? <span className="phone-row-tag met">Goal reached</span> : session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
+          {session.checklist !== undefined && session.checklist.items.length > 0 ? <span className={`phone-row-tag${checklistDone(session.checklist) ? ' met' : awaitingApproval(session.checklist) !== undefined ? ' asks' : ''}`}>{awaitingApproval(session.checklist) !== undefined ? 'Approve' : `${String(checklistProgress(session.checklist).passed)}/${String(checklistProgress(session.checklist).all)}`}</span> : goalMet(session) ? <span className="phone-row-tag met">Goal reached</span> : session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
           {script === undefined ? null : <span className="phone-row-tag">{script}</span>}
           {queued === 0 ? null : <span className="phone-row-tag">{queued} queued</span>}

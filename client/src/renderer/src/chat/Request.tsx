@@ -293,10 +293,16 @@ function Details({
   return (
     <div className="request-body">
       <div className="request-message">{task.text}</div>
-      <div className={`request-goal${task.goal === undefined ? ' none' : ''}`}>
-        <Icon name="goal" size={11} />
-        <span>{task.goal ?? 'No goal. It stops after its first answer.'}</span>
-      </div>
+      {task.checklist !== undefined && task.checklist.items.length > 0 ? (
+        <ol className="request-checklist" aria-label={task.checklist.from === undefined ? 'Checklist' : `Checklist: ${task.checklist.from.name}`}>
+          {task.checklist.items.map((one) => <li key={one.id}>{one.title}</li>)}
+        </ol>
+      ) : (
+        <div className={`request-goal${task.goal === undefined ? ' none' : ''}`}>
+          <Icon name="goal" size={11} />
+          <span>{task.goal ?? 'No goal. It stops after its first answer.'}</span>
+        </div>
+      )}
       {noting ? (
         <label className="request-note">
           <Icon name="pencil" size={11} />

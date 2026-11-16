@@ -2,7 +2,12 @@
 
 import type { RequestTask, SessionProvider } from '../shared/api'
 
-export type Task = Pick<RequestTask, 'project' | 'text' | 'goal' | 'provider'> & Partial<Pick<RequestTask, 'title'>>
+export type Task = Pick<RequestTask, 'project' | 'text' | 'goal' | 'provider'> & Partial<Pick<RequestTask, 'title'>> & {
+  /** A saved checklist's id or name, turned into the goal by GeckIt. */
+  readonly checklist?: string
+  /** Items typed for this task alone. */
+  readonly items?: unknown
+}
 
 export function requestingSession(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const thread = env['CODEX_THREAD_ID']?.trim()
@@ -34,7 +39,7 @@ export function tasksFrom(args: readonly string[], read: (file: string) => strin
   const words: string[] = []
   for (let at = 0; at < args.length; at++) {
     const one = args[at] ?? ''
-    if (['--project', '--goal', '--title', '--conversations', '--tasks', '--provider', '--app'].includes(one)) {
+    if (['--project', '--goal', '--checklist', '--items', '--title', '--conversations', '--tasks', '--provider', '--app'].includes(one)) {
       flags.set(one, args[at + 1] ?? '')
       at++
     } else if (one !== '--json') words.push(one)
@@ -51,8 +56,13 @@ export function tasksFrom(args: readonly string[], read: (file: string) => strin
     if (!Array.isArray(tasks)) return `${named} is not a JSON array of conversations.`
   } else {
     const project = flags.get('--project')
-    if (project === undefined || project === '') return 'geckit start --project <name> [--title <title>] [--goal <condition>] <text>'
-    tasks = [{ project, text: words.join(' '), title: flags.get('--title'), goal: flags.get('--goal'), provider: flags.get('--provider') }]
+    if (project === undefined || project === '') return 'geckit start --project <name> [--title <title>] [--goal <condition>|--checklist <name>|--items <JSON array>] <text>'
+    const itemsSaid = flags.get('--items')
+    let items: unknown
+    if (itemsSaid !== undefined) {
+      try { items = JSON.parse(itemsSaid) } catch { return '--items is not a JSON array of items.' }
+    }
+    tasks = [{ project, text: words.join(' '), title: flags.get('--title'), goal: flags.get('--goal'), checklist: flags.get('--checklist'), items, provider: flags.get('--provider') }]
   }
   const list = tasks as readonly Task[]
   if (list.length === 0) return 'Conversation 1 has no text.'
@@ -67,7 +77,9 @@ export function tasksFrom(args: readonly string[], read: (file: string) => strin
     const choice = said(task.provider)
     const provider = choice === undefined ? undefined : requestedProvider(choice)
     if (choice !== undefined && provider === undefined) return `Conversation ${String(index + 1)}: unsupported provider ${choice}.`
-    out.push({ project: said(task.project) ?? '', text, ...(title === undefined ? {} : { title }), ...(goal === undefined ? {} : { goal }), ...(provider === undefined ? {} : { provider }) })
+    const checklist = said(task.checklist)
+    if ([goal, checklist, task.items].filter((one) => one !== undefined).length > 1) return `Conversation ${String(index + 1)}: give one of goal, checklist or items.`
+    out.push({ project: said(task.project) ?? '', text, ...(title === undefined ? {} : { title }), ...(goal === undefined ? {} : { goal }), ...(checklist === undefined ? {} : { checklist }), ...(task.items === undefined ? {} : { items: task.items }), ...(provider === undefined ? {} : { provider }) })
   }
   return out
 }
