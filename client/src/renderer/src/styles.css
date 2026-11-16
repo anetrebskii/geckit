@@ -16757,6 +16757,17 @@ html.phone .secret-form .secret-form-label { text-align: start; }
 .checklist-check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .checklist-check-row .checklist-label { color: var(--text-dim); font-size: 12px; }
 .checklist-checks button { padding: 2px 9px; font-size: 12px; }
+/* The inspector can be as narrow as 280 px: details start under the box, and the Check control takes the row and shares it evenly, so no choice is cut off. */
+.task-checklist-panel .checklist-details { padding-left: 10px; }
+.task-checklist-panel .checklist-checks { display: flex; flex: 1 1 100%; min-width: 0; }
+.task-checklist-panel .checklist-checks button { flex: 1 1 auto; min-width: 0; padding: 0 4px; }
+/* Narrow, each row keeps room for its title: the current goal shows by its highlight alone, and the check chip loses its chevron. */
+.task-checklist-panel { container-type: inline-size; }
+@container (max-width: 340px) {
+  .checklist-now { display: none; }
+  .checklist-check { padding: 2px 5px; }
+  .checklist-check > svg:last-child { display: none; }
+}
 .checklist-hint { color: var(--text-faint); font-size: 11px; }
 .checklist-final { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
 .browser-profiles-form label.checklist-final { text-align: start; }
