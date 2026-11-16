@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, assistantsIn, modelName, SESSION_MODES, shownProjects } from '../../../shared/api'
+import { assistantFor, assistantsIn, modelName, shownProjects } from '../../../shared/api'
 import { isCodexProvider, llmProviderInfo, providerModel, selectableProviders } from '../../../shared/providers'
-import type { ClaudeModel, ModelsSaid, SessionMode, SessionProvider, Shortcut, ShortcutDraft } from '../../../shared/api'
+import type { ClaudeModel, ModelsSaid, SessionProvider, Shortcut, ShortcutDraft } from '../../../shared/api'
 import type { Employee } from '../../../shared/employees'
 import { isRemote } from '../../../shared/hosts'
 import { cronOf, describeCron, describeStartWindow, describeTime, nextRun, nextTimed, startWindowError, WEEKDAYS, whenOf } from '../../../shared/schedule'
@@ -317,7 +317,7 @@ function Editor({
     if (!ready) return
     setSaving(true)
     setFailedDraft(undefined)
-    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, ...(manager ? {} : { provider }), ...(manager || !isCodexProvider(provider) ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
+    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, mode: 'auto', ...(manager ? {} : { provider }), ...(manager || !isCodexProvider(provider) ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
   }
 
   const pickRepeats = (picked: Repeats): void => {
@@ -480,19 +480,6 @@ function Editor({
             <span>Reasoning</span>
             <Picker label={reasoningLabel} choices={reasoningChoices} chosen={reasoning} className="select" onPick={(value) => change({ reasoning: value as NonNullable<Shortcut['reasoning']> })} />
           </div>}
-          <div className="shortcut-setting">
-            <span>May do</span>
-            <Picker
-              label={SESSION_MODES.find((one) => one.mode === draft.mode)?.label ?? 'Auto'}
-              choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: isCodexProvider(provider) ? one.mode === 'manual' ? 'Asks before running untrusted commands. Uses a sandbox.' : one.mode === 'auto' ? 'Works in a sandbox. Codex reviews requests for more access.' : 'Reads and proposes. Changes nothing.' : one.why }))}
-              chosen={draft.mode}
-              explained
-              {...(!scheduled ? {} : { note: 'A timed run has nobody watching: in Manual it stops at the first thing it asks, and waits for you.' })}
-              className="select"
-              onPick={(mode) => change({ mode: mode as SessionMode })}
-            />
-          </div>
-          {scheduled && draft.mode === 'manual' ? <span className="shortcut-next">Manual stops at the first question and waits for you.</span> : null}
           </>}
 
           <ShortcutDestinationFields editor={destination} />
@@ -553,8 +540,8 @@ function Editor({
                   <label className="shortcut-minute">Within<input type="number" min={1} max={1440} step={1} aria-label="Start window in minutes" aria-invalid={windowError !== undefined} value={windowMinutes} onChange={(event) => {
                     setWindowMinutes(event.target.value)
                     change({ startWindowMinutes: event.target.value === '' ? Number.NaN : Number(event.target.value) })
-                  }} />minutes</label>
-                  <span className="shortcut-next">after scheduled time. One random start per occurrence, before the next scheduled time.</span>
+                  }} />minutes after scheduled time</label>
+                  <span className="shortcut-next">One random start per occurrence, before the next scheduled time.</span>
                   {windowError === undefined ? null : <span className="shortcut-next wrong" role="alert">{windowError}</span>}
                 </>}
               </>}

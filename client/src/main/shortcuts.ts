@@ -119,7 +119,7 @@ async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<stri
     const start = async (): Promise<string> => {
       const session = await given.start({
         root: one.root,
-        mode: one.mode,
+        mode: 'auto',
         text: one.prompt,
         provider,
         ...(owner === undefined ? {} : { employeeId: owner.id }),
@@ -130,7 +130,7 @@ async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<stri
       given.rename(session, one.name)
       if (getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
       if (provider === 'claude' && one.goal !== undefined && one.goal !== '') {
-        await given.start({ session, root: one.root, mode: one.mode, text: `/goal ${one.goal}` })
+        await given.start({ session, root: one.root, mode: 'auto', text: `/goal ${one.goal}` })
       }
       return session
     }
@@ -173,7 +173,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     ...(draft.target === 'manager' ? {} : { provider: draft.provider ?? 'claude' }),
     ...(draft.target === 'manager' || !isCodexProvider(draft.provider ?? 'claude') || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
     ...(draft.target === 'manager' || draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
-    mode: draft.mode,
+    mode: 'auto',
     ...(draft.target === 'manager' || draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
     ...(draft.employeeId === undefined ? {} : { employeeId: draft.employeeId }),
     ...(draft.cron === undefined || draft.cron.trim() === '' ? {} : { cron: draft.cron.trim() }),

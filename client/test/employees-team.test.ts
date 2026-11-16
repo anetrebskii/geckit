@@ -126,7 +126,7 @@ describe('team changes from a terminal', () => {
     const realtor = first((await f.employees.save(draft)).employees)
     expect(await f.employees.command(['shortcut', 'add', realtor.id, '--name', 'Check lots', '--project', 'samara', '--prompt', 'Check new lots', '--every', 'weekdays 9:00', '--mode', 'plan'])).toMatch(/^Added shortcut "Check lots" \(.+\)\.$/)
     const added = held.shortcuts[0]
-    expect(added).toMatchObject({ name: 'Check lots', root: '/p/samara', prompt: 'Check new lots', cron: '0 9 * * 1-5', on: true, mode: 'plan', employeeId: realtor.id })
+    expect(added).toMatchObject({ name: 'Check lots', root: '/p/samara', prompt: 'Check new lots', cron: '0 9 * * 1-5', on: true, mode: 'auto', employeeId: realtor.id })
     const id = added?.id ?? ''
     expect(await f.employees.command(['shortcut', 'edit', id, '--cron', '30 8 * * *', '--prompt', 'Check lots again'])).toBe('Saved shortcut "Check lots".')
     expect(held.shortcuts[0]).toMatchObject({ cron: '30 8 * * *', prompt: 'Check lots again', employeeId: realtor.id })

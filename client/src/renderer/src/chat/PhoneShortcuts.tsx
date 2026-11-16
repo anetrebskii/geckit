@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { SESSION_MODES, shownProjects } from '../../../shared/api'
-import type { SessionMode, Shortcut, ShortcutDraft } from '../../../shared/api'
+import { shownProjects } from '../../../shared/api'
+import type { Shortcut, ShortcutDraft } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { cronOf, describeCron, describeStartWindow, describeTime, isCron, nextRun, nextTimed, startWindowError, WEEKDAYS, whenOf } from '../../../shared/schedule'
 import type { When } from '../../../shared/schedule'
@@ -139,7 +139,6 @@ export function PhoneShortcuts({
   )
 }
 
-const MODE_LABEL = (mode: SessionMode): string => SESSION_MODES.find((one) => one.mode === mode)?.label ?? mode
 
 /** One shortcut, new or kept, with every field the Mac's editor has. */
 export function ShortcutSheet({ chat, given, onClose }: { readonly chat: ShortcutChat; readonly given: ShortcutDraft; readonly onClose: () => void }): React.JSX.Element {
@@ -157,7 +156,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
   const [failedDraft, setFailedDraft] = useState<ShortcutDraft>()
   const saveError = failedDraft === draft
   const [now] = useState(() => Date.now())
-  const [picking, setPicking] = useState<'target' | 'project' | 'mode' | 'employee' | 'repeats' | 'weekday' | 'delete' | undefined>()
+  const [picking, setPicking] = useState<'target' | 'project' | 'employee' | 'repeats' | 'weekday' | 'delete' | undefined>()
   const change = (next: Partial<ShortcutDraft>): void => setDraft({ ...draft, ...next })
   const cron = draft.cron ?? FIRST_CRON
   const shape: When = repeats === 'cron' ? { kind: 'cron', cron } : turned(whenOf(cron), repeats === 'never' || repeats === 'custom' ? 'weekdays' : repeats)
@@ -182,7 +181,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
     if (!ready) return
     setSaving(true)
     setFailedDraft(undefined)
-    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, name, prompt: draft.prompt.trim() }).then(onClose).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
+    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, mode: 'auto', name, prompt: draft.prompt.trim() }).then(onClose).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
   }
   const closeCustom = (): void => { setCustom(false); trigger.current?.focus() }
   const time = (hour: number, minute: number, set: (hour: number, minute: number) => void): React.JSX.Element => (
@@ -220,7 +219,6 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
         <div className="phone-group phone-form-group">
           <Cell label="Target" value={manager ? 'Manager' : 'New task'} onPress={() => setPicking('target')} />
           <Cell label="Folder" value={draft.root === '' ? 'None' : projectLabel(draft.root)} onPress={() => setPicking('project')} />
-          {manager ? null : <Cell label="Mode" value={MODE_LABEL(draft.mode)} onPress={() => setPicking('mode')} />}
           {manager || chat.employees.length === 0 && draft.employeeId === undefined ? null : <Cell label="Employee" value={owner?.name ?? 'None'} says={owner === undefined ? 'Runs start unassigned' : owner.archived ? 'Paused while archived' : 'Runs start assigned to them'} onPress={() => setPicking('employee')} />}
         </div>
         <ShortcutDestinationFields editor={destination} phone />
@@ -296,16 +294,6 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
           chosen={draft.root}
           choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectLabel(one) }))}
           onPick={(root) => change({ root })}
-          onClose={() => setPicking(undefined)}
-        />
-      ) : picking === 'mode' ? (
-        <Menu
-          anchor={new DOMRect()}
-          title="Mode"
-          explained
-          chosen={draft.mode}
-          choices={SESSION_MODES.map((one) => ({ value: one.mode, label: one.label, says: one.why }))}
-          onPick={(mode) => change({ mode: mode as SessionMode })}
           onClose={() => setPicking(undefined)}
         />
       ) : picking === 'employee' ? (
