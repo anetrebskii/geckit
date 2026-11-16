@@ -24,7 +24,7 @@ Get a credential the work needs from the person and use it only where it is allo
 
 ## Work
 
-1. `{{said}} secrets request <name> --use <use> --for <places> --note "<what for>"` prints a link; for a website, add `--user <account>` when the account is known. `--field "<element>"` names the field for a website secret; `--replace` sends a new link for a saved one.
+1. `{{said}} secrets request <name> --use <use> --for <places> --note "<what for>"` prints a link; for a website, add `--user <account>` when the account is known; without it the page asks the person for an optional username, so do not ask for it in the conversation. `--field "<element>"` names the field for a website secret; `--replace` sends a new link for a saved one.
 2. Put the link, as it is printed, in the final message of this turn, or in the thread the person wrote from, never only in a command's output or a note between steps, which the chat folds away. Say what it is for, and that it opens once, for the minutes the command printed.
 3. `{{said}} secrets wait <name>` waits up to 15 minutes. If it runs in the background, end the turn with the link still in that final message.
 4. Use it by name:
@@ -35,7 +35,7 @@ Get a credential the work needs from the person and use it only where it is allo
 
    Output comes back with the value and its encoded forms removed.
 
-`{{said}} secrets status` says whether secrets work here, `show <name>` lists its last 20 uses, and `revoke <name>` removes it.
+`{{said}} secrets status` says whether secrets work here, `show <name>` lists its last 20 uses, and `revoke <name>` removes it (`revoke --all` removes every one).
 
 ## Unknowns
 
