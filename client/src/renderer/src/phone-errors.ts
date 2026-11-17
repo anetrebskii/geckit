@@ -35,7 +35,7 @@ export function phoneErrors(sending: () => boolean, turnOn: () => void) {
       .then((Sentry) => {
         Sentry.init({
           dsn: __SENTRY_DSN__,
-          sendDefaultPii: false,
+          dataCollection: { userInfo: false, cookies: false, httpHeaders: false, urlQueryParams: false, httpBodies: [] },
           initialScope: { tags: { app: 'phone' } },
           integrations: (defaults) => defaults.filter((one) => !['GlobalHandlers', 'BrowserSession'].includes(one.name)),
           beforeBreadcrumb: (crumb) => (crumb.category === 'console' ? null : redactDeep(crumb, roots())),
