@@ -149,6 +149,8 @@ stateDiagram-v2
 | Any | Press "Edit" in the panel and save | Same | Upcoming items change; passed items cannot be edited, only skipped ones undone |
 | Template changed | Press "Update" | Same | Upcoming items replaced by the saved ones; passed items stay |
 
+An edit that has finished settling while the assistant is working keeps its pending handoff. When that turn finishes normally and its queued messages have finished, GeckIt starts the latest current item once. A stopped, failed or limited turn does not start it. Until the handoff, the inspector shows "Next"; after dispatch it shows "Goal". This restores the existing rule that a settled edit follows the conversation when it rests.
+
 ## 5. What stays silent
 
 | State | Why it is not shown |

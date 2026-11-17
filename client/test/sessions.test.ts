@@ -1144,6 +1144,81 @@ describe('a task checklist', () => {
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Page loads' }))
   })
 
+  it('starts a Codex checklist added during a working turn after that turn finishes', async () => {
+    const id = 'codex:checklist-added-while-working'
+    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>().mockResolvedValue(null)
+    const held = heldCodex(id, { setGoal })
+    const built = build({ later: soon, codex: held.codex })
+    try {
+      await built.sessions.send({ root: ROOT, mode: 'manual', provider: 'codex', text: 'Finish the redesign' })
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Deployed to development', check: 'none' }] })
+      await settled()
+      expect(setGoal).not.toHaveBeenCalled()
+      held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(setGoal).toHaveBeenCalledWith(id, 'Deployed to development'))
+      await vi.waitFor(() => expect(held.fake.sent.at(-1)?.text).toBe('Next on the checklist: Deployed to development'))
+      expect(setGoal).toHaveBeenCalledTimes(1)
+    } finally { built.sessions.dispose() }
+  })
+
+  it('waits for queued messages before starting an edit that settled during work', async () => {
+    const built = build({ later: soon })
+    try {
+      const id = await started(built)
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'Keep this correction first' })
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads', check: 'none' }] })
+      await settled()
+      built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(built.fake.sent.at(-1)?.text).toBe('Keep this correction first'))
+      expect(built.fake.sent.some((one) => one.text === '/goal Page loads')).toBe(false)
+      built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(built.fake.sent.at(-1)?.text).toBe('/goal Page loads'))
+      expect(built.fake.sent.filter((one) => one.text === '/goal Page loads')).toHaveLength(1)
+    } finally { built.sessions.dispose() }
+  })
+
+  it.each(['stopped', 'failed', 'limit'] as const)('does not start a deferred checklist after the turn is %s', async (how) => {
+    const built = build({ later: soon })
+    try {
+      const id = await started(built)
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads', check: 'none' }] })
+      await settled()
+      const before = built.fake.sent.length
+      built.fake.hear({ signals: [{ kind: 'ended', how }] })
+      await settled()
+      expect(built.fake.sent).toHaveLength(before)
+    } finally { built.sessions.dispose() }
+  })
+
+  it('uses the latest settled edit when the working turn finishes', async () => {
+    const built = build({ later: soon })
+    try {
+      const id = await started(built)
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads', check: 'none' }] })
+      await settled()
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads fast', check: 'none' }] })
+      await settled()
+      built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(built.fake.sent.at(-1)?.text).toBe('/goal Page loads fast'))
+      expect(built.fake.sent.filter((one) => one.text.startsWith('/goal'))).toEqual([{ text: '/goal Page loads fast' }])
+    } finally { built.sessions.dispose() }
+  })
+
+  it('does not start a checklist cleared while the working turn finishes', async () => {
+    const built = build({ later: soon })
+    try {
+      const id = await started(built)
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads', check: 'none' }] })
+      await settled()
+      built.sessions.setChecklist(id, { items: [] })
+      await settled()
+      const before = built.fake.sent.length
+      built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await settled()
+      expect(built.fake.sent).toHaveLength(before)
+    } finally { built.sessions.dispose() }
+  })
+
   it('sets one goal for edits made one after another, from the last of them', async () => {
     const built = build({ later: soon })
     const id = await started(built)

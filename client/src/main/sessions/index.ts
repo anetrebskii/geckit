@@ -402,6 +402,7 @@ interface Live {
   goal: SessionGoal | undefined
   /** How its goal ended while a turn ran, and what it was, applied once the turn stops. */
   goalStatus: { readonly ended: 'met' | 'blocked'; readonly condition: string } | undefined
+  checklistPending: boolean
   /** The goal was cleared while the turn ran, and the tool is told once it has stopped. */
   clearing: boolean
   /** Messages sent while it worked, oldest first. */
@@ -872,7 +873,11 @@ export class Sessions {
     const checklist = note?.checklist
     if (checklist === undefined || note?.prepared !== undefined || this.#settling.has(id)) return
     const live = this.#live.get(id)
-    if (live !== undefined && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) return
+    if (live !== undefined && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) {
+      live.checklistPending = true
+      return
+    }
+    if (live !== undefined) live.checklistPending = false
     const now = currentItem(checklist)
     if (now?.check === 'person') {
       if (now.state === undefined && note?.personItem !== now.id) void this.#sendPerson(id, now).catch(() => undefined)
@@ -1957,6 +1962,7 @@ export class Sessions {
       stopping: undefined,
       goal: undefined,
       goalStatus: undefined,
+      checklistPending: false,
       clearing: false,
       queued: [],
       injecting: undefined,
@@ -4242,6 +4248,7 @@ export class Sessions {
     }
 
     this.#rest(live)
+    if (signal.how === 'done' && live.checklistPending) this.#advance(live.id)
   }
 
   /** Where the goal stands once a turn is over, which only the tool's file says, and a line where it ended by itself. */
