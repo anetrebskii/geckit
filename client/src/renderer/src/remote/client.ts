@@ -23,12 +23,34 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
   let snapshotPending = false
   let dirty = false
   let ready = false
+  let connectedOnce = false
+  let resync = false
   const events = new Set<(event: CoreEvent) => void>()
   const pending = new Map<number, { readonly resolve: (value: RemoteResult) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
   const rejectPending = (): void => { ready = false; for (const one of pending.values()) { clearTimeout(one.timer); one.reject(new Error('Connection lost. Check the server before retrying this action.')) }; pending.clear() }
   const send = (message: RemoteRequest): void => channel?.send(stringifyRemote(message))
   const snapshot = (): void => { if (snapshotPending) { dirty = true; return }; snapshotPending = true; send({ type: 'snapshot', id: ++next }) }
-  const fail = (state: ConnectionState, message: string): void => { stopped = true; rejectPending(); abort.abort(); channel?.close(); change({ state, message }) }
+  const fail = (state: ConnectionState, message: string): void => { console.warn(`Remote connection stopped (${state}): ${message}`); stopped = true; rejectPending(); abort.abort(); channel?.close(); change({ state, message }) }
+  const later = (): void => { refresh = setTimeout(() => { refresh = undefined; void dial() }, [2000, 5000, 10_000, 30_000][Math.min(tries++, 3)] ?? 30_000) }
+  // A saved computer that drops or answers oddly is dialled again; only a first pairing stops.
+  const retry = (reason: string): void => {
+    if (stopped) return
+    if (trust === undefined || (saved === undefined && !connectedOnce)) { fail('error', `Could not connect: ${reason}`); return }
+    console.warn(`Remote connection lost, reconnecting: ${reason}`)
+    const old = channel
+    channel = undefined; snapshotPending = false; rejectPending(); resync = true
+    old?.close()
+    change({ state: 'reconnecting', message: 'Reconnecting…' })
+    if (refresh === undefined) later()
+  }
+  const catchUp = (): void => {
+    const emit = (event: CoreEvent): void => { for (const heard of events) heard(event) }
+    const read = <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => call(method, ...args)
+    void read('chat:list', undefined).then((sessions) => emit({ name: 'chat:sessions', args: [sessions] } as CoreEvent)).catch(() => undefined)
+    void read('manager:view').then((view) => emit({ name: 'manager:view', args: [view] } as CoreEvent)).catch(() => undefined)
+    void read('settings:get').then((settings) => emit({ name: 'settings:changed', args: [settings] } as CoreEvent)).catch(() => undefined)
+    void read('lineup:state').then((lineup) => emit({ name: 'lineup:changed', args: [lineup] } as CoreEvent)).catch(() => undefined)
+  }
   const dial = async (): Promise<void> => {
     if (stopped) return
     change({ state: trust === undefined ? 'connecting' : 'reconnecting', message: trust === undefined ? 'Connecting…' : 'Reconnecting…' })
@@ -47,10 +69,14 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
           const parsed: unknown = parseRemote(raw)
           if (parsed === null || typeof parsed !== 'object' || !('type' in parsed)) throw new Error('Invalid server response')
           const response = parsed as RemoteResponse
-          if (response.type === 'error') { fail(['expired', 'reused', 'revoked', 'incompatible'].includes(response.code) ? response.code as ConnectionState : 'error', response.message); return }
+          if (response.type === 'error') {
+            if (['expired', 'reused', 'revoked', 'incompatible'].includes(response.code)) fail(response.code as ConnectionState, response.message)
+            else retry(`the server refused: ${response.message}`)
+            return
+          }
           if (response.type === 'challenge') {
             if (response.protocol !== REMOTE_PROTOCOL) { fail('incompatible', 'Server version is not compatible with this client.'); return }
-            if (trust !== undefined && (trust.server.id !== response.server.id || trust.server.publicKey !== response.server.publicKey)) throw new Error('Server identity changed.')
+            if (trust !== undefined && (trust.server.id !== response.server.id || trust.server.publicKey !== response.server.publicKey)) { fail('error', 'Server identity changed. Pair again with a new code.'); return }
             if (response.expires !== 0 && Date.now() >= response.expires) { fail('expired', 'Code expired. Create a new code on the server.'); return }
             serverKey = response.server.publicKey; serverId = response.server.id
             const nonce = newKey()
@@ -60,8 +86,8 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
           if (response.type === 'pending') { change({ state: 'pending', message: `Confirm this device on the server\n${response.phrase}` }); return }
           if (response.type === 'trusted') {
             const received = response.trust
-            if (serverKey === '' || received.server.id !== serverId || received.server.publicKey !== serverKey || !/^[A-Za-z0-9_-]{43}$/.test(received.key) || !await verify(serverKey, trustProof(proofText, received), response.proof)) throw new Error('Server proof rejected.')
-            if (trust !== undefined && (trust.device !== received.device || trust.key !== received.key)) throw new Error('Device trust changed.')
+            if (serverKey === '' || received.server.id !== serverId || received.server.publicKey !== serverKey || !/^[A-Za-z0-9_-]{43}$/.test(received.key) || !await verify(serverKey, trustProof(proofText, received), response.proof)) { fail('error', 'The server could not prove who it is.'); return }
+            if (trust !== undefined && (trust.device !== received.device || trust.key !== received.key)) { fail('error', 'Device trust changed. Pair again with a new code.'); return }
             trust = received; await rememberServer(received)
             if (stopped) return
             tries = 0; seq = -1; epoch = ''; snapshotPending = false; snapshot(); return
@@ -79,39 +105,41 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
             if (epoch === response.snapshot.epoch && response.snapshot.seq < seq) { snapshot(); return }
             epoch = response.snapshot.epoch; seq = response.snapshot.seq
             ready = true
+            connectedOnce = true
+            if (resync) { resync = false; catchUp() }
             change({ state: 'connected', message: trust.full ? 'Connected' : 'Connected · Read only', snapshot: response.snapshot, trust })
             if (selected !== undefined) send({ type: 'history', id: ++next, session: selected, before: 0 })
             if (dirty) { dirty = false; snapshot() }; return
           }
           if (response.type === 'changed') { if (trust.full) return; if (refresh === undefined) refresh = setTimeout(() => { refresh = undefined; snapshot() }, 300); return }
           if (response.type === 'history' && response.history.session === selected) change({ state: 'connected', message: 'Connected · Read only', history: response.history })
-        })().catch((error: Error) => fail('error', error.message))
+        })().catch((error: Error) => { if (channel === link) retry(error.message) })
       })
       link.onClose(() => {
         if (stopped || channel !== link) return
-        channel = undefined; snapshotPending = false; rejectPending()
-        change({ state: 'reconnecting', message: 'Reconnecting…' })
         if (trust === undefined) { fail('error', 'Could not connect: the server closed the connection before pairing finished. Run geckit pair there for a new code.'); return }
-        refresh = setTimeout(() => { refresh = undefined; void dial() }, [2000, 5000, 10_000, 30_000][Math.min(tries++, 3)] ?? 30_000)
+        retry('the connection closed')
       })
     } catch (error) {
       if (stopped) return
-      console.warn('Connect computer failed:', error)
-      if (trust === undefined) { fail('error', `Could not connect: ${error instanceof Error ? error.message : String(error)}`); return }
+      const reason = error instanceof Error ? error.message : String(error)
+      console.warn('Connect computer failed:', reason)
+      if (trust === undefined) { fail('error', `Could not connect: ${reason}`); return }
       change({ state: 'reconnecting', message: 'Reconnecting…' })
-      refresh = setTimeout(() => { refresh = undefined; void dial() }, [2000, 5000, 10_000, 30_000][Math.min(tries++, 3)] ?? 30_000)
+      later()
     }
   }
+  const call = <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => new Promise((resolve, reject) => {
+    if (!ready || !trust?.full || channel === undefined) { reject(new Error('Connect to this server before using its workspace.')); return }
+    const id = ++next
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('Server did not answer. Check the server before retrying this action.')) }, method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000)
+    pending.set(id, { resolve: (value) => resolve(value as Awaited<ReturnType<CoreMethods[K]>>), reject, timer })
+    try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) } catch (error) { clearTimeout(timer); pending.delete(id); reject(error) }
+  })
   void dial()
   return {
     close: () => { stopped = true; rejectPending(); abort.abort(); if (refresh !== undefined) clearTimeout(refresh); channel?.close(); change({ state: 'disconnected', message: 'Disconnected' }) },
-    call: <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => new Promise((resolve, reject) => {
-      if (!ready || !trust?.full || channel === undefined) { reject(new Error('Connect to this server before using its workspace.')); return }
-      const id = ++next
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Server did not answer. Check the server before retrying this action.')) }, method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000)
-      pending.set(id, { resolve: (value) => resolve(value as Awaited<ReturnType<CoreMethods[K]>>), reject, timer })
-      try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) } catch (error) { clearTimeout(timer); pending.delete(id); reject(error) }
-    }),
+    call,
     on: (heard: (event: CoreEvent) => void): (() => void) => { events.add(heard); return () => { events.delete(heard) } },
     history: (session: string, before = 0) => { selected = session; send({ type: 'history', id: ++next, session, before }) },
   }

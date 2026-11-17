@@ -1124,22 +1124,23 @@ export function Chat(): React.JSX.Element {
     </>
   )
 
-  // A GeckIt computer's workspace is that computer's own Chat window in a frame, with its own sidebar.
-  if (ON_PHONE || (servers !== undefined && remote)) return content
+  if (ON_PHONE) return content
+  // A GeckIt computer's workspace is that computer's own Chat window in a frame, with its own sidebar; the tree keeps its shape so the connection is not remounted.
+  const away = servers !== undefined && remote
 
   return (
-    <div className={`app${place === 'tasks' ? '' : ' placed'}${place === 'questions' ? ' on-questions' : ''}${asking ? ' asking' : ''}`}>
-      <AppNav chat={chat} place={place} rail={rail} over={navOver} onPlace={go} onToggle={toggleNames} reading={servers ?? ''} onComputer={(id) => { go('tasks'); setServers(id ?? ':add') }} />
-      {navOver ? <div className="nav-catch" onMouseDown={() => { setNavOver(false) }} /> : null}
+    <div className={away ? 'app-away' : `app${place === 'tasks' ? '' : ' placed'}${place === 'questions' ? ' on-questions' : ''}${asking ? ' asking' : ''}`}>
+      {away ? null : <AppNav chat={chat} place={place} rail={rail} over={navOver} onPlace={go} onToggle={toggleNames} reading={servers ?? ''} onComputer={(id) => { go('tasks'); setServers(id ?? ':add') }} />}
+      {!away && navOver ? <div className="nav-catch" onMouseDown={() => { setNavOver(false) }} /> : null}
       <div className="app-main">
         {content}
-        {place === 'tasks' ? null : (
+        {away || place === 'tasks' ? null : (
           <section className="place-page">
             <PlacePage chat={chat} place={place} teamFirst={teamFirst} onPlace={go} openId={raised && chat.shown.kind === 'session' ? chat.shown.id : undefined} onOpenHere={(id) => { setRaisedOn(place); chat.goTo(id) }} onAsk={() => { setForm('question') }} onKeys={() => { setKeys(true) }} onTeam={openTeam} onShortcut={(edit) => { setManaging({ edit, at: Date.now(), only: true }) }} />
           </section>
         )}
       </div>
-      <div className="nav-toggle-hole no-drag" aria-hidden="true" />
+      {away ? null : <div className="nav-toggle-hole no-drag" aria-hidden="true" />}
     </div>
   )
 }

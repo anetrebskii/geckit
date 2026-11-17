@@ -46,7 +46,7 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
     connection.current = connectRemote(pairing, 'GeckIt client', (next) => {
       if (mine !== attempt.current) return
       setView(next)
-      if (next.state !== 'connected') setSnapshot(undefined)
+      if (next.state !== 'connected' && next.state !== 'reconnecting') setSnapshot(undefined)
       if (next.snapshot !== undefined) {
         if (!next.trust?.full) { setAdding(true); setView({ state: 'error', message: 'Update GeckIt on the server and run geckit pair for a new connection code.' }); return }
         const id = next.snapshot.server.id
@@ -88,6 +88,7 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
   const failed = FAILED.includes(view.state)
   const feedback = (here: boolean): React.JSX.Element | null => here && (failed || view.state === 'reconnecting') ? <p className={`remote-feedback${failed ? ' failed' : ''}`} role="status">{view.message}</p> : null
   if (snapshot !== undefined && workspace !== undefined) return <main className="remote-clients">
+    {view.state === 'reconnecting' ? <p className="remote-feedback" role="status">{view.message}</p> : null}
     <Workspace connection={workspace} server={snapshot.server} source={{ server: labelled(snapshot.server), state: view.state, choices: (saved ?? []).map((one) => ({ server: labelled(one.server) })), onChoose: choose }} onClose={leave} />
     {signing === undefined || signing.computer !== snapshot.server.id ? null : <LiveView
       name={signing.profile}

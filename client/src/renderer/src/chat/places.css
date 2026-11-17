@@ -15,6 +15,10 @@
   height: 100%;
 }
 
+.app-away {
+  height: 100%;
+}
+
 /* With the sidebar under the traffic lights, the board's bar no longer leaves room for them. */
 .app .board-head {
   padding-left: 12px;

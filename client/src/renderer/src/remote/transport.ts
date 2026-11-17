@@ -30,10 +30,17 @@ export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal): Pr
     })
     const closed: (() => void)[] = []
     let ended = false
-    const end = (): void => { if (ended) return; ended = true; peer.close(); for (const listener of closed) listener() }
-    channel.addEventListener('close', end)
-    peer.addEventListener('connectionstatechange', () => { if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) end() })
+    let grace: ReturnType<typeof setTimeout> | undefined
+    const end = (reason: string): void => { if (ended) return; ended = true; clearTimeout(grace); console.warn(`Remote link closed: ${reason}`); peer.close(); for (const listener of closed) listener() }
+    channel.addEventListener('close', () => end('the data channel closed'))
+    // A link that stops answering is often back within seconds, so only one that stays away is given up.
+    peer.addEventListener('connectionstatechange', () => {
+      const state = peer.connectionState
+      if (state === 'connected') { clearTimeout(grace); grace = undefined }
+      else if (state === 'disconnected') grace ??= setTimeout(() => end('the link stayed disconnected for 15 s'), 15_000)
+      else if (state === 'failed' || state === 'closed') end(`the link ${state}`)
+    })
     channel.bufferedAmountLowThreshold = 250_000
-    return remoteChannel({ send: (text) => channel.send(text), hear: (heard) => channel.addEventListener('message', (event: MessageEvent<string>) => { if (typeof event.data === 'string') heard(event.data); else end() }), closed: (listener) => closed.push(listener), close: end, buffered: () => channel.bufferedAmount, drain: (ready) => channel.addEventListener('bufferedamountlow', ready) }, transportBinding(offer, description.sdp))
+    return remoteChannel({ send: (text) => channel.send(text), hear: (heard) => channel.addEventListener('message', (event: MessageEvent<string>) => { if (typeof event.data === 'string') heard(event.data); else end('the server sent binary data') }), closed: (listener) => closed.push(listener), close: () => end('closed here'), buffered: () => channel.bufferedAmount, drain: (ready) => channel.addEventListener('bufferedamountlow', ready) }, transportBinding(offer, description.sdp))
   } catch (error) { peer.close(); throw error }
 }

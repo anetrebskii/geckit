@@ -15823,6 +15823,7 @@ html.phone .remote-clients .board-head { padding-inline-start: 12px; }
 .computers-actions .quiet { display: inline-flex; align-items: center; gap: 6px; }
 .remote-feedback { margin: 8px 0 0; color: var(--text-dim); white-space: pre-line; overflow-wrap: anywhere; }
 .remote-feedback.failed { color: var(--danger); }
+.remote-clients > .remote-feedback { flex-shrink: 0; margin: 0; padding: 6px 16px; background: var(--bg); }
 .remote-projects { display: flex; align-items: center; gap: 8px; padding: 12px 16px; overflow: auto; border-block-end: 1px solid var(--border); flex-shrink: 0; }
 .remote-projects > * { flex-shrink: 0; max-inline-size: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .remote-workspace { display: grid; grid-template-columns: minmax(240px, 30%) 1fr; min-block-size: 0; flex: 1; }

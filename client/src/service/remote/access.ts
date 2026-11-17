@@ -9,12 +9,13 @@ import { newKey, SIGNAL } from '../../shared/pairing'
 import { identity, phraseOf, sign, transcript, trustProof, verify } from '../../shared/remote/identity'
 import { CODE_TTL, invitationLink, REMOTE_PROTOCOL, requestOf, validSignal } from '../../shared/remote/protocol'
 import { stringifyRemote } from '../../shared/remote/codec'
-import type { RemoteChannel, RemoteIdentity, RemoteResponse, RemoteResult, RemoteServer, RemoteTrust } from '../../shared/remote/protocol'
+import type { RemoteChannel, RemoteIdentity, RemoteRequest, RemoteResponse, RemoteResult, RemoteServer, RemoteTrust } from '../../shared/remote/protocol'
 import { observation } from './gateway'
 import type { CoreMethods } from '../../core/application'
 import type { CoreEvent } from '../../core/events'
 import type { ObservationRuntime } from './gateway'
 import { disposeTransport, nodeListen } from './transport'
+import { coalesceEvents } from '../../shared/remote/coalesce'
 interface Device { readonly id: string; readonly name: string; readonly publicKey: string; readonly key: string; readonly projects: readonly string[]; readonly manager: boolean; readonly created: number; readonly revoked?: number; readonly full?: true }
 interface AccessRecord { readonly server: RemoteServer; readonly identity: RemoteIdentity; readonly enabled: boolean; readonly signal: string; readonly devices: readonly Device[] }
 interface Invitation { readonly id: string; readonly key: string; readonly expires: number; readonly projects: readonly string[]; readonly manager: boolean; readonly full?: true; consumed: string | undefined; readonly stop: () => void }
@@ -39,7 +40,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
   }
   const active = (): AccessRecord => { if (record === undefined || !record.enabled) throw new Error('Enable remote access first.'); return record }
   const send = (channel: RemoteChannel, message: RemoteResponse): void => channel.send(stringifyRemote(message))
-  const refuse = (channel: RemoteChannel, code: Extract<RemoteResponse, { type: 'error' }>['code'], message: string): void => { send(channel, { type: 'error', code, message }); setTimeout(() => channel.close(), 100) }
+  const refuse = (channel: RemoteChannel, code: Extract<RemoteResponse, { type: 'error' }>['code'], message: string): void => { console.warn(`Remote client refused (${code}): ${message}`); send(channel, { type: 'error', code, message }); setTimeout(() => channel.close(), 100) }
   const serve = (channel: RemoteChannel, invitation?: Invitation, trusted?: Device): void => {
     const server = record?.server
     if (server === undefined || disposed) { channel.close(); return }
@@ -52,8 +53,12 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     let stopEvents: (() => void) | undefined
     let requestId: string | undefined
     let updateTimer: ReturnType<typeof setTimeout> | undefined
+    let flushTimer: ReturnType<typeof setTimeout> | undefined
+    let queued: CoreEvent[] = []
+    // Events go out in batches, so a streaming conversation sends its latest state rather than every step of it.
+    const flush = (): void => { flushTimer = undefined; const batch = coalesceEvents(queued); queued = []; if (!ended) for (const event of batch) send(channel, { type: 'core-event', event }) }
     const timeout = setTimeout(() => { if (device === undefined) refuse(channel, 'expired', 'Code expired. Create a new code on the server.') }, invitation === undefined ? 15_000 : Math.max(1, invitation.expires - Date.now()))
-    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); stopChanges?.(); stopEvents?.(); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
+    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); clearTimeout(flushTimer); queued = []; stopChanges?.(); stopEvents?.(); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
     channel.onClose(end)
     const establish = async (one: Device, text: string): Promise<void> => {
       if (ended) return
@@ -66,7 +71,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       if (ended || !record?.enabled || record.devices.find((device) => device.id === one.id)?.revoked !== undefined) { channel.close(); return }
       send(channel, { type: 'trusted', trust, proof })
       if (one.full) stopEvents = runtime.subscribe((event: CoreEvent) => {
-        if (!ended && record?.enabled && record.devices.some((current) => current.id === one.id && current.revoked === undefined)) send(channel, { type: 'core-event', event })
+        if (!ended && record?.enabled && record.devices.some((current) => current.id === one.id && current.revoked === undefined)) { queued.push(event); flushTimer ??= setTimeout(flush, 50) }
       })
       stopChanges = gateway?.changed((seq) => {
         if (updateTimer !== undefined) return
@@ -75,7 +80,14 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     }
     channel.onMessage((raw) => {
       void (async () => {
-        if (ended || !record?.enabled || requests >= 128) { channel.close(); return }
+        if (ended || !record?.enabled) { channel.close(); return }
+        if (requests >= 128) {
+          let busy: RemoteRequest | undefined
+          try { busy = requestOf(raw) } catch { busy = undefined }
+          if (busy?.type === 'core-call') send(channel, { type: 'core-failure', id: busy.id, message: 'GeckIt on the server is busy. Try again in a moment.' })
+          else refuse(channel, 'denied', 'GeckIt on the server is busy.')
+          return
+        }
         requests++
         try {
           const request = requestOf(raw)

@@ -27,14 +27,21 @@ export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChanne
     peers.add(peer)
     const timer = setTimeout(() => { peers.delete(peer); peer.close() }, 45_000)
     timer.unref()
-    peer.onStateChange((state) => { if (state === 'connected') clearTimeout(timer); if (state === 'failed' || state === 'closed' || state === 'disconnected') { clearTimeout(timer); peers.delete(peer); peer.close() } })
+    let grace: ReturnType<typeof setTimeout> | undefined
+    const drop = (reason: string): void => { clearTimeout(timer); clearTimeout(grace); if (!peers.delete(peer)) return; console.warn(`Remote link closed: ${reason}`); peer.close() }
+    // A link that stops answering is often back within seconds, so only one that stays away is given up.
+    peer.onStateChange((state) => {
+      if (state === 'connected') { clearTimeout(timer); clearTimeout(grace); grace = undefined }
+      else if (state === 'disconnected') { grace ??= setTimeout(() => drop('the link stayed disconnected for 15 s'), 15_000); grace.unref() }
+      else if (state === 'failed' || state === 'closed') drop(`the link ${state}`)
+    })
     peer.onDataChannel((channel: DataChannel) => {
       if (channel.getLabel() !== 'geckit') { channel.close(); return }
       channel.onOpen(() => {
         const listeners: (() => void)[] = []
-        channel.onClosed(() => { peers.delete(peer); peer.close(); for (const listener of listeners) listener() })
+        channel.onClosed(() => { drop('the data channel closed'); for (const listener of listeners) listener() })
         channel.setBufferedAmountLowThreshold(250_000)
-        joined(remoteChannel({ send: (text) => { channel.sendMessage(text) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else peer.close() }), closed: (closed) => listeners.push(closed), close: () => { channel.close(); peer.close(); for (const listener of listeners) listener() }, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, binding))
+        joined(remoteChannel({ send: (text) => { channel.sendMessage(text) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else drop('the client sent binary data') }), closed: (closed) => listeners.push(closed), close: () => { channel.close(); drop('closed here'); for (const listener of listeners) listener() }, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, binding))
       })
     })
     peer.onGatheringStateChange((state) => {
@@ -93,10 +100,15 @@ export async function nodeDial(pairing: RemoteSignal): Promise<RemoteChannel> {
     await opened
     const listeners: (() => void)[] = []
     let ended = false
-    const end = (): void => { if (ended) return; ended = true; try { channel.close() } catch { /* Already closed. */ } peer.close(); for (const listener of listeners) listener() }
-    channel.onClosed(end)
-    peer.onStateChange((state) => { if (state === 'failed' || state === 'closed' || state === 'disconnected') end() })
+    let grace: ReturnType<typeof setTimeout> | undefined
+    const end = (reason: string): void => { if (ended) return; ended = true; clearTimeout(grace); console.warn(`Remote link closed: ${reason}`); try { channel.close() } catch { /* Already closed. */ } peer.close(); for (const listener of listeners) listener() }
+    channel.onClosed(() => end('the data channel closed'))
+    peer.onStateChange((state) => {
+      if (state === 'connected') { clearTimeout(grace); grace = undefined }
+      else if (state === 'disconnected') { grace ??= setTimeout(() => end('the link stayed disconnected for 15 s'), 15_000); grace.unref() }
+      else if (state === 'failed' || state === 'closed') end(`the link ${state}`)
+    })
     channel.setBufferedAmountLowThreshold(250_000)
-    return remoteChannel({ send: (text) => { channel.sendMessage(text) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else end() }), closed: (closed) => listeners.push(closed), close: end, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, transportBinding(offer, description.sdp))
+    return remoteChannel({ send: (text) => { channel.sendMessage(text) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else end('the server sent binary data') }), closed: (closed) => listeners.push(closed), close: () => end('closed here'), buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, transportBinding(offer, description.sdp))
   } catch (error) { peer.close(); throw error }
 }

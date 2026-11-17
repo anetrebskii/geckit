@@ -66,13 +66,47 @@ describe('remote workspace calls', () => {
       vi.useRealTimers()
       await authenticate(second, server, trust)
       expect(first.requests.filter((request) => request.type === 'core-call')).toHaveLength(1)
-      expect(second.requests.filter((request) => request.type === 'core-call')).toHaveLength(0)
+      const renames = (requests: readonly RemoteRequest[]) => requests.filter((one) => one.type === 'core-call' && one.call.method === 'chat:rename')
+      expect(renames(second.requests)).toHaveLength(0)
       const next = connection.call('chat:rename', 'session', 'New explicit action')
-      const request = second.requests.find((one) => one.type === 'core-call')
+      const request = renames(second.requests)[0]
       if (request?.type !== 'core-call') throw new Error('Explicit action was not sent')
       second.deliver({ type: 'core-result', id: request.id, value: undefined })
       await expect(next).resolves.toBeUndefined()
-      expect(second.requests.filter((one) => one.type === 'core-call')).toHaveLength(1)
+      expect(renames(second.requests)).toHaveLength(1)
+    } finally { connection.close() }
+  })
+
+  it('dials a saved computer again when it refuses or drops, and catches up on what was missed', async () => {
+    const server = await identity()
+    const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    vi.mocked(devicePublicKey).mockResolvedValue(btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey('spki', keys.publicKey)))))
+    vi.mocked(signDevice).mockImplementation(async (text) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(text))))))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const trust: RemoteTrust = { server: { id: 'server', name: 'Server', publicKey: server.publicKey }, device: 'device', key: 'a'.repeat(43), signal: 'http://127.0.0.1:47932', projects: [], manager: true, full: true }
+    const first = channel()
+    const second = channel()
+    vi.mocked(remoteDial).mockResolvedValueOnce(first.link).mockResolvedValueOnce(second.link)
+    const states: string[] = []
+    const connection = connectRemote(trust, 'Client', (view) => states.push(view.state), trust)
+    const heard: string[] = []
+    connection.on((event) => heard.push(event.name))
+    try {
+      await vi.waitFor(() => expect(remoteDial).toHaveBeenCalledTimes(1))
+      await authenticate(first, server, trust)
+      vi.useFakeTimers()
+      first.deliver({ type: 'error', code: 'denied', message: 'GeckIt on the server is busy.' })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(remoteDial).toHaveBeenCalledTimes(2)
+      vi.useRealTimers()
+      expect(states).not.toContain('error')
+      await authenticate(second, server, trust)
+      const asked = second.requests.flatMap((one) => one.type === 'core-call' ? [one.call.method] : [])
+      expect(asked).toEqual(expect.arrayContaining(['chat:list', 'manager:view', 'settings:get', 'lineup:state']))
+      const list = second.requests.find((one) => one.type === 'core-call' && one.call.method === 'chat:list')
+      if (list?.type !== 'core-call') throw new Error('No catch-up')
+      second.deliver({ type: 'core-result', id: list.id, value: [] })
+      await vi.waitFor(() => expect(heard).toContain('chat:sessions'))
     } finally { connection.close() }
   })
 
