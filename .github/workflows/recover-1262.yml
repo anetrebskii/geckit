@@ -17,6 +17,7 @@ jobs:
         include:
         - platform: mac
     env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CSC_LINK: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_LINK || '' }}
       CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
@@ -82,12 +83,14 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         run-id: 44123049480
     - name: Check Apple timestamp connectivity
-      continue-on-error: true
       working-directory: .
       run: |
+        xcodebuild -version
+        xcrun actool --version
         openssl ts -query -digest e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 -sha256 -cert -out "$RUNNER_TEMP/timestamp-query.tsq"
-        curl --fail --silent --show-error --max-time 25 -H 'Content-Type: application/timestamp-query' --data-binary @"$RUNNER_TEMP/timestamp-query.tsq" -o "$RUNNER_TEMP/timestamp-response.tsr" http://timestamp.apple.com/ts01
-        openssl ts -reply -in "$RUNNER_TEMP/timestamp-response.tsr" -text
+        curl --fail --silent --show-error --retry 1 --retry-all-errors --retry-delay 5 --connect-timeout 10 --max-time 25 -H 'Content-Type: application/timestamp-query' --data-binary @"$RUNNER_TEMP/timestamp-query.tsq" -o "$RUNNER_TEMP/timestamp-response.tsr" http://timestamp.apple.com/ts01
+        openssl ts -reply -in "$RUNNER_TEMP/timestamp-response.tsr" -text | tee "$RUNNER_TEMP/timestamp-result.txt"
+        grep -q 'Status: Granted' "$RUNNER_TEMP/timestamp-result.txt"
     - name: Install and build
       run: |
         chmod +x whisper/bin/*/whisper-cli*
