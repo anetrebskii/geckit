@@ -16941,7 +16941,7 @@ html input.phone-field + input.phone-field {
 
 html input.phone-field.computer-code {
   font-family: var(--font-code);
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .computers-command {
