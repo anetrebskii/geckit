@@ -1,0 +1,138 @@
+name: Recover Development v1.262.0
+'on':
+  push:
+    branches:
+    - recovery/development-v1.262.0
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: macos-26-intel
+    defaults:
+      run:
+        working-directory: client
+        shell: bash
+    strategy:
+      matrix:
+        include:
+        - platform: mac
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_LINK: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_LINK || '' }}
+      CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      GECKIT_SIGNED: ${{ matrix.platform == 'mac' && secrets.MAC_CSC_LINK != '' }}
+    steps:
+    - name: Checkout git repo
+      uses: actions/checkout@v7
+      with:
+        ref: v1.262.0
+    - name: Install Node and NPM
+      uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: '**/package-lock.json'
+    - name: Take whisper-cli
+      uses: actions/download-artifact@v8
+      with:
+        name: whisper-cli-${{ matrix.platform }}-x64
+        path: client/whisper/bin/${{ matrix.platform }}-x64
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: 44123049480
+    - name: Take Apple Silicon whisper-cli
+      if: matrix.platform == 'mac'
+      uses: actions/download-artifact@v8
+      with:
+        name: whisper-cli-mac-arm64
+        path: client/whisper/bin/mac-arm64
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: 44123049480
+    - name: Take llama-server
+      if: matrix.platform != 'win'
+      uses: actions/download-artifact@v8
+      with:
+        name: llama-server-${{ matrix.platform }}-x64
+        path: client/llama/bin/${{ matrix.platform }}-x64
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: 44123049480
+    - name: Take Apple Silicon llama-server
+      if: matrix.platform == 'mac'
+      uses: actions/download-artifact@v8
+      with:
+        name: llama-server-mac-arm64
+        path: client/llama/bin/mac-arm64
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: 44123049480
+    - name: Take the secrets broker
+      uses: actions/download-artifact@v8
+      with:
+        name: geckit-broker-${{ matrix.platform }}-x64
+        path: client/broker/bin/${{ matrix.platform }}-x64
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: 44123049480
+    - name: Take the Apple Silicon secrets broker
+      if: matrix.platform == 'mac'
+      uses: actions/download-artifact@v8
+      with:
+        name: geckit-broker-mac-arm64
+        path: client/broker/bin/mac-arm64
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: 44123049480
+    - name: Install and build
+      run: |
+        chmod +x whisper/bin/*/whisper-cli*
+        chmod +x broker/bin/*/geckit-broker* 2>/dev/null || true
+        mkdir -p llama/bin/${{ matrix.platform }}-x64
+        chmod +x llama/bin/*/llama-server* 2>/dev/null || true
+        ls -lR whisper/bin
+        npm ci
+        if [ "${{ matrix.platform }}" = mac ]; then
+          node scripts/prepare-mac-service-addons.cjs
+        fi
+        npm run typecheck
+        npm version "1.262.0" --no-git-tag-version --allow-same-version
+        npm run build
+    - name: Upload to the draft release
+      run: |
+        sign=()
+        if [ "$GECKIT_SIGNED" = true ]; then
+          keychain="$RUNNER_TEMP/geckit.keychain-db"
+          unlock=$(openssl rand -hex 24)
+          echo "$CSC_LINK" | base64 --decode > "$RUNNER_TEMP/geckit.p12"
+          security create-keychain -p "$unlock" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$unlock" "$keychain"
+          security import "$RUNNER_TEMP/geckit.p12" -k "$keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$unlock" "$keychain" > /dev/null
+          rm "$RUNNER_TEMP/geckit.p12"
+          cp node_modules/app-builder-lib/certs/root_certs.keychain "$RUNNER_TEMP/apple-roots.keychain"
+          security list-keychains -d user -s "$keychain" "$RUNNER_TEMP/apple-roots.keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$keychain"
+          unset CSC_LINK CSC_KEY_PASSWORD
+          sign=(-c.mac.notarize=true -c.forceCodeSigning=true)
+        else
+          unset CSC_LINK CSC_KEY_PASSWORD
+          export CSC_IDENTITY_AUTO_DISCOVERY=false
+          if [ "${{ matrix.platform }}" = mac ]; then sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false); fi
+        fi
+        npm exec electron-builder -- --publish always --${{ matrix.platform }} "${sign[@]}"
+    - name: Check the Mac signature
+      if: matrix.platform == 'mac'
+      run: |
+        for app in release/build/mac-arm64/GeckIt.app release/build/mac/GeckIt.app; do
+          codesign --verify --deep --strict "$app"
+          if [ "$GECKIT_SIGNED" = true ]; then spctl --assess --type execute --verbose=4 "$app"; fi
+        done
+  release:
+    needs:
+    - publish
+    runs-on: ubuntu-latest
+    steps:
+    - name: Publish the release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release edit "v1.262.0" --repo "${{ github.repository }}" --draft=false --prerelease --latest=false
