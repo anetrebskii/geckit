@@ -227,8 +227,8 @@ export function SettingsPage({
           </button>
         ))}
         <span className="spacer" />
-        <button type="button" className="quiet" onClick={onShortcuts}>
-          Keyboard shortcuts ({MOD}+/)
+        <button type="button" className="quiet" title={`Keyboard shortcuts (${MOD}+/)`} onClick={onShortcuts}>
+          Keyboard shortcuts
         </button>
       </nav>
       <div key={section} className="settings-page">

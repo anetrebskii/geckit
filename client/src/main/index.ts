@@ -730,6 +730,7 @@ function wire(): void {
     return (run as (...args: never[]) => NativeValue | Promise<NativeValue>)(...args.map((one) => one === null ? undefined : one) as never[])
   })
 
+  const LOCKED = 'The host is locked, and a locked computer shows nobody its screen. Unlock it, then try again.'
   ipcMain.handle('peer:screen', async (event) => {
     if (event.sender !== shownPeer()?.webContents) return { error: 'Not the phone' }
     // Asking for the screens is also what puts GeckIt in the Mac's list to allow, and what asks the first time.
@@ -740,6 +741,7 @@ function wire(): void {
           'The Mac has not allowed GeckIt to record its screen. On the Mac: System Settings, Privacy & Security, Screen & System Audio Recording, turn on GeckIt, then quit and reopen it.',
       }
     }
+    if (powerMonitor.getSystemIdleState(1) === 'locked') return { error: LOCKED }
     // A display that has gone to sleep is not listed at all, so it is woken as a touch of the keyboard would and asked again.
     if (screens.length === 0 && process.platform === 'darwin') {
       execFile('caffeinate', ['-u', '-t', '5'])

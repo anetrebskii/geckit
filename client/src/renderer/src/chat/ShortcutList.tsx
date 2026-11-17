@@ -152,8 +152,8 @@ export function ShortcutList({
             <header className="shortcut-list-head">
               <h2>Shortcuts{shortcuts.length === 0 ? null : <span className="employee-count">{shortcuts.length}</span>}</h2>
               <span className="spacer" />
-              {shortcuts.length > 5 ? <label className="employee-find shortcut-find"><Icon name="search" size={11} /><input type="search" aria-label="Search shortcuts" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} /></label> : null}
-              <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={11} />New shortcut</button>
+              {shortcuts.length > 5 ? <label className="employee-find shortcut-find"><Icon name="search" size={13} /><input type="search" aria-label="Search shortcuts" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />{search === '' ? null : <button type="button" className="find-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" size={8} /></button>}</label> : null}
+              <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={12} />New shortcut</button>
             </header>
             <p className="shortcut-list-about">Saved prompts for a new task or Manager: by hand here or from the gecko in the menu bar, or on a timetable while GeckIt is open.</p>
             {shortcuts.length === 0 ? <div className="shortcut-empty"><Icon name="bolt" size={18} /><strong>No shortcuts yet</strong><span>Save a prompt you send often, like a daily plan or a code review.</span><button type="button" className="primary" onClick={() => setEditing(blank())}>New shortcut</button></div> : null}

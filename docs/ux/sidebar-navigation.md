@@ -167,7 +167,7 @@ stateDiagram-v2
 | Any place | A notification about a conversation pressed | Tasks | The conversation open, as today |
 | Tasks with an open conversation | Chose another place, then Tasks | Tasks | The board, the view, the filters and the open conversation as they were left |
 | Page with an unsaved edit | Chose another place, then the page again | Page with an unsaved edit | The edit as it was left, by itself, with no question |
-| Expanded | Cmd+Ctrl+S on macOS, Ctrl+Alt+S elsewhere, or the sidebar button at its top | Rail, by choice | The names fold away; the content area widens |
+| Expanded | Cmd+Ctrl+S on macOS, Ctrl+Alt+S elsewhere, or the sidebar button | Rail, by choice | The names fold away; the content area widens. The sidebar button stays where it was, as in Slack: right after the traffic lights on macOS, at the window's top left corner on Windows and Linux, in every state, so the same spot folds and opens the names |
 | Rail, by choice | The same shortcut or button | Expanded | The names return |
 | Expanded | The window narrowed below 884 px, by itself, without a choice | Rail, narrow window | The names fold away |
 | Rail, narrow window | The window widened to 884 px or more, by itself | Expanded | The names return, unless the person hid them |
@@ -340,9 +340,10 @@ Search, opened from Tasks, puts a field with Cancel in the bar and shows recent 
 | From | Event | To | What the person sees |
 |---|---|---|---|
 | Any place's top page | Taps Menu | Menu open | The panel slides in from the left in 280 ms, the screen behind dims |
+| Any place's top page | Swipes right from the screen's left edge, 24 pt is enough | Menu open | As with Menu. On a pushed page and in a conversation the same swipe is Back, since there the edge belongs to Back |
 | Menu open | Taps a place | That place | The panel closes; the place as it was left, scroll and pushed page included |
 | Menu open | Taps the place already shown | Its top page | The panel closes; the place back at its top page |
-| Menu open | Taps the dimmed screen, or Escape on a keyboard | The same place | The panel closes |
+| Menu open | Taps the dimmed screen, swipes left on the panel or the dimmed screen (24 pt is enough; a mostly vertical move scrolls the list instead), or Escape on a keyboard | The same place | The panel closes |
 | A list | Taps a conversation, thread or question | Full screen | It opens with Back; the menu button is not shown there |
 | Any | The app opened again | The place shown last | A kept place that no longer exists (Search, from before) opens Tasks |
 
@@ -364,7 +365,6 @@ Typed text in a thread, a question or Search is kept across places.
 | Computers on the phone | No, as `remote-hosts-phone.md` decided | The phone reaches hosts only through the computer it is paired with; adding, connecting and disconnecting stay on the computer. Hosts show as the labels of their projects, and the paired computer stays in Settings, Host |
 | Channels in the left menu | No: in Settings, as on the Mac | A channel is set up once and then only works; its threads, the part used daily, are on Manager |
 | Manager as a row on Tasks, as today | No | Manager has several threads now; one row could open only one of them |
-| Opening the menu by swiping from the left edge | No | That swipe is Back in GeckIt and iOS; the button opens it |
 
 The prototype is `docs/design/sidebar-navigation-phone.html`.
 
@@ -372,7 +372,9 @@ The prototype is `docs/design/sidebar-navigation-phone.html`.
 
 Where the build departs from the text above, as found while writing it (2026-11-16):
 
-- **Questions page:** opening a question shows it on Tasks, in the conversation pane, rather than in a pane on the Questions page. The conversation view lives with the board; a second copy of it on another page would split one conversation's draft and scroll in two.
+- **Questions page:** laid out as the Tasks List view (changed 2026-11-16 at Alex's request; it was a centred card of rows, a question opening over the page). The list stands in a sunken column as wide as the List view's, under "Kept" and day headings that fold, each row drawn as a List view row: status dot, title, age, what it stands at and its time left or a pin when kept, with More (and right click) for Keep or Stop keeping and Delete. The open question fills the pane beside the list with no dimming, the row marked as the List view marks the open one; with none open the pane says "Choose a question to read it here." Close or Escape empties the pane. It is the same conversation view as on the board, not a second copy, so a conversation's draft and scroll stay in one place. Choosing another place closes the question pane, including while its history is loading; Tasks opens without the question popup. Returning to Questions shows its empty pane until a row is chosen again. Closing the pane preserves the question and its unsent draft; it does not stop its work. A conversation opened from Tasks still stays open when visiting another place and returning without opening a question.
+- **Opening a loaded question:** clicking its row or pressing Enter selects it and opens its pane immediately, without waiting for the task list to refresh. While its history is read, the pane shows the existing loading skeleton, accessible as "Reading the conversation". Another question's messages are cleared on selection; a later reply for a previously selected question cannot replace the current one. Unknown conversation links retain the existing lookup. This restores responsiveness within the approved Questions flow; it adds no controls, wording or layout.
+- **New task and Ask a question:** two separate forms, one open at a time (changed 2026-11-16 at Alex's request). Neither form carries a New task / Ask a question switch any more; each has its own heading. New task opens from the board bar or Cmd+N, Ask a question from the Questions page or Cmd+Shift+N. A draft left in both forms reopens only New task after a restart; the question draft stays kept for the next time Ask a question opens.
 - **Computers:** the group is the board bar's computer menu, moved; Connect computer and Manage computers open today's dialogs over Tasks. While another computer is shown, the window shows only that computer's own sidebar.
 - **Prototype:** `docs/design/sidebar-navigation.html` still draws SSH hosts in the Computers group; this document and the build follow Alex's correction of 2026-11-16.
 - **Phone, Secrets:** the list, history and Remove work; adding a secret still says "Manage secrets on the computer.", since its value is sealed on the computer's page.

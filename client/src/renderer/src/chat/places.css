@@ -20,6 +20,82 @@
   padding-left: 12px;
 }
 
+/* The folded sidebar is narrower than the traffic lights and the sidebar button after them, so the bar beside it starts past both. */
+html:not(.framed) .app:has(> .app-nav.rail) .board-head,
+html:not(.framed) .app:has(> .app-nav.over) .board-head,
+html:not(.framed) .app:has(> .app-nav.rail) .place-head,
+html:not(.framed) .app:has(> .app-nav.over) .place-head,
+html:not(.framed) .app:has(> .app-nav.rail) .place-team .team-bar,
+html:not(.framed) .app:has(> .app-nav.over) .place-team .team-bar,
+html:not(.framed) .app:has(> .app-nav.rail) .place-manager .manager-side-head,
+html:not(.framed) .app:has(> .app-nav.over) .place-manager .manager-side-head,
+html:not(.framed) .app:has(> .app-nav.rail) .place-dialog-host .shortcut-list-head,
+html:not(.framed) .app:has(> .app-nav.over) .place-dialog-host .shortcut-list-head,
+html:not(.framed) .app:has(> .app-nav.rail) .place-dialog-host .shortcut-editor-head,
+html:not(.framed) .app:has(> .app-nav.over) .place-dialog-host .shortcut-editor-head {
+  padding-left: 68px;
+}
+
+/* The traffic lights span the folded sidebar and the bar beside it, so the bar's row runs across the sidebar and its edge starts below. */
+html:not(.framed) .app-nav.rail {
+  position: relative;
+  border-right: 0;
+}
+
+html:not(.framed) .app-nav.rail::after {
+  position: absolute;
+  top: 45px;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  content: '';
+}
+
+/* Every place's bar is the window's one row height, so its line meets the folded sidebar's. */
+.place-team .team-bar,
+.place-manager .manager-side-head,
+.place-manager .manager-toolbar {
+  box-sizing: border-box;
+  block-size: 45px;
+  padding-block: 0;
+}
+
+/* Two lines do not fit the 45 px bar, so the thread's name, where it is from and its tasks share one row, centred like the threads' bar beside it. */
+html:not(.phone) .place-manager .manager-toolbar-title {
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+
+html:not(.phone) .place-manager .manager-toolbar-title h3 {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+html:not(.phone) .place-manager .manager-toolbar-title p {
+  flex: 0 1 auto;
+}
+
+html:not(.phone) .place-manager .manager-tasks {
+  block-size: 22px;
+  padding-block: 0;
+}
+
+html:not(.framed) .app:has(> .app-nav.rail) .place-manager .manager-side-head {
+  background: var(--bg);
+}
+
+html:not(.framed) .app-nav.rail .nav-top {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Below that line the first place starts level with the board's columns beside it. */
+html:not(.framed) .app-nav.rail .nav-items {
+  padding-top: 12px;
+}
+
 .app-nav {
   display: flex;
   flex-direction: column;
@@ -65,10 +141,33 @@
   padding: 0 8px;
 }
 
-.nav-toggle-row {
-  display: flex;
-  justify-content: center;
-  padding-bottom: 4px;
+/* The sidebar button stays where it is whether the names show or not, as in Slack: after the traffic lights on macOS, at the window's corner elsewhere. */
+.nav-toggle {
+  position: fixed;
+  z-index: 41;
+  top: 9px;
+  left: 12px;
+}
+
+/* The lights are placed at 16, 16 (main/windows.ts): 14 px each, 9 px apart, so the green one ends at 76 and the icon starts 11 px after it, as in Slack. */
+html:not(.framed) .nav-toggle {
+  top: 10px;
+  left: 82px;
+}
+
+/* A later drag region overrides an earlier no-drag one, so the folded sidebar's button over the bar's drag region needs a hole cut after the bar. */
+.nav-toggle-hole {
+  display: none;
+}
+
+html:not(.framed) .nav-toggle-hole {
+  position: fixed;
+  top: 10px;
+  left: 82px;
+  display: block;
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
 }
 
 .nav-items {
@@ -139,6 +238,16 @@
 
 .nav-item.on > svg {
   color: var(--accent);
+}
+
+/* The sidebar has one selection, the place shown; the computer it shows is marked by its icon alone. */
+.nav-item.on[aria-current='true'] {
+  font-weight: inherit;
+  background: none;
+}
+
+.nav-item.on[aria-current='true']:hover {
+  background: var(--bg-hover);
 }
 
 .nav-item:focus-visible {
@@ -236,14 +345,13 @@
   flex-direction: column;
   gap: 1px;
   padding: 6px 8px 8px;
-  border-top: 1px solid var(--border);
 }
 
 /* A place other than Tasks lies over the board, which stays drawn underneath as it was left; the status bar stays in view below it. */
 .place-page {
   position: absolute;
   z-index: 20;
-  inset: 0 0 24px;
+  inset: 0 0 30px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -356,10 +464,59 @@
   color: var(--text-faint);
 }
 
-.place-questions {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+/* Questions read as the task List view does: the list in a sunken column as wide as the List view's, the open question beside it. */
+.questions-split {
+  --sidebar: clamp(220px, var(--side, 264px), calc(100vw - 420px));
+
+  display: grid;
+  flex: 1;
+  grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.questions-list .sessions {
+  padding-top: 2px;
+}
+
+.questions-list .foot {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.questions-list :is(.question-left-in, .question-kept) {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.questions-list .question-kept {
+  display: inline-flex;
+}
+
+.questions-note {
+  flex: none;
+  margin: 0;
+  padding: 8px 14px 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+}
+
+.questions-none {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+/* The question open on the Questions page fills the pane beside the list, as a conversation does in the List view, rather than standing over the page. */
+.app.on-questions .talk.over.raised {
+  inset: 45px 0 30px var(--sidebar);
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .place-split {
@@ -379,6 +536,13 @@
 
 .place-settings .settings-nav .quiet {
   text-align: start;
+  white-space: nowrap;
+}
+
+/* The page's sections are selected the way the sidebar's places are. */
+.place-settings .settings-nav button.on {
+  font-weight: 600;
+  background: var(--fill);
 }
 
 /* Team, Shortcuts and Manager draw their own heads; as places they fill the pane and their heads hold the window. */
@@ -415,9 +579,120 @@
   overflow: hidden;
 }
 
-.place-dialog-host {
+/* Shortcuts' own header is the page's 45 px bar across the pane, as on every other page, and the list below keeps the centred column. */
+.place-body.place-dialog-host {
+  padding: 0;
+}
+
+.place-dialog-host .dialog.in-place.shortcut-list {
+  max-width: none;
+  padding-block-end: 20px;
+}
+
+.place-dialog-host .shortcut-list > :not(.shortcut-list-head) {
+  inline-size: min(760px, calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.place-dialog-host .shortcut-list > :first-child:not(.shortcut-list-head) {
+  margin-block-start: 20px;
+}
+
+.place-dialog-host .shortcut-list-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  box-sizing: border-box;
+  height: 45px;
+  padding: 0 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.place-dialog-host .shortcut-list-head h2 {
+  font-size: 14px;
+}
+
+.place-dialog-host .shortcut-list-about {
+  margin-block: 20px 14px;
+}
+
+/* Editing a shortcut in the page: its name is the page's bar, the form fills the column below, and its actions close the form rather than float over the status bar. */
+.place-body.place-dialog-host:has(.shortcut-editor) {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.place-dialog-host .dialog.shortcut-list:has(> .shortcut-editor) {
+  flex: 1;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding-block-end: 0;
+}
+
+.place-dialog-host .shortcut-list > .shortcut-editor:first-child {
+  inline-size: auto;
+  margin: 0;
+  gap: 0;
+}
+
+.place-dialog-host .shortcut-editor > :not(.shortcut-editor-head) {
+  inline-size: min(1000px, calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.place-dialog-host .shortcut-editor-head {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  box-sizing: border-box;
+  height: 45px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.place-dialog-host .shortcut-kicker {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.place-dialog-host .shortcut-kicker::after {
+  margin-inline-start: 8px;
+  color: var(--text-faint);
+  font-weight: 400;
+  content: '/';
+}
+
+.place-dialog-host .shortcut-editor input.shortcut-title {
+  flex: 0 1 520px;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 8px;
+  font-size: 14px;
+  -webkit-app-region: no-drag;
+}
+
+.place-dialog-host .shortcut-editor-body {
+  margin-block-start: 20px;
+}
+
+.place-dialog-host .shortcut-editor > .shortcut-summary {
+  margin-block: 14px 0;
+}
+
+.place-dialog-host .shortcut-editor > .dialog-actions {
+  flex: none;
+  align-items: center;
+  margin-block: 14px 16px;
 }
 
 .place-dialog {
@@ -444,5 +719,87 @@
 }
 
 .app.placed.asking .new-task {
+  z-index: 22;
+}
+
+/* A page bar's controls stand as the Tasks bar's do: 28 px, the search sunken, the one way to add something tinted rather than filled. */
+.place-dialog-host .shortcut-list-head .shortcut-find {
+  box-sizing: border-box;
+  gap: 7px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  background: var(--bg-sunken);
+  border-radius: 7px;
+}
+
+.place-dialog-host .shortcut-list-head .shortcut-find:hover {
+  border-color: var(--border-strong);
+}
+
+.place-dialog-host .shortcut-list-head .shortcut-find:focus-within {
+  background: var(--field);
+  border-color: var(--accent);
+}
+
+.place-dialog-host .shortcut-list-head .shortcut-find input {
+  padding: 0;
+  font-size: 13px;
+}
+
+.employee-find input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* The field's own clear button, drawn here because Chrome shows its native one only while the window has focus. */
+.employee-find .find-clear {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  color: var(--bg);
+  background: var(--text-faint);
+  border-radius: 50%;
+}
+
+.employee-find .find-clear:hover {
+  background: var(--text-dim);
+}
+
+.employee-find .find-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+:is(.place-dialog-host .shortcut-list-head .shortcut-new, .place-team .team-bar .employee-new, .place-head .place-add) {
+  box-sizing: border-box;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  white-space: nowrap;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: var(--radius);
+}
+
+:is(.place-dialog-host .shortcut-list-head .shortcut-new, .place-team .team-bar .employee-new, .place-head .place-add):hover:not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg-raised));
+}
+
+.place-head .place-add .keys {
+  color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+/* A conversation opened from a page stands over the page, the page dimmed behind it as the board is. */
+.talk-scrim.raised {
+  z-index: 21;
+}
+
+.talk.over.raised {
   z-index: 22;
 }

@@ -1,6 +1,6 @@
 # Verification: Sidebar navigation
 
-**Cases**: [ui-test-cases.md](ui-test-cases.md) | **Date**: 2026-11-16 | **Branch**: `feat/sidebar-navigation` (worktree, uncommitted)
+**Cases**: [ui-test-cases.md](ui-test-cases.md) | **Date**: 2026-11-16 | **Source branch**: `feat/sidebar-navigation`
 
 Every case marked H ran in the harness (`client/src/renderer/sidebar-preview.html`): the real Chat window, pages, phone menu and stylesheets on a fake backend, served by Vite and driven in a background Chrome tab through `geckit-local browser`. It proves the renderer, not the service. Desktop ran at 1180 x 760 and 820 x 760, phone at 390 x 844. LD cases were inspected in light and dark.
 
@@ -46,7 +46,7 @@ Result: 50 pass, 0 fail, 1 not run (P-14), over 51 cases (D-31 added). D-03, D-0
 
 | ID | Result | Notes |
 | --- | --- | --- |
-| P-01 | Pass, harness, fake backend, LD | |
+| P-01 | Pass, harness, fake backend, LD | Fixed after Alex saw it on the iPhone: the menu button took the class of the existing popup menu `.phone-menu` and drew as a wide panel; renamed `place-menu-button`, now a 44 pt icon |
 | P-02 | Pass, harness, fake backend, LD | Fixed while running: the menu's classes collided with the conversation drawer's `.phone-drawer`. Its position check first failed because the check's wait was counted in message hops, not milliseconds, and read the panel before its 280 ms slide; with a timed wait the panel is at 0 when open (two clean runs) |
 | P-03 | Pass, harness, fake backend | |
 | P-04 | Pass, harness, fake backend, LD | All nine places |
@@ -65,12 +65,14 @@ Result: 50 pass, 0 fail, 1 not run (P-14), over 51 cases (D-31 added). D-03, D-0
 | P-17 | Pass, harness, fake backend, LD | |
 | P-18 | Pass, harness, fake backend | Reduced motion emulated: no transition, the menu at 0 at once |
 | P-19 | Pass, harness, fake backend | |
-| P-20 | Pass, harness, fake backend | |
+| P-20 | Pass, harness, fake backend | Redefined 2026-11-16 at Alex's request: the edge swipe opens the menu. 10 pt: closed; 30 pt: open on Tasks and on Team; on Team's pushed page and in a conversation the top element at the edge is their Back strip |
 
 ## Checks after the fixes
 
 `npm run typecheck` passes, eslint on the changed files finds nothing, `npm run test`: 156 files, 2054 tests pass, 23 skipped.
 
 ## Change after the run
+
+Delivery follow-up on 2026-11-16: the complete redesign includes the later desktop and phone refinements in the working tree, Manager setup simplification, Questions split layout and opening/navigation fixes, separate task/question forms, phone secret sheets and screen controls, and board rendering performance changes. Questions has 13 actual-renderer regression checks with a synthetic native boundary, all passing; real mouse and Enter navigation in desktop dark and narrow light confirmed that leaving Questions closes its pane, keeps the draft, and preserves ordinary Tasks conversations across visits. Details: [Questions verification](../../docs/plans/questions-opening-delay.md). The full suite passed again: 156 files and 2,054 tests, five files and 23 tests skipped. Application and fixture typechecks, desktop/mobile builds and the repository's `npm run lint` command pass. Earlier errors came from linting scripts outside that command's `src test` scope. Native/provider latency, physical remote screen input and P-14 remain outside this renderer evidence. Alex explicitly authorized direct integration and push of the complete redesign to main; no app restart or stable-release promotion is part of this request.
 
 On 2026-11-16 Alex corrected the Computers group: it holds the GeckIt computers from the board bar's computer selector, and SSH hosts go back to Settings, Hosts. D-04, D-18, D-19, D-20, D-21 and D-29 were rewritten for it and D-31 added; every desktop case was run again after the change, in a GeckIt test browser (no extensions; D-10's drag check in a Chrome tab, since the test browser has no `app-region`), and the phone cases again. `npm run lint` reports two `no-undef` in `client/scripts/dev-bundle.js`, a file this branch does not change. The phone suite was rerun from a clean state (no kept place) after the change: all phone cases pass except P-14.

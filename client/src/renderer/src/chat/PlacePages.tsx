@@ -12,7 +12,10 @@ import { ManagerChat } from './ManagerChat'
 import { managerStand } from './manager-label'
 import { ProviderIcon } from './ProviderIcon'
 import { ShortcutList } from './ShortcutList'
-import { questionLeft } from './time'
+import { ago, byDay, questionLeft } from './time'
+import { DeleteChats } from './DeleteChats'
+import { Dot } from './Tasks'
+import { Menu } from '../ui/Menu'
 import { useManager } from './useManager'
 import type { Chat } from './useChat'
 import { useComputers } from '../remote/Computer'
@@ -99,9 +102,8 @@ export function AppNav({
   }
   return (
     <nav className={`app-nav${folded ? ' rail' : ''}${over ? ' over' : ''}`} aria-label="GeckIt">
-      <div className="nav-top drag">{folded ? null : toggle}</div>
+      <div className="nav-top drag">{toggle}</div>
       <div className="nav-items">
-        {folded ? <div className="nav-toggle-row">{toggle}</div> : null}
         {WORK_PLACES.map(item)}
         <div className="nav-group" role="presentation">Workspace</div>
         {WORKSPACE_PLACES.map(item)}
@@ -115,7 +117,7 @@ export function AppNav({
         </button>
         {computers.length === 0 ? null : (
           <button type="button" className="nav-item nav-add no-drag" {...(folded ? { 'aria-label': 'Manage computers', title: 'Manage computers' } : {})} onClick={() => choose(':manage')}>
-            <Icon name="settings" />
+            <Icon name="pencil" />
             <span className="nav-name">Manage computers</span>
           </button>
         )}
@@ -169,40 +171,56 @@ function ManagerPlace({ chat, onSetUp, onOpen }: { readonly chat: Pick<Chat, 'se
   )
 }
 
-function QuestionsPlace({ chat, onAsk, onOpen }: { readonly chat: Pick<Chat, 'questions' | 'showProviders' | 'keep' | 'remove'>; readonly onAsk: () => void; readonly onOpen: (id: string) => void }): React.JSX.Element {
+/** Questions as the task List view shows conversations: the list on the left under its day headings, the open one beside it. */
+function QuestionsPlace({ chat, openId, onAsk, onOpen }: { readonly chat: Pick<Chat, 'questions' | 'showProviders' | 'keep' | 'remove' | 'settings'>; readonly openId: string | undefined; readonly onAsk: () => void; readonly onOpen: (id: string) => void }): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
-  const [confirming, setConfirming] = useState<string | undefined>()
+  const [menu, setMenu] = useState<{ readonly id: string; readonly at: DOMRect } | undefined>()
+  const [deleting, setDeleting] = useState<ChatSession | undefined>()
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set())
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(tick)
   }, [])
   const questions = [...chat.questions].sort((one, other) => other.at - one.at)
+  const kept = questions.filter((one) => one.stays === true)
+  const groups = [...(kept.length === 0 ? [] : [{ heading: 'Kept', rows: kept }]), ...byDay(questions.filter((one) => one.stays !== true), now)]
+  const fold = (heading: string): void => setFolded((was) => {
+    const next = new Set(was)
+    if (!next.delete(heading)) next.add(heading)
+    return next
+  })
+  const menuFor = menu === undefined ? undefined : questions.find((one) => one.id === menu.id)
   const row = (one: ChatSession): React.JSX.Element => {
     const title = one.title === '' ? 'Untitled' : one.title
-    if (confirming === one.id) {
-      return (
-        <div key={one.id} className="question-item confirming">
-          <span className="question-title">Delete "{title}"?</span>
-          <span className="question-confirm">
-            <button type="button" className="question-cancel" autoFocus onClick={() => setConfirming(undefined)}>Cancel</button>
-            <button type="button" className="question-delete" onClick={() => { setConfirming(undefined); chat.remove([one.id]) }}>Delete</button>
-          </span>
-        </div>
-      )
-    }
     const left = questionLeft(one, now)
     return (
-      <div key={one.id} className="question-item">
-        <button type="button" className="question-open" onClick={() => onOpen(one.id)}>
-          <span className="question-title">{chat.showProviders ? <ProviderIcon id={one.id} transport={one.transport} /> : null}{title}</span>
-          {one.stands === '' ? null : <span className="question-says">{one.stands}</span>}
-        </button>
-        {one.stays === true ? <span className="question-left" title="Kept"><Icon name="pin" size={13} /></span> : left === undefined ? null : <span className="question-left">{left}</span>}
-        <button type="button" className={`question-pin${one.stays === true ? ' on' : ''}`} aria-label={one.stays === true ? `Stop keeping ${title}` : `Keep ${title}`} title={one.stays === true ? 'Stop keeping' : 'Keep'} onClick={() => chat.keep(one.id, one.stays !== true)}>
-          <Icon name="pin" size={13} />
-        </button>
-        <button type="button" className="question-bin" aria-label={`Delete ${title}`} title="Delete" onClick={() => setConfirming(one.id)}>
-          <Icon name="trash" size={13} />
+      <div
+        key={one.id}
+        className={`row${one.id === openId ? ' on' : ''}${one.state === 'asks' || one.state === 'unread' ? ` waits ${one.state}` : ''}`}
+        role="button"
+        tabIndex={0}
+        title={title}
+        onClick={() => onOpen(one.id)}
+        onKeyDown={(event) => { if (event.key === 'Enter') onOpen(one.id) }}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setMenu({ id: one.id, at: new DOMRect(event.clientX, event.clientY, 0, 0) })
+        }}
+      >
+        <Dot session={one} />
+        <span className="lines">
+          <span className="head">
+            {chat.showProviders ? <ProviderIcon id={one.id} transport={one.transport} /> : null}
+            <span className="title">{title}</span>
+            <span className="changed" title={new Date(one.at).toLocaleString()}>{ago(one.at, now, true)}</span>
+          </span>
+          <span className="foot">
+            <span className="stands">{one.stands === '' ? null : <span>{one.stands}</span>}</span>
+            {one.stays === true ? <span className="question-kept" title="Kept"><Icon name="pin" size={11} /></span> : left === undefined ? null : <span className="question-left-in">{left}</span>}
+          </span>
+        </span>
+        <button type="button" className="icon-button more" aria-label={`More for ${title}`} onClick={(event) => { event.stopPropagation(); setMenu({ id: one.id, at: event.currentTarget.getBoundingClientRect() }) }}>
+          <Icon name="more" />
         </button>
       </div>
     )
@@ -212,12 +230,51 @@ function QuestionsPlace({ chat, onAsk, onOpen }: { readonly chat: Pick<Chat, 'qu
       <PageHead title="Questions">
         <button type="button" className="quiet place-add no-drag" onClick={onAsk}><Icon name="plus" size={12} />Ask a question<span className="keys">{MOD}+Shift+N</span></button>
       </PageHead>
-      <div className="place-body">
-        <div className="place-column">
-          {questions.length === 0 ? <p className="place-note">No questions. Ask one with {MOD}+Shift+N; each is kept a day after its last answer.</p> : <div className="place-questions">{questions.map(row)}</div>}
-          {questions.length === 0 ? null : <p className="place-note">Each is deleted a day after its last answer.</p>}
+      <div className="questions-split" style={{ '--side': `${String(chat.settings.sidebarWidth)}px` } as React.CSSProperties}>
+        <div className="sidebar questions-list">
+          <div className="sessions">
+            {questions.length === 0 ? <div className="empty">No questions. Ask one with {MOD}+Shift+N.</div> : groups.map((group) => (
+              <div key={group.heading}>
+                <div className="group-head">
+                  <button type="button" className="group" onClick={() => fold(group.heading)}>
+                    <Icon name={folded.has(group.heading) ? 'right' : 'down'} size={10} />
+                    {group.heading}
+                    <span className="spacer" />
+                    <span className="count">{group.rows.length}</span>
+                  </button>
+                </div>
+                {folded.has(group.heading) ? null : group.rows.map(row)}
+              </div>
+            ))}
+          </div>
+          <p className="questions-note">Each is deleted a day after its last answer, unless kept.</p>
         </div>
+        {openId === undefined ? <div className="questions-none">{questions.length === 0 ? 'Ask a question and its answer shows here.' : 'Choose a question to read it here.'}</div> : null}
       </div>
+      {menu === undefined || menuFor === undefined ? null : (
+        <Menu
+          anchor={menu.at}
+          choices={[
+            { value: 'keep', label: menuFor.stays === true ? 'Stop keeping' : 'Keep', icon: 'pin' },
+            { value: 'delete', label: 'Delete', icon: 'trash', danger: true },
+          ]}
+          onPick={(value) => {
+            if (value === 'keep') chat.keep(menuFor.id, menuFor.stays !== true)
+            if (value === 'delete') setDeleting(menuFor)
+          }}
+          onClose={() => setMenu(undefined)}
+        />
+      )}
+      {deleting === undefined ? null : (
+        <DeleteChats
+          chats={[deleting]}
+          onClose={() => setDeleting(undefined)}
+          onDelete={() => {
+            chat.remove([deleting.id])
+            setDeleting(undefined)
+          }}
+        />
+      )}
     </>
   )
 }
@@ -227,6 +284,8 @@ export function PlacePage({
   chat,
   place,
   teamFirst,
+  openId,
+  onOpenHere,
   onPlace,
   onAsk,
   onKeys,
@@ -237,6 +296,9 @@ export function PlacePage({
   readonly place: Place
   readonly teamFirst: string | undefined
   readonly onPlace: (place: Place) => void
+  readonly onOpenHere: (id: string) => void
+  /** The question open beside the Questions list. */
+  readonly openId: string | undefined
   readonly onAsk: () => void
   readonly onKeys: () => void
   readonly onTeam: (first?: string) => void
@@ -250,7 +312,7 @@ export function PlacePage({
     case 'manager':
       return <ManagerPlace chat={chat} onSetUp={() => onTeam('manager')} onOpen={toTasks} />
     case 'questions':
-      return <QuestionsPlace chat={chat} onAsk={onAsk} onOpen={toTasks} />
+      return <QuestionsPlace chat={chat} openId={openId} onAsk={onAsk} onOpen={onOpenHere} />
     case 'team':
       return <div className="place-team"><Team key={teamFirst ?? ''} place chat={chat} first={teamFirst as Parameters<typeof Team>[0]['first']} onClose={() => onPlace('tasks')} onOpen={toTasks} onShortcut={onShortcut} /></div>
     case 'shortcuts':

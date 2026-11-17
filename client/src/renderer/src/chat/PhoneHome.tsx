@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { ChatSession, ShortcutDraft } from '../../../shared/api'
 import { phoneCalls } from '../phone-calls'
@@ -116,6 +116,7 @@ export function PhoneHome({
     </button>
   )
   const host = macs()?.list().find((one) => one.current)?.name ?? 'the host'
+  const swipeShut = useSwipeLeft(() => setMenu(false))
 
   return (
     <PhoneMenu.Provider value={{ dot, open: () => { tap('light'); setMenu(true) } }}>
@@ -153,8 +154,9 @@ export function PhoneHome({
       <div className="phone-tab" hidden={place !== 'settings'}>
         <PhoneSettings chat={chat} />
       </div>
-      <div className={`place-menu-scrim${menu ? ' open' : ''}`} onClick={() => setMenu(false)} aria-hidden="true" />
-      <nav className={`place-menu${menu ? ' open' : ''}`} aria-label="Places" inert={!menu}>
+      {menu || shortcuts || searching ? null : <EdgeMenu onOpen={() => { tap('light'); setMenu(true) }} />}
+      <div className={`place-menu-scrim${menu ? ' open' : ''}`} {...swipeShut} onPointerUp={(event) => { if (!swipeShut.onPointerUp(event)) setMenu(false) }} aria-hidden="true" />
+      <nav className={`place-menu${menu ? ' open' : ''}`} aria-label="Places" inert={!menu} {...swipeShut}>
         <div className="place-menu-items">
           {WORK_PLACES.map(item)}
           <div className="place-menu-group">Workspace</div>
@@ -167,4 +169,58 @@ export function PhoneHome({
     </div>
     </PhoneMenu.Provider>
   )
+}
+
+/** The strip along the left edge of a top-level place: a short swipe right opens the menu, where a conversation's edge goes back. */
+function EdgeMenu({ onOpen }: { readonly onOpen: () => void }): React.JSX.Element {
+  const from = useRef<number | undefined>(undefined)
+  return (
+    <div
+      className="phone-edge place-menu-edge"
+      onPointerDown={(event) => {
+        from.current = event.clientX
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={(event) => {
+        if (from.current === undefined || event.clientX - from.current < 24) return
+        from.current = undefined
+        onOpen()
+      }}
+      onPointerUp={(event) => {
+        const start = from.current
+        from.current = undefined
+        if (start !== undefined && event.clientX - start >= 24) onOpen()
+      }}
+      onPointerCancel={() => (from.current = undefined)}
+    />
+  )
+}
+
+/** A short swipe left closes the menu, from the panel or the dimmed screen beside it; onPointerUp says whether one closed it. */
+function useSwipeLeft(onShut: () => void): {
+  readonly onPointerDown: (event: React.PointerEvent) => void
+  readonly onPointerMove: (event: React.PointerEvent) => void
+  readonly onPointerUp: (event: React.PointerEvent) => boolean
+  readonly onPointerCancel: () => void
+} {
+  const from = useRef<{ x: number; y: number; shut: boolean } | undefined>(undefined)
+  return {
+    onPointerDown: (event) => {
+      from.current = { x: event.clientX, y: event.clientY, shut: false }
+    },
+    onPointerMove: (event) => {
+      const held = from.current
+      if (held === undefined || held.shut) return
+      const dx = held.x - event.clientX
+      if (dx < 24 || dx < Math.abs(event.clientY - held.y)) return
+      held.shut = true
+      onShut()
+    },
+    onPointerUp: () => {
+      const shut = from.current?.shut === true
+      from.current = undefined
+      return shut
+    },
+    onPointerCancel: () => (from.current = undefined),
+  }
 }

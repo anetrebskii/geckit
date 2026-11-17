@@ -346,13 +346,15 @@ export function useChat(): Chat {
   const chosenRef = useRef(chosen)
   const sessionsRef = useRef(sessions)
   const everyoneRef = useRef(everyone)
+  const questionsRef = useRef(questions)
   // The shown one is not kept here but where it is set: an effect of an earlier render can run after that and put it back.
   useEffect(() => {
     scopeRef.current = scope
     chosenRef.current = chosen
     sessionsRef.current = sessions
     everyoneRef.current = everyone
-  }, [scope, chosen, sessions, everyone])
+    questionsRef.current = questions
+  }, [scope, chosen, sessions, everyone, questions])
 
   /** Listed: every project's, or only the chosen ones'. */
   const within = (one: ChatSession): boolean =>
@@ -1001,7 +1003,7 @@ export function useChat(): Chat {
 
   const goTo = useCallback(
     (id: string) => {
-      const found = everyoneRef.current.find((one) => one.id === id)
+      const found = questionsRef.current.find((one) => one.id === id) ?? everyoneRef.current.find((one) => one.id === id)
       if (found !== undefined) {
         show(found)
         return

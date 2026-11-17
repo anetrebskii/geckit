@@ -1,4 +1,3 @@
-import { StatusHistory } from '../src/renderer/src/chat/StatusHistory'
 import { formatStatusMove } from '../src/shared/status-history'
 import type { StatusMove } from '../src/shared/api'
 import { describe, expect, it, vi } from 'vitest'
@@ -66,10 +65,7 @@ describe('Manager assistant availability', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, session: { ...worker, manager: true }, workers: [worker], decisions: [{ id: 'decision', title: 'Internal decision', choices: [{ label: 'Answer', value: 'answer' }] }] })
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
     expect(markup).toContain('Give Manager work in the app or a connected channel.')
-    expect(markup).toContain('Pause</button>')
-    expect(markup).toContain('Restart session</button>')
-    expect(markup).toContain('Disable Manager</button>')
-    expect(markup).toContain('Current assistant')
+    expect(markup).toContain('Restart</button>')
     expect(markup).not.toContain('Open manager')
     expect(markup).not.toContain('Session info')
     expect(markup).not.toContain('Internal decision')
@@ -86,7 +82,7 @@ describe('Manager assistant availability', () => {
       const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, config: { ...ready.config, provider }, providers: [{ provider, available: true }] })
       const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings }))
       expect(markup).toContain(provider === 'codex' ? 'Codex' : 'Library assistant')
-      expect(markup).toContain('class="primary">Save changes</button>')
+      expect(markup).not.toContain('Save changes')
       hook.mockRestore()
     }
   })
@@ -94,48 +90,38 @@ describe('Manager assistant availability', () => {
   it('blocks saving an empty enabled list and a disabled saved selection with explicit recovery', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, providers: [] })
     const empty = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
-    expect(empty).toContain('Enable an assistant in Assistants to set up Manager.')
-    expect(empty).toContain('class="primary" disabled="">Save changes</button>')
+    expect(empty).toContain('Enable an assistant in Assistants to run Manager.')
     hook.mockReturnValue({ ...ready, providers: [{ provider: 'codex', available: true }] })
     const disabled = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
     expect(disabled).toContain('This assistant is disabled. Choose an enabled assistant or restore it in Assistants.')
     expect(disabled).toContain('Claude Code')
-    expect(disabled).toContain('class="primary" disabled="">Save changes</button>')
     hook.mockRestore()
   })
 })
 
-describe('Manager guided setup', () => {
+describe('Manager setup', () => {
   const fresh: ManagerView = { ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off' }
 
-  it('keeps every later step locked behind the one before it', () => {
+  it('is one list of the assistant, model and status, with no steps, delegation choice or switch', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue(fresh)
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
-    expect(markup).toContain('The assistant you pick here is the one that runs it.')
-    expect(markup).toContain('Loading models...')
-    expect(markup).toContain('class="primary" disabled="">Continue</button>')
-    expect(markup).toContain('Decide how work starts first.')
-    expect(markup).toContain('Choose the assistant first.')
-    expect(markup).not.toContain('Connect Telegram first.')
-    expect(markup.match(/class="manager-step is-/g)).toHaveLength(3)
-    expect(markup).not.toContain('aria-label="Connect Telegram"')
-    expect(markup).toContain('Telegram, Slack and Discord reach Manager from Settings, Channels.')
-    expect(markup).not.toContain('Enable Manager')
+    expect(markup.match(/class="manager-setting"/g)).toHaveLength(3)
+    expect(markup).not.toContain('manager-step')
     expect(markup).not.toContain('Delegation policy')
+    expect(markup).not.toContain('Enable Manager')
+    expect(markup).not.toContain('Continue</button>')
+    expect(markup).not.toContain('Save changes')
+    expect(markup).toContain('Telegram, Slack and Discord reach Manager from Settings, Channels.')
     hook.mockRestore()
   })
 
-  it('keeps Manager ready and its lifecycle controls available without a Telegram connection', () => {
+  it('offers Restart for a running Manager and neither Pause nor Disable', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...ready, session: { ...worker, id: 'claude-backing', manager: true } })
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
-    expect(markup).not.toContain('Connect Telegram')
-    expect(markup).toContain('Manager is on')
-    expect(markup).toContain('Pause</button>')
-    expect(markup).toContain('Restart session</button>')
-    expect(markup).toContain('Disable Manager</button>')
-    expect(markup).not.toContain('Loading Telegram...')
-    expect(markup).toContain('All projects, current and future, across every profile.')
-    expect(markup).not.toContain('Connect Telegram first.')
+    expect(markup).toContain('Restart</button>')
+    expect(markup).not.toContain('Pause</button>')
+    expect(markup).not.toContain('Disable Manager')
+    expect(markup).toContain('Works in all projects, current and future, across every profile.')
     hook.mockRestore()
   })
 })
@@ -262,7 +248,7 @@ describe('Manager thread on a worker card', () => {
     const slack: ChatSession = { ...worker, managerManaged: true, managerThread: { id: 'channel:slack:C1:3.0', said: 'Slack · Maria Ivanova' }, labels: { thread: '3.0' } }
     expect(managerFrom(slack)).toBe('From Manager · Slack · Maria Ivanova')
     expect(managerTrace(slack)).toEqual(['Reports to: Slack · Maria Ivanova', 'thread: 3.0'])
-    const html = renderToStaticMarkup(createElement(From, { chat: { sessions: [slack], goTo: vi.fn() }, session: slack, className: 'board-card-from' }))
+    const html = renderToStaticMarkup(createElement(From, { parent: originFor({ sessions: [slack] }, slack), session: slack, className: 'board-card-from', onGo: vi.fn() }))
     expect(html).toContain('From Manager · Slack · Maria Ivanova<')
     expect(html).toContain('title="Reports to: Slack · Maria Ivanova')
   })
@@ -331,10 +317,4 @@ it('formats persisted fields deterministically without guessing legacy attributi
   const expected = '1970-01-01T00:00:00.002Z · progress → done · Manager session · Origin: telegram · session: manager:1 · thread: telegram:1 · operation: op:1 · message: telegram:1:42'
   expect(formatStatusMove(move)).toBe(expected)
   expect(formatStatusMove(JSON.parse(JSON.stringify(move)) as StatusMove)).toBe(expected)
-  const markup = renderToStaticMarkup(createElement(StatusHistory, { moves: [legacy, move] }))
-  expect(markup).toContain('<summary>Status history</summary>')
-  expect(markup).toContain('Legacy / unknown')
-  expect(markup).toContain(expected)
-  expect(markup).not.toContain('Alex')
-  expect(renderToStaticMarkup(createElement(StatusHistory, {}))).toContain('No status changes recorded.')
 })

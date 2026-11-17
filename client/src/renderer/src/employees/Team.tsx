@@ -222,13 +222,13 @@ export function Team({ chat, first, onClose, onOpen, onShortcut, place = false }
       {place ? null : <button type="button" className="icon-button" aria-label="Back to tasks" title="Back to tasks (Esc)" onClick={() => request(onClose)}><Icon name="left" size={13} /></button>}
       <h2>Team</h2>
       <span className="spacer" />
-      {empty ? null : <button type="button" className="quiet employee-new" disabled={saving} onClick={() => request(make)}><Icon name="plus" size={11} />New employee</button>}
+      {empty ? null : <button type="button" className="quiet employee-new" disabled={saving} onClick={() => request(make)}><Icon name="plus" size={12} />New employee</button>}
     </header>
     {loadError ? <p className="employee-alert team-alert" role="alert">Could not load employees. <button type="button" className="quiet" onClick={reload}>Retry</button></p> : null}
     {view.error === undefined ? null : <p className="employee-alert team-alert" role="alert">{view.error.trim() || 'Employee saved. Assistant instructions could not be updated.'} <button type="button" className="quiet" disabled={saving} onClick={retry}>Retry</button></p>}
     <div className="team-split">
       <aside className="employee-roster">
-        <label className="employee-find"><Icon name="search" size={11} /><input type="search" aria-label="Search employees" placeholder="Search employees" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+        <label className="employee-find"><Icon name="search" size={11} /><input type="search" aria-label="Search employees" placeholder="Search employees" value={search} onChange={(event) => setSearch(event.target.value)} />{search === '' ? null : <button type="button" className="find-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" size={8} /></button>}</label>
         <div className="employee-settings-list">
           {!'manager'.includes(search.trim().toLowerCase()) ? null : <><button type="button" className={`employee-settings-row${shownId === 'manager' ? ' on' : ''}`} aria-current={shownId === 'manager'} disabled={saving} onClick={() => request(() => choose('manager'))}>
             <EmployeeAvatar employee={managerFace(chat.settings)} size="medium" />

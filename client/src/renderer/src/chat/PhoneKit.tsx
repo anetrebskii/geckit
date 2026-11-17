@@ -19,7 +19,7 @@ export function MenuButton(): React.JSX.Element | null {
   const menu = useContext(PhoneMenu)
   if (menu === undefined) return null
   return (
-    <button type="button" className="phone-icon phone-menu" aria-label={menuSaid(menu.dot)} onClick={menu.open}>
+    <button type="button" className="phone-icon place-menu-button" aria-label={menuSaid(menu.dot)} onClick={menu.open}>
       <Icon name="menu" size={24} />
       {menu.dot === undefined ? null : <i className={`phone-menu-dot ${menu.dot}`} />}
     </button>
@@ -392,8 +392,8 @@ export function EdgeBack({ onBack }: { readonly onBack: () => void }): React.JSX
     <div
       className="phone-edge"
       onPointerDown={(event) => {
-        event.currentTarget.setPointerCapture(event.pointerId)
         drag.current = { x: event.clientX, at: Date.now(), moved: 0 }
+        event.currentTarget.setPointerCapture(event.pointerId)
         const talk = pane(event.currentTarget)
         if (talk !== null) talk.style.transition = 'none'
       }}
@@ -409,6 +409,7 @@ export function EdgeBack({ onBack }: { readonly onBack: () => void }): React.JSX
         drag.current = undefined
         const talk = pane(event.currentTarget)
         if (held === undefined || talk === null) return
+        held.moved = Math.max(held.moved, event.clientX - held.x)
         const fast = held.moved / Math.max(1, Date.now() - held.at) > 0.6
         talk.style.transition = ''
         if (held.moved > talk.offsetWidth / 3 || (fast && held.moved > 40)) {

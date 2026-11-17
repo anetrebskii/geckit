@@ -1,5 +1,4 @@
 import { shownChecklist, TaskChecklistEditor } from './TaskChecklist'
-import { StatusHistory } from './StatusHistory'
 import { Servers } from '../remote/Servers'
 import { readSignIn } from '../../../shared/live-view'
 import type { SignInLink } from '../../../shared/live-view'
@@ -102,12 +101,17 @@ export function Chat(): React.JSX.Element {
   const width = useWidth()
   const place: Place = ON_PHONE ? 'tasks' : keptPlace(chat.settings.chatPlace)
   const [navOver, setNavOver] = useState(false)
+  // A conversation opened from a page other than Tasks, as a question from Questions, stands over that page rather than taking the window to Tasks.
+  const [raisedOn, setRaisedOn] = useState<Place>()
+  const raised = !ON_PHONE && place !== 'tasks' && raisedOn === place && chat.shown.kind === 'session'
   const [teamFirst, setTeamFirst] = useState<string | undefined>()
-  const { change } = chat
+  const { change, open } = chat
   const go = useCallback((next: Place) => {
     setNavOver(false)
+    if (raised) open({ kind: 'new' })
+    setRaisedOn(undefined)
     change({ chatPlace: next })
-  }, [change])
+  }, [change, open, raised])
   const rail = !namesShown(width, chat.settings.navNames)
   const navNames = chat.settings.navNames
   const toggleNames = useCallback((): void => {
@@ -118,12 +122,12 @@ export function Chat(): React.JSX.Element {
   const searchAfter = useRef(false)
   useEffect(() => {
     const parts = frame.current?.querySelectorAll<HTMLElement>(':scope > .board-head, :scope > .board, :scope > .sidebar, :scope > .talk') ?? []
-    for (const part of parts) part.inert = place !== 'tasks'
+    for (const part of parts) part.inert = place !== 'tasks' && !(raised && part.classList.contains('talk'))
     if (place === 'tasks' && searchAfter.current) {
       searchAfter.current = false
       document.querySelector<HTMLInputElement>('.board-search-field')?.focus()
     }
-  }, [place])
+  }, [place, raised])
   const openTeam = useCallback((first?: string) => {
     setSetting(undefined)
     if (ON_PHONE) {
@@ -180,7 +184,10 @@ export function Chat(): React.JSX.Element {
   const [copied, setCopied] = useState<string | undefined>()
   const [more, setMore] = useState<DOMRect | undefined>()
   // The board's New task form is open.
-  const [making, setMaking] = useState(() => keptTask(false) !== undefined)
+  // Which form is open, New task or Ask a question; never both.
+  const [form, setForm] = useState<'task' | 'question' | undefined>(() => (keptTask(false) !== undefined ? 'task' : keptTask(true) !== undefined ? 'question' : undefined))
+  const making = form === 'task'
+  const asking = form === 'question'
   const [infoing, setInfoing] = useState(false)
   const [kids, setKids] = useState<DOMRect | undefined>()
   const [pulled, setPulled] = useState<number>()
@@ -188,7 +195,6 @@ export function Chat(): React.JSX.Element {
   const [recordFirst, setRecordFirst] = useState(false)
   // The project of a conversation just cleared, which the form for the next one opens in.
   const [clearedIn, setClearedIn] = useState<string | undefined>()
-  const [asking, setAsking] = useState(() => keptTask(true) !== undefined)
   const [formStarting, setFormStarting] = useState(false)
   // The pictures a form opens with: the screenshot that opened it, or what the other form held.
   const [seed, setSeed] = useState<readonly SessionImage[]>([])
@@ -196,16 +202,8 @@ export function Chat(): React.JSX.Element {
   const [seedPaths, setSeedPaths] = useState<readonly string[]>([])
   // What was said to the gecko for a voice task, for the words of the form it opened.
   const [seedText, setSeedText] = useState('')
-  const switchForm = (pictures: readonly SessionImage[]): void => {
-    setSeed(pictures)
-    setSeedPaths([])
-    setSeedText('')
-    setMaking((was) => !was)
-    setAsking((was) => !was)
-  }
   const closeForm = (): void => {
-    setMaking(false)
-    setAsking(false)
+    setForm(undefined)
     setFormStarting(false)
     setSeed([])
     setSeedPaths([])
@@ -342,7 +340,7 @@ export function Chat(): React.JSX.Element {
       window.geckit.chat.onScreenshot((image) => {
         if (making || asking) return
         setSeed([image])
-        setMaking(true)
+        setForm('task')
       }),
     [making, asking],
   )
@@ -354,7 +352,7 @@ export function Chat(): React.JSX.Element {
         setSeed(handed.images)
         setSeedPaths(handed.paths)
         setSeedText(handed.text ?? '')
-        setMaking(true)
+        setForm('task')
       }),
     [making, asking],
   )
@@ -485,13 +483,13 @@ export function Chat(): React.JSX.Element {
       if (meta && event.shiftKey && event.key.toLowerCase() === 'n') {
         event.preventDefault()
         if (!ON_PHONE) go('questions')
-        setAsking(true)
+        setForm('question')
         return
       }
       if (meta && event.key === 'n') {
         event.preventDefault()
         if (place !== 'tasks') go('tasks')
-        setMaking(true)
+        setForm('task')
       }
       if (meta && event.key === 'k') {
         event.preventDefault()
@@ -515,7 +513,7 @@ export function Chat(): React.JSX.Element {
         return
       }
       // Over the board the conversation is a popup: Escape puts it away rather than stopping what it is doing.
-      if (event.key === 'Escape' && (chat.settings.chatView === 'board' || ON_PHONE) && chat.shown.kind === 'session') {
+      if (event.key === 'Escape' && (chat.settings.chatView === 'board' || ON_PHONE || raised) && chat.shown.kind === 'session') {
         event.preventDefault()
         chat.open({ kind: 'new' })
         return
@@ -544,7 +542,7 @@ export function Chat(): React.JSX.Element {
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', away)
     }
-  }, [chat, servers, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut, team, place, go, toggleNames, openSettings, openShortcuts])
+  }, [chat, servers, switching, setting, keys, managing, clearing, transferring, making, asking, formStarting, cut, team, place, raised, go, toggleNames, openSettings, openShortcuts])
 
   const title = chat.session?.title ?? 'New conversation'
 
@@ -604,7 +602,7 @@ export function Chat(): React.JSX.Element {
       {ON_PHONE ? null : (
         <TopBar
           chat={chat}
-          onNew={() => setMaking(true)}
+          onNew={() => setForm('task')}
           onSeek={setSeek}
         />
       )}
@@ -613,9 +611,9 @@ export function Chat(): React.JSX.Element {
           chat={chat}
           onNew={(how) => {
             setRecordFirst(how === 'record')
-            setMaking(true)
+            setForm('task')
           }}
-          onAsk={() => setAsking(true)}
+          onAsk={() => setForm('question')}
           onScreen={() => setScreening(true)}
           onSeek={setSeek}
         />
@@ -628,11 +626,12 @@ export function Chat(): React.JSX.Element {
           onShortcutFrom={shortcutFrom}
         />
       )}
-      {overBoard && !below && !making && !asking ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
+      {raised && place !== 'questions' && !making && !asking ? <div className="talk-scrim raised" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
+      {overBoard && !below && !making && !asking && !raised ? <div className="talk-scrim" onMouseDown={() => chat.open({ kind: 'new' })} /> : null}
       {making ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
-          <NewTask onEmployees={() => openTeam()} onChecklists={() => openSettings('checklists')} chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
+          <NewTask onEmployees={() => openTeam()} onChecklists={() => openSettings('checklists')} chat={chat} record={recordFirst} seed={seed} seedPaths={seedPaths} seedText={seedText} given={clearedIn} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {team === undefined || ON_PHONE ? null : <Team chat={chat} first={team.first} onClose={() => setTeam(undefined)} onOpen={(id) => { setTeam(undefined); chat.open({ kind: 'session', id }) }} onShortcut={(edit) => setManaging({ edit, at: Date.now(), only: true })} />}
@@ -640,7 +639,7 @@ export function Chat(): React.JSX.Element {
       {asking ? (
         <>
           <div className="talk-scrim form-scrim" onMouseDown={formStarting ? undefined : closeForm} />
-          <NewTask question chat={chat} seed={seed} seedPaths={seedPaths} onSwitch={ON_PHONE ? undefined : switchForm} onClose={closeForm} onStarting={setFormStarting} />
+          <NewTask question chat={chat} seed={seed} seedPaths={seedPaths} onClose={closeForm} onStarting={setFormStarting} />
         </>
       ) : null}
       {/* There is no sidebar to make wider on the board. */}
@@ -689,7 +688,7 @@ export function Chat(): React.JSX.Element {
         onDoubleClick={() => chat.change({ boardHeight: DEFAULT_SETTINGS.boardHeight })}
       />
 
-      <div className={`talk${board && !below ? ' over' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={board && !overBoard}>
+      <div className={`talk${(board && !below) || raised ? ' over' : ''}${raised ? ' raised' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={!raised && board && !overBoard}>
         {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
         {ON_PHONE && overBoard && chat.session !== undefined ? <EdgeInfo onPull={setPulled} onOpen={() => setInfoing(true)} /> : null}
         {ON_PHONE && overBoard && host?.state === 'lost' ? (
@@ -712,7 +711,7 @@ export function Chat(): React.JSX.Element {
               if (home !== undefined) chat.setRoot(home)
               chat.startNew()
               setClearedIn(home)
-              setMaking(true)
+              setForm('task')
             }}
           />
         ) : (
@@ -881,8 +880,8 @@ export function Chat(): React.JSX.Element {
               <button
                 type="button"
                 className="icon-button no-drag"
-                title="Back to the board (Esc)"
-                aria-label="Back to the board"
+                title={raised ? 'Back to Questions (Esc)' : 'Back to the board (Esc)'}
+                aria-label={raised ? 'Back to Questions' : 'Back to the board'}
                 onClick={() => chat.open({ kind: 'new' })}
               >
                 <Icon name="close" />
@@ -893,7 +892,6 @@ export function Chat(): React.JSX.Element {
 
         <div className={`talk-main${panelSizing === undefined ? '' : ' sizing'}`} style={{ '--panel': `${String(panelSizing ?? panelWidth)}px` } as React.CSSProperties}>
           <div className="talk-column">
-          {chat.session === undefined ? null : <StatusHistory {...(chat.session.moves === undefined ? {} : { moves: chat.session.moves })} />}
           {chat.shown.kind === 'new' && chat.items.length === 0 ? (
             <div className="transcript">
               <div className="turn" role={chat.checkingIp ? 'status' : undefined} style={{ paddingTop: 40, color: 'var(--text-dim)' }}>
@@ -1110,7 +1108,7 @@ export function Chat(): React.JSX.Element {
                   // On the board a new conversation is no conversation open at all, so the form for one comes up in its place, as on the phone.
                   if (board) {
                     setClearedIn(home)
-                    setMaking(true)
+                    setForm('task')
                   }
                 }}
               >
@@ -1130,17 +1128,18 @@ export function Chat(): React.JSX.Element {
   if (ON_PHONE || (servers !== undefined && remote)) return content
 
   return (
-    <div className={`app${place === 'tasks' ? '' : ' placed'}${asking ? ' asking' : ''}`}>
+    <div className={`app${place === 'tasks' ? '' : ' placed'}${place === 'questions' ? ' on-questions' : ''}${asking ? ' asking' : ''}`}>
       <AppNav chat={chat} place={place} rail={rail} over={navOver} onPlace={go} onToggle={toggleNames} reading={servers ?? ''} onComputer={(id) => { go('tasks'); setServers(id ?? ':add') }} />
       {navOver ? <div className="nav-catch" onMouseDown={() => { setNavOver(false) }} /> : null}
       <div className="app-main">
         {content}
         {place === 'tasks' ? null : (
           <section className="place-page">
-            <PlacePage chat={chat} place={place} teamFirst={teamFirst} onPlace={go} onAsk={() => { setAsking(true) }} onKeys={() => { setKeys(true) }} onTeam={openTeam} onShortcut={(edit) => { setManaging({ edit, at: Date.now(), only: true }) }} />
+            <PlacePage chat={chat} place={place} teamFirst={teamFirst} onPlace={go} openId={raised && chat.shown.kind === 'session' ? chat.shown.id : undefined} onOpenHere={(id) => { setRaisedOn(place); chat.goTo(id) }} onAsk={() => { setForm('question') }} onKeys={() => { setKeys(true) }} onTeam={openTeam} onShortcut={(edit) => { setManaging({ edit, at: Date.now(), only: true }) }} />
           </section>
         )}
       </div>
+      <div className="nav-toggle-hole no-drag" aria-hidden="true" />
     </div>
   )
 }

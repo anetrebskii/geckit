@@ -212,6 +212,8 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       events.emit('manager:view', changed)
     })
     coordinator.onItems((items) => events.emit('manager:items', items))
+    // Manager is always on and starts work by itself; an assistant that cannot run it yet leaves it off until one can.
+    if (!view.config.enabled || view.config.delegation !== 'automatic') void coordinator.configure({ enabled: true, delegation: 'automatic' }).catch((error: Error) => { console.warn('Could not turn Manager on', error.message) })
     const vault = options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } }
     const hub = new Channels({
       registry,

@@ -77,7 +77,7 @@ Viewports: desktop 1180 x 760 (wide), 820 x 760 (narrow); phone 390 x 844. Theme
 | P-17 | H, LD | Team, Shortcuts, Checklists, Browsers shown in turn | Look at each | Each fills the screen with Menu in its bar and its own add button where it has one; the Browsers page is titled "Browsers" |
 | P-18 | H | Menu open, reduced motion on | Open and close the menu | It appears and goes without sliding |
 | P-19 | H | Any place | Quit and reopen the app | The same place shows |
-| P-20 | H | Menu open | Swipe from the left edge on Tasks | Nothing extra happens (swipe-to-open is deliberately absent) |
+| P-20 | H | Tasks, Team; a pushed page; a conversation | Swipe right from the left edge: 10 pt, then 30 pt | 10 pt does nothing; 30 pt opens the menu on a place's top page; on a pushed page and in a conversation the edge is Back |
 
 ## Out of scope for these cases
 

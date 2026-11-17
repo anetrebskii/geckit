@@ -37,6 +37,12 @@ let settings: Settings = {
   theme: query.get('theme') === 'dark' ? 'dark' : 'light',
   ...(query.has('place') ? { chatPlace: query.get('place') ?? 'tasks' } : {}),
   ...(query.has('noNames') ? { navNames: false } : {}),
+  checklists: query.has('checklists') ? [
+    { id: 'release', name: 'Release', items: [{ id: 'r1', title: 'Tests pass', check: 'command' }, { id: 'r2', title: 'Changelog written', check: 'none' }, { id: 'r3', title: 'Alex approves', check: 'person' }] },
+    { id: 'review', name: 'Code review', items: [{ id: 'c1', title: 'No open comments', check: 'review' }] },
+    { id: 'site', name: 'Site deploy', root: roots[1] ?? '/work/site', isDefault: true, items: [{ id: 's1', title: 'Build succeeds', check: 'command' }, { id: 's2', title: 'Pages load', check: 'none' }] },
+  ] : [],
+  shortcuts: Array.from({ length: number('shortcuts', 0) }, (_, index) => ({ id: `shortcut-${String(index)}`, name: `Daily review ${String(index + 1)}`, root: roots[index % roots.length] ?? '/work/geckit', prompt: 'Review what changed yesterday and list what needs attention.', mode: 'auto', on: true, since: Date.now(), ...(index % 2 === 0 ? { cron: '0 10 * * *' } : {}) })),
 }
 // With `restart`, settings and hosts survive a reload the way the service keeps them across a restart.
 const restart = query.has('restart')
@@ -119,6 +125,19 @@ const saved: SavedServer[] = computerNames.slice(0, number('computers', 2)).map(
 const connectionStorage: ConnectionStorage = { publicKey: () => Promise.resolve(''), sign: () => Promise.resolve(''), list: () => Promise.resolve(saved), remember: () => Promise.resolve(), forget: () => Promise.resolve(), name: () => Promise.resolve() }
 const first = saved[0]
 if (query.has('remote') && first !== undefined) window.geckitRemoteComputer = { server: first.server, state: 'connected', choices: saved, onChoose: (id) => { console.warn('[preview] chose computer', id) } }
+// With `screen`, the host's screen is a drawn picture and every control order is kept in `preview.orders()`.
+const orders: unknown[] = []
+if (query.has('screen')) {
+  const canvas = Object.assign(document.createElement('canvas'), { width: 1440, height: 900 })
+  const paint = canvas.getContext('2d')
+  const draw = (): void => { if (paint === null) return; paint.fillStyle = '#1e3a5f'; paint.fillRect(0, 0, 1440, 900); paint.fillStyle = '#fff'; paint.font = '64px sans-serif'; paint.fillText(new Date().toLocaleTimeString(), 80, 160) }
+  draw(); setInterval(draw, 500)
+  Object.assign(window, { geckitScreen: {
+    start: () => query.has('screenLocked') ? Promise.reject(new Error('The host is locked, and a locked computer shows nobody its screen. Unlock it, then try again.')) : Promise.resolve(canvas.captureStream(5)),
+    stop: () => undefined,
+    control: (order: unknown) => { orders.push(order); return Promise.resolve({ x: 0.5, y: 0.5 }) },
+  } })
+}
 Object.assign(window, {
   geckit: { ...createRendererApi(transport, { platform: 'darwin', home: '/Users/alex', pathFor: () => '' }), connectionStorage },
   preview: {
@@ -126,6 +145,7 @@ Object.assign(window, {
     sessions: (next: ChatSession[]) => { sessions = next; tell('chat:sessions', sessions) },
     settings: () => settings,
     calls: () => Object.fromEntries(calls),
+    orders: () => orders,
   },
 })
 
