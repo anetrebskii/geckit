@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   publish:
-    runs-on: macos-26-intel
+    runs-on: macos-26
     defaults:
       run:
         working-directory: client
@@ -81,6 +81,13 @@ jobs:
         path: client/broker/bin/mac-arm64
         github-token: ${{ secrets.GITHUB_TOKEN }}
         run-id: 44123049480
+    - name: Check Apple timestamp connectivity
+      continue-on-error: true
+      working-directory: .
+      run: |
+        openssl ts -query -digest e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 -sha256 -cert -out "$RUNNER_TEMP/timestamp-query.tsq"
+        curl --fail --silent --show-error --max-time 25 -H 'Content-Type: application/timestamp-query' --data-binary @"$RUNNER_TEMP/timestamp-query.tsq" -o "$RUNNER_TEMP/timestamp-response.tsr" http://timestamp.apple.com/ts01
+        openssl ts -reply -in "$RUNNER_TEMP/timestamp-response.tsr" -text
     - name: Install and build
       run: |
         chmod +x whisper/bin/*/whisper-cli*
