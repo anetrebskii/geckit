@@ -69,7 +69,7 @@ export function Version(): React.JSX.Element | null {
   return (
     <div className="version">
       <span className="lines">
-        <span>GeckIt {view.version}</span>
+        <span>{view.version === '' ? 'GeckIt version unavailable' : `GeckIt ${view.version}`}</span>
         {line === '' ? null : <span className="why">{line}</span>}
         {view.state === 'downloading' ? (
           <span className="progress" role="progressbar" aria-valuenow={view.percent}>

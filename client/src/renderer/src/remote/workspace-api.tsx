@@ -20,7 +20,9 @@ const NOTICE_FOR = 6000
 
 export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean) {
   // A server older than service:about answers only the whole bootstrap.
-  const asked = connection.call('service:about').catch(() => connection.call('service:bootstrap'))
+  const readAbout = () => connection.call('service:about').catch(() => connection.call('service:bootstrap'))
+  const asked = readAbout()
+  const serverVersion = (): Promise<string> => readAbout().then((about) => about.version ?? '', () => '')
   // What it said last time opens the workspace at once, on what the client kept, while the link is still being made.
   const aboutKey = `server:${server.id}:about`
   const known = await readKept<Pick<Awaited<typeof asked>, 'platform' | 'home'>>(aboutKey)
@@ -75,7 +77,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
       case 'chat:addProject': return chooseFolder()
       case 'settings:accessibility': return true
       case 'phone:state': return { count: 0, trouble: 'Use geckit pair on the server to connect another device.' }
-      case 'update:view': return { state: 'off', version: '', offered: '', channel: 'stable', percent: 0, message: 'Update the GeckIt service on the server.', waitingFor: [] } satisfies UpdateView
+      case 'update:view': return { state: 'off', version: await serverVersion(), offered: '', channel: 'stable', percent: 0, message: 'Update the GeckIt service on the server.', waitingFor: [] } satisfies UpdateView
       default: throw new Error('This action requires a desktop on the server.')
     }
   }
@@ -188,7 +190,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     onConnection: () => () => undefined,
     folders: (path) => connection.call('chat:folders', path),
     firstAsked: (id) => connection.call('chat:firstAsked', id),
-    version: async () => '',
+    version: async () => (await serverVersion()) || 'Version unavailable',
     readOrders: (text) => connection.call('orders:read', text),
     doOrders: () => connection.call('orders:do'),
     startVideo: (extension) => connection.call('recording:start', extension),

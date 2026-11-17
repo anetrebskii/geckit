@@ -72,3 +72,19 @@ The optional name belongs to the submitted connection attempt. Typing or clearin
 
 ## Original desktop connection storage, 2026-11-13 correction
 The desktop development window reads and updates the same original file-origin connection store as the built app in its data directory. Existing saved computers, labels and the device's signing identity remain available without pairing again. Opening the computer selector shows those saved computers; Manage computers opens their existing rows. Signing, saving, renaming and forgetting use that same store, so reopening the window or switching between development and built renderers retains the result. Browser and phone clients keep their own origin-local storage. This recovery adds no screen, message or permission step. Alex authorized reading the original storage after all three saved connections were found there.
+
+## Connected computer version, 2026-11-17 repair
+
+After selecting a remote computer, Settings > Version identifies that computer's running GeckIt service as "GeckIt <version>". Phone Settings > About shows the same version beside the existing host label. This repairs missing information in the existing workflow and adds no controls or layout. Read fresh server metadata whenever either version surface opens; cached platform/home data must not supply a stale or local version.
+
+The existing remote guidance stays "Update the GeckIt service on the server." Remote workspaces do not show the local desktop's Check for Updates or Restart to Update actions. A server predating version metadata, or one whose metadata cannot currently be read, shows "GeckIt version unavailable" on desktop and "Version unavailable" on phone. Do not infer a version from the client, a release channel or protocol number. Closing and reopening Settings retries the metadata read; reconnection retains the ordinary connection feedback and request timeout.
+
+| From | Event | To | What the user sees |
+|---|---|---|---|
+| Workspace | Open Settings > Version or phone About | Reading metadata | Existing surrounding Settings and connection feedback; no fabricated version |
+| Reading metadata | Server answers, automatically | Version known | "GeckIt <version>" on desktop; "<version>" on phone |
+| Reading metadata | Older server answers without version or metadata read fails, automatically | Version unavailable | "GeckIt version unavailable" on desktop; "Version unavailable" on phone |
+| Known or unavailable | Close Settings | Workspace | Ordinary workspace |
+| Workspace | Reopen Settings | Reading metadata | Fresh metadata request |
+
+What stays silent: metadata transport details and client build number. What is deliberately absent: a second version screen, notifications, new timers and remote restart controls. No new thresholds. The server remains responsible for its own update procedure. Apple UX checks: the existing entry point, hierarchy and local feedback remain; no destructive action or permission is added; absent metadata is explicit; wording names the missing value. Existing reconnect feedback handles a lost link.

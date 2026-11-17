@@ -33,7 +33,7 @@ function snapshot(): Snapshot {
     employees: { employees: [] }, hosts: [], prompts: [],
     channels: {}, channelPhoneViews: {}, shares: [], working: [], wanting: 0, watched: undefined,
     manager: { config: DEFAULT_MANAGER_CONFIG, state: 'off', workers: [], activity: [], providers: [], decisions: [], queued: 0 },
-    speech: { state: 'absent', received: 0, total: 1 }, home: tmpdir(), platform: process.platform, name: 'Fixture host',
+    speech: { state: 'absent', received: 0, total: 1 }, home: tmpdir(), platform: process.platform, name: 'Fixture host', version,
   }
 }
 

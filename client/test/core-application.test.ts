@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import { expect, it } from 'vitest'
+import { version } from '../package.json'
 
 import { connectDesktop } from '../src/main/service-client'
 import type { DesktopServiceClient } from '../src/main/service-client'
@@ -49,6 +50,8 @@ it('bootstraps persisted projects before listing, shares events across desktop c
       onEvent: (event: RpcEvent<ServiceEvents>) => { events.push(event) },
     }
     desktop = await connectDesktop(options)
+    expect(await desktop.call('service:about')).toMatchObject({ version })
+    expect(desktop.snapshot).toMatchObject({ version })
     expect(desktop.snapshot.sessions.map((one) => one.id)).toEqual(expect.arrayContaining([firstId, secondId]))
     expect((await desktop.call('chat:list', undefined)).map((one) => one.id)).toEqual([firstId])
     expect((await desktop.call('phone:list', undefined)).map((one) => one.id)).toEqual(expect.arrayContaining([firstId, secondId]))

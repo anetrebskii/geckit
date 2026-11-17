@@ -1,3 +1,4 @@
+import { version } from '../../package.json'
 import { providerChange } from '../main/provider-changes'
 import { assertProviderUnused } from '../main/provider-settings'
 import type { ChannelScreenRequest } from '../shared/channel-ui'
@@ -166,10 +167,10 @@ export function application(runtime: CoreRuntime) {
   return {
     'service:bootstrap': async () => {
       void sessions.refresh(getSettings().projects).then(() => runtime.refreshManager()).catch(() => undefined)
-      return { ...runtime.current(), manager: runtime.managerView(), speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()) }
+      return { ...runtime.current(), manager: runtime.managerView(), speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()), version }
     },
     /** What a remote workspace needs of this computer to start, without the whole state that `service:bootstrap` carries. */
-    'service:about': () => ({ speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()) }),
+    'service:about': () => ({ speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()), version }),
     'core:state': () => runtime.current(),
     'core:resume': () => runtime.wake(),
     'settings:get': () => getSettings(),
