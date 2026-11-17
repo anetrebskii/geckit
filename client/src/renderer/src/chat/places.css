@@ -713,13 +713,13 @@ html:not(.framed) .nav-toggle-hole {
   animation: none;
 }
 
-/* A question asked from the Questions page is written over that page. */
+/* A question asked from the Questions page is written over that page and over the question open on it. */
 .app.placed.asking .form-scrim {
-  z-index: 21;
+  z-index: 23;
 }
 
 .app.placed.asking .new-task {
-  z-index: 22;
+  z-index: 24;
 }
 
 /* A page bar's controls stand as the Tasks bar's do: 28 px, the search sunken, the one way to add something tinted rather than filled. */
