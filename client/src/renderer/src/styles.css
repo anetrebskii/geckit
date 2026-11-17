@@ -2965,6 +2965,15 @@ html.framed .topbar {
   gap: 6px;
 }
 
+.phone-code {
+  max-width: 220px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+  user-select: all;
+}
+
 .phone-error {
   font-size: 12px;
   color: var(--danger);
@@ -15819,6 +15828,7 @@ html.phone .remote-clients .board-head { padding-inline-start: 12px; }
 .computers-dialog .host-row > svg { flex: none; color: var(--text-faint); }
 .computers-dialog .remote-command { margin-block-end: 14px; }
 .computers-fields { display: grid; gap: 12px; }
+.computers-dialog .computers-scan { width: 100%; margin-block-end: 14px; }
 .computers-dialog .field { margin: 0; }
 .computers-dialog .field .hint { margin-block-start: 6px; }
 .computers-dialog .field .optional { color: var(--text-faint); font-weight: 400; }

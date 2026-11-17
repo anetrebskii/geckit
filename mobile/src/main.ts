@@ -20,12 +20,15 @@ import { PAIR_AGAIN_KEY } from '../../client/src/renderer/src/pair-again'
 import type { Boot, Installed } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
+import type { ScreenLink } from '../../client/src/renderer/src/screen-link'
+import type { ScreenControlled } from '../../client/src/shared/api'
 import type { Dictate, Level, Voice } from '../../client/src/renderer/src/dictate'
 import type { PickedVideo, Picking } from '../../client/src/renderer/src/picked'
-import { readPairing, roomOf } from '../../client/src/shared/pairing'
+import { readPairing, roomOf, SIGNAL } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
 import icon from './icon.png'
 
+// Obsolete: the old phone pairing's storage, forgotten once a computer opens through its service.
 const KEPT = 'pairing'
 const SERVER_VIEW = 'geckit-server-view'
 let serverMounted = false
@@ -378,6 +381,7 @@ function button(text: string, className: string, pressed: () => void): HTMLEleme
   return one
 }
 
+// Obsolete: the old phone pairing, no longer entered; a phone pairs through the computer's service (serverView).
 function notPaired(wrong = false): void {
   screen(
     [
@@ -391,6 +395,7 @@ function notPaired(wrong = false): void {
   )
 }
 
+// Obsolete: the old phone pairing, no longer entered; a phone pairs through the computer's service (serverView).
 async function scan(): Promise<void> {
   let text: string
   try {
@@ -407,6 +412,7 @@ async function scan(): Promise<void> {
   paired(pairing)
 }
 
+// Obsolete: the old phone pairing, no longer entered; a phone pairs through the computer's service (serverView).
 function paired(pairing: Pairing): void {
   const list = keptMacs()
   // A Mac scanned again keeps its place and its name; its code may have changed.
@@ -513,6 +519,7 @@ function keepBoot(pairing: Pairing, boot: Boot): void {
   localStorage.setItem(BOOTS, JSON.stringify({ ...all, [macOf(pairing)]: boot }))
 }
 
+// Obsolete: the old phone pairing, no longer entered; a phone pairs through the computer's service (serverView).
 async function connect(): Promise<void> {
   const pairing = kept()
   if (pairing === undefined) return notPaired()
@@ -671,38 +678,134 @@ void App.addListener('resume', () => {
 })
 
 void App.addListener('appUrlOpen', ({ url }) => {
-  if (readInvitation(url) !== undefined || readSignIn(url) !== undefined) { void serverView(url); return }
-  const pairing = readPairing(url)
-  if (pairing !== undefined) paired(pairing)
+  // A geckit://pair link is the obsolete old pairing: nothing opens it any more.
+  if (readInvitation(url) !== undefined || readSignIn(url) !== undefined) void serverView(url)
 })
 
-const requestedServer = sessionStorage.getItem(SERVER_VIEW)
-sessionStorage.removeItem(SERVER_VIEW)
-if (requestedServer === 'local') void connect()
-else if (requestedServer !== null) void serverView(requestedServer)
-else void App.getLaunchUrl().catch(() => undefined).then((launched) => {
-  if (launched !== undefined && (readInvitation(launched.url) !== undefined || readSignIn(launched.url) !== undefined)) { void serverView(launched.url); return }
-  const pairing = launched === undefined ? undefined : readPairing(launched.url)
-  if (pairing !== undefined) paired(pairing)
-  else void connect()
+// The computer last opened, opened again at launch; a phone pairs with computers through their service and nothing else.
+const LAST = 'geckit-last-server'
+const LIST = ':list'
+
+/**
+ * Obsolete: the old phone link, kept only for the screen until that moves onto
+ * the server path. The code in Settings, Phone carries the old link's key as
+ * `screen`; it is kept here by the computer it was scanned for.
+ */
+const SCREENS = 'geckit-screens'
+let pendingScreen: string | undefined
+let openServer: string | undefined
+const screenOf = (text: string): string | undefined => {
+  try {
+    const key = new URL(text.trim()).searchParams.get('screen') ?? ''
+    return /^[A-Za-z0-9_-]{32,}$/.test(key) ? key : undefined
+  } catch {
+    return undefined
+  }
+}
+const screens = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(SCREENS) ?? '{}') as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+let screenLinkTo: { readonly key: string; readonly link: Promise<Link> } | undefined
+let screenCalls = 0
+const screenWaiting = new Map<number, { readonly done: (value: unknown) => void; readonly failed: (error: Error) => void }>()
+const screenCall = async <T>(key: string, name: string, ...args: unknown[]): Promise<T> => {
+  if (screenLinkTo?.key !== key) {
+    void screenLinkTo?.link.then((one) => one.close()).catch(() => undefined)
+    const link = dial({ key, signal: SIGNAL })
+    screenLinkTo = { key, link }
+    const gone = (): void => { if (screenLinkTo?.link === link) screenLinkTo = undefined }
+    void link.then((one) => {
+      one.onMessage((message) => {
+        if (message.t !== 'reply') return
+        const waiting = screenWaiting.get(message.id)
+        screenWaiting.delete(message.id)
+        if (message.error !== undefined) waiting?.failed(new Error(message.error))
+        else waiting?.done(message.value)
+      })
+      one.onClose(gone)
+    }, gone)
+  }
+  const link = await screenLinkTo.link
+  const id = ++screenCalls
+  return new Promise<T>((done, failed) => {
+    screenWaiting.set(id, { done: (value) => done(value as T), failed })
+    link.send({ t: 'call', id, name, args })
+  })
+}
+const screenFor = (key: string): ScreenLink => ({
+  start: async () => {
+    const refused = await screenCall<string | null>(key, 'screen.start')
+    if (refused !== null) throw new Error(refused)
+    const stream = (await screenLinkTo?.link)?.screen()
+    if (stream === undefined) throw new Error('The link carries no screen')
+    return stream
+  },
+  stop: () => void screenCall(key, 'screen.stop').catch(() => undefined),
+  control: (order) =>
+    screenCall<ScreenControlled | null>(key, 'screen.control', order).then(
+      (done) => done ?? { error: 'Update GeckIt on the computer to work it from here' },
+      (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
+    ),
+})
+Object.defineProperty(window, 'geckitScreen', {
+  configurable: true,
+  get: (): ScreenLink | undefined => {
+    const key = openServer === undefined ? undefined : screens()[openServer]
+    return key === undefined ? undefined : screenFor(key)
+  },
 })
 
-async function serverView(invitation = ''): Promise<void> {
-  if (started || serverMounted) { sessionStorage.setItem(SERVER_VIEW, invitation); location.reload(); return }
+async function serverView(invitation = '', reopen = true): Promise<void> {
+  if (started || serverMounted) { sessionStorage.setItem(SERVER_VIEW, invitation === '' && !reopen ? LIST : invitation); location.reload(); return }
   serverMounted = true
   attempt++; current?.close(); current = undefined
   document.querySelector('.pair')?.remove()
   const [{ createRoot }, { createElement }, { Servers }] = await Promise.all([import('react-dom/client'), import('react'), import('../../client/src/renderer/src/remote/Servers')])
   const root = createRoot(document.getElementById('root') as HTMLElement)
   const signIn = readSignIn(invitation)
+  pendingScreen = screenOf(invitation)
   void startPush()
-  // Paired again through a server: the old pairing that could only read is forgotten.
-  const forgetOld = (open: boolean): void => {
-    if (!open || localStorage.getItem(PAIR_AGAIN_KEY) !== '1') return
-    localStorage.removeItem(PAIR_AGAIN_KEY)
-    localStorage.removeItem(MACS)
-    localStorage.removeItem(KEPT)
-    void keepKeys()
+  const opened = (open: boolean, server?: string): void => {
+    openServer = open ? server : undefined
+    if (!open || server === undefined) return
+    localStorage.setItem(LAST, server)
+    if (pendingScreen !== undefined) localStorage.setItem(SCREENS, JSON.stringify({ ...screens(), [server]: pendingScreen }))
+    pendingScreen = undefined
+    // Obsolete: what the old pairing kept, forgotten once a computer is open through its service.
+    if (localStorage.getItem(KEPT) !== null || localStorage.getItem(MACS) !== null) {
+      localStorage.removeItem(PAIR_AGAIN_KEY)
+      localStorage.removeItem(MACS)
+      localStorage.removeItem(KEPT)
+      void keepKeys()
+    }
   }
-  root.render(createElement(Servers, { ...(signIn === undefined ? { invitation } : { signIn }), onWorkspace: forgetOld, onClose: () => { sessionStorage.setItem(SERVER_VIEW, 'local'); root.unmount(); location.reload() }, scan: async () => { try { return (await CapacitorBarcodeScanner.scanBarcode({ hint: CapacitorBarcodeScannerTypeHint.QR_CODE })).ScanResult } catch { return undefined } } }))
+  const last = invitation === '' && reopen ? (localStorage.getItem(LAST) ?? undefined) : undefined
+  root.render(createElement(Servers, {
+    ...(signIn === undefined ? { invitation } : { signIn }),
+    ...(last === undefined ? {} : { initialServer: last }),
+    onWorkspace: opened,
+    // The phone has no computer of its own to go back to: closing shows the saved computers.
+    onClose: () => { sessionStorage.setItem(SERVER_VIEW, LIST); root.unmount(); location.reload() },
+    scan: async () => {
+      try {
+        const text = (await CapacitorBarcodeScanner.scanBarcode({ hint: CapacitorBarcodeScannerTypeHint.QR_CODE })).ScanResult
+        pendingScreen = screenOf(text)
+        return text
+      } catch {
+        return undefined
+      }
+    },
+  }))
 }
+
+const requestedServer = sessionStorage.getItem(SERVER_VIEW)
+sessionStorage.removeItem(SERVER_VIEW)
+if (requestedServer === LIST) void serverView('', false)
+else if (requestedServer !== null && requestedServer !== 'local') void serverView(requestedServer)
+else void App.getLaunchUrl().catch(() => undefined).then((launched) => {
+  void serverView(launched !== undefined && (readInvitation(launched.url) !== undefined || readSignIn(launched.url) !== undefined) ? launched.url : '')
+})

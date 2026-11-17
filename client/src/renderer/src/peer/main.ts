@@ -1,14 +1,16 @@
 import { listen } from '../link'
 import type { Link } from '../link'
-import type { SessionImage, SessionItem } from '../../../shared/api'
-import { PAIR_AGAIN, pieceOf, SIGNAL } from '../../../shared/pairing'
-import { CAN, clientView } from '../../../core/client-view'
-import type { ClientView } from '../../../core/client-view'
+import type { SessionImage } from '../../../shared/api'
+import { PAIR_AGAIN, SIGNAL } from '../../../shared/pairing'
 
 /**
- * The hidden window the phones are answered in: main has no WebRTC, a window
- * does. Each call from a phone goes to main as the chat window's would, and
- * what main tells its windows goes to every phone.
+ * The hidden window with WebRTC that main lacks: it scales pictures for the
+ * service, serves shared links, and still answers the old phone link.
+ *
+ * Obsolete: the old phone link (Settings, Phone, before spec 035). A phone now
+ * pairs with the service and does everything through it; this link is kept
+ * only so the phone can watch and work this computer's screen, until that
+ * moves onto the server path. Every other call is refused with PAIR_AGAIN.
  */
 
 const links = new Set<Link>()
@@ -63,13 +65,6 @@ function unwatch(link: Link): void {
 
 const said = (): void => window.geckit.peer.state(links.size, trouble)
 
-// A phone sent to the background says so, and a notice goes to it as a push from then on.
-const away = new Set<Link>()
-const here = (): void => void window.geckit.peer.call('push.here', [[...links].filter((one) => !away.has(one)).length]).catch(() => undefined)
-
-// Each phone reads conversations as every client does, through a client view of its own: the end first, runs of steps as one line, pictures by name, the list as the rows that changed.
-const views = new Map<Link, ClientView>()
-
 // A picture is drawn 220 points wide in the conversation and fills the screen when pressed, so it is sent at the width asked for, and no wider than it is.
 async function scaledTo(image: SessionImage, width: number): Promise<SessionImage> {
   const raw = atob(image.data)
@@ -86,42 +81,18 @@ async function scaledTo(image: SessionImage, width: number): Promise<SessionImag
   return data.length < image.data.length ? { media: 'image/webp', data } : image
 }
 
-const viewFor = (link: Link): ClientView =>
-  clientView(
-    {
-      items: async (id) => (await window.geckit.peer.call('chat.items', [id])) as SessionItem[],
-      queuedPicture: async (id, queued, index) => ((await window.geckit.peer.call('chat.queuedPicture', [id, queued, index])) as SessionImage | null) ?? undefined,
-      scale: scaledTo,
-    },
-    CAN,
-    (event) => link.send({ t: 'tell', channel: event.name, value: event.args[0] }),
-  )
-
-window.geckit.peer.onTell((channel, value) => {
-  const owned = [...views.values()].map((view) => view.event({ name: channel, args: [value] })).includes(true)
-  if (owned) return
-  for (const link of links) link.send({ t: 'tell', channel, value })
-})
-
+// Obsolete: the old phone link, answering only what the screen needs.
 const joined = (link: Link): void => {
   links.add(link)
-  const view = viewFor(link)
-  views.set(link, view)
   said()
-  here()
   link.onClose(() => {
     links.delete(link)
-    away.delete(link)
-    here()
-    views.get(link)?.dispose()
-    views.delete(link)
     unwatch(link)
     said()
   })
   link.onMessage((message) => {
     if (message.t !== 'call') return
-    // A phone paired here the old way reads what this computer has; doing anything is for a phone paired again with geckit pair.
-    if (!READ_ONLY.has(message.name)) {
+    if (!SCREEN_ONLY.has(message.name)) {
       link.send({ t: 'reply', id: message.id, error: PAIR_AGAIN })
       return
     }
@@ -130,47 +101,13 @@ const joined = (link: Link): void => {
       void watch(link).then((error) => link.send({ t: 'reply', id: message.id, value: error ?? null }))
       return
     }
-    if (message.name === 'link.can') {
-      const can = message.args[0] as readonly string[]
-      void view.call('link:can', [can])
-      // Said back first and sent plainly, so the phone knows before anything deflated reaches it.
-      link.send({ t: 'reply', id: message.id, value: { deflate: true, pairAgain: true } })
-      if (can.includes('deflate')) link.compress(true)
-      return
-    }
-    if (message.name === 'chat.watching') {
-      const id = message.args[0]
-      void view.call('chat:watch', [typeof id === 'string' ? [id] : []])
-      link.send({ t: 'reply', id: message.id, value: null })
-      return
-    }
-    if (message.name === 'push.away') {
-      if (message.args[0] === true) away.add(link)
-      else away.delete(link)
-      here()
-      link.send({ t: 'reply', id: message.id, value: null })
-      return
-    }
     if (message.name === 'screen.stop') {
       unwatch(link)
       link.send({ t: 'reply', id: message.id, value: null })
       return
     }
-    // A conversation runs to megabytes, most of it long past; the phone is sent its end, and what is before a line when it asks.
-    if (message.name === 'chat.tail' || message.name === 'chat.before') {
-      const [id, before, count] = message.name === 'chat.tail' ? [message.args[0], undefined, message.args[1]] : message.args
-      void window.geckit.peer.call('chat.items', [id]).then(
-        (value) => link.send({ t: 'reply', id: message.id, value: pieceOf(value as SessionItem[], before as string | undefined, count as number) }),
-        (error: unknown) => link.send({ t: 'reply', id: message.id, error: error instanceof Error ? error.message : String(error) }),
-      )
-      return
-    }
-    const owned = view.call(message.name.replace('.', ':'), message.args)
-    if (owned !== undefined) {
-      owned.then(
-        (value) => link.send({ t: 'reply', id: message.id, value: value ?? null }),
-        (error: unknown) => link.send({ t: 'reply', id: message.id, error: error instanceof Error ? error.message : String(error) }),
-      )
+    if (message.name === 'link.can') {
+      link.send({ t: 'reply', id: message.id, value: { pairAgain: true } })
       return
     }
     window.geckit.peer.call(message.name, message.args).then(
@@ -180,15 +117,8 @@ const joined = (link: Link): void => {
   })
 }
 
-// What a phone paired the old way may still ask: reading the board, conversations, pictures and settings, and being told when it is away.
-const READ_ONLY = new Set([
-  'link.can', 'chat.watching', 'push.away', 'push.token', 'screen.stop', 'mac.version', 'local.fetch',
-  'chat.watch', 'chat.list', 'chat.listStatus', 'chat.items', 'chat.tail', 'chat.before', 'chat.turns', 'chat.turnsBefore', 'chat.steps', 'chat.picture', 'chat.queuedPicture', 'chat.find',
-  'chat.account', 'chat.models', 'chat.plan', 'chat.plans', 'chat.links', 'chat.waiting', 'chat.firstAsked', 'chat.exists', 'chat.git', 'chat.hidden',
-  'chat.taskOutput', 'chat.search', 'chat.preparedDraft', 'chat.commands', 'chat.file', 'chat.files', 'chat.repo', 'chat.browsers',
-  'settings.get', 'employees.list', 'manager.view', 'manager.history', 'lineup.state', 'speech.model', 'update.view', 'browser.state', 'channels.view',
-  'hosts.list', 'hosts.prompts', 'hosts.running', 'hosts.working', 'hosts.conversations', 'shortcuts.runs', 'shortcuts.destinations',
-])
+// Obsolete: all the old phone link may still ask, until the screen moves onto the server path.
+const SCREEN_ONLY = new Set(['link.can', 'screen.start', 'screen.stop', 'screen.control', 'mac.version'])
 
 // Each shared link has a room and key of its own, and a page joined there may ask only about that link.
 const SHARE_CALLS = new Set(['share.about', 'share.fetch', 'share.read'])

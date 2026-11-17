@@ -9,10 +9,10 @@ import { LiveView } from '../chat/LiveView'
 import type { SignInLink } from '../../../shared/live-view'
 import type { RemoteView } from './client'
 import { forgetServer, nameServer, savedServers, shownName } from './storage'
-interface ServersProps { readonly onClose: () => void; readonly onWorkspace?: (open: boolean) => void; readonly scan?: () => Promise<string | undefined>; readonly invitation?: string; readonly initialServer?: string; readonly signIn?: SignInLink }
+interface ServersProps { readonly onClose: () => void; readonly onWorkspace?: (open: boolean, server?: string) => void; readonly scan?: () => Promise<string | undefined>; readonly invitation?: string; readonly initialServer?: string; readonly signIn?: SignInLink }
 const COMMAND = 'geckit pair'
 const FAILED = ['error', 'expired', 'reused', 'revoked', 'incompatible']
-export function Servers({ onClose, onWorkspace, invitation = '', initialServer, signIn }: ServersProps): React.JSX.Element {
+export function Servers({ onClose, onWorkspace, scan, invitation = '', initialServer, signIn }: ServersProps): React.JSX.Element {
   const [signing, setSigning] = useState(signIn)
   const [code, setCode] = useState(invitation)
   const [saved, setSaved] = useState<readonly SavedServer[]>()
@@ -70,7 +70,8 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
   }, [closeConnection, connect, initialServer, signIn])
   const showForm = adding || saved?.length === 0
   const open = snapshot !== undefined && workspace !== undefined
-  useEffect(() => { onWorkspace?.(open) }, [onWorkspace, open])
+  const openServer = open ? snapshot.server.id : undefined
+  useEffect(() => { onWorkspace?.(openServer !== undefined, openServer) }, [onWorkspace, openServer])
   useEffect(() => { if (showForm && snapshot === undefined) setTimeout(() => input.current?.focus(), 0) }, [showForm, snapshot])
   const leave = (): void => { disconnect(); onClose() }
   const choose = (id: string): void => {
@@ -79,6 +80,13 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
     if (id === ':manage') { disconnect(); setServer(undefined); setAdding(false); return }
     const trust = saved?.find((one) => one.server.id === id)
     if (trust !== undefined && id !== snapshot?.server.id) connect(trust)
+  }
+  const scanned = async (): Promise<void> => {
+    const text = await scan?.()
+    if (text === undefined) return
+    if (readInvitation(text) === undefined) { setView({ state: 'error', message: 'That is not a GeckIt code. Scan the code in GeckIt Settings, Phone.' }); return }
+    setCode(text)
+    connect(undefined, text, label)
   }
   const copy = (): void => { void navigator.clipboard.writeText(COMMAND).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }
   const rename = (id: string): void => { const value = draft; setEditing(undefined); void nameServer(id, value).then(refreshSaved) }
@@ -111,7 +119,7 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
   let body: React.JSX.Element
   if (removingOne !== undefined) body = <>
     <h2>Remove {shownName(removingOne)}?</h2>
-    <p className="add-host-lead">This device forgets it. To use it again, run geckit pair there and paste a new code.</p>
+    <p className="add-host-lead">This device forgets it. To use it again, {scan === undefined ? 'run geckit pair there and paste a new code' : 'scan the code in GeckIt Settings, Phone, there'}.</p>
     <div className="dialog-actions">
       <button type="button" className="quiet" autoFocus onClick={() => setRemoving(undefined)}>Cancel</button>
       <button type="button" className="primary danger" onClick={() => remove(removingOne.server.id)}>Remove</button>
@@ -132,8 +140,11 @@ export function Servers({ onClose, onWorkspace, invitation = '', initialServer, 
   </form>
   else if (showForm) body = <form onSubmit={(event) => { event.preventDefault(); if (!busy && code.trim() !== '') connect(undefined, code, label) }}>
     {head('Connect a computer')}
-    <p className="add-host-lead">On the other computer, run this command, then paste the code it prints.</p>
+    {scan === undefined
+      ? <p className="add-host-lead">On the other computer, run this command, then paste the code it prints.</p>
+      : <p className="add-host-lead">On the computer, open GeckIt Settings, Phone, and scan its code. Without the app there, run this command and paste the code it prints.</p>}
     <div className="remote-command"><code>{COMMAND}</code><button type="button" className="icon-button" aria-label="Copy command" title={copied ? 'Copied' : 'Copy'} onClick={copy}><Icon name={copied ? 'check' : 'copy'} /></button></div>
+    {scan === undefined || view.state === 'pending' ? null : <button type="button" className="primary computers-scan" disabled={busy} onClick={() => void scanned()}>Scan code</button>}
     {view.state === 'pending' ? <p className="remote-feedback" role="status">Update GeckIt on the server, then run <code>geckit pair</code> for a new connection code.</p> : <div className="computers-fields">
       <div className="field">
         <label htmlFor="computer-code">Connection code</label>

@@ -1,3 +1,4 @@
+// Obsolete: window.geckit over the old phone link. The app no longer opens it (spec 035); a phone works through the computer's service, and the old link carries only the screen.
 import type { Geckit } from '../../preload'
 import type { ChatSession, SessionImage, SessionItem, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
 import { isRemote } from '../../shared/hosts'

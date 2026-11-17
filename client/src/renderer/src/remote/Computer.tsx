@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { RemoteServer, RemoteTrust } from '../../../shared/remote/protocol'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import { ON_PHONE } from '../on-phone'
 import type { RemoteView } from './client'
 import { savedServers, shownName } from './storage'
 
@@ -84,7 +85,7 @@ export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
       autoFocus
       title="Computer"
       chosen={source?.server.id ?? ':local'}
-      choices={[{ value: ':local', label: 'This computer', icon: 'display' }, ...computers.map((one) => ({ value: one.server.id, label: one.server.name, icon: 'server' })), { value: ':add', label: 'Connect computer…', icon: 'plus' }, ...(computers.length === 0 ? [] : [{ value: ':manage', label: 'Manage computers…', icon: 'settings' }])]}
+      choices={[...(ON_PHONE ? [] : [{ value: ':local', label: 'This computer', icon: 'display' as const }]), ...computers.map((one) => ({ value: one.server.id, label: one.server.name, icon: 'server' })), { value: ':add', label: 'Connect computer…', icon: 'plus' }, ...(computers.length === 0 ? [] : [{ value: ':manage', label: 'Manage computers…', icon: 'settings' }])]}
       {...(trouble === '' ? {} : { note: trouble })}
       onPick={choose}
       onClose={() => setAnchor(undefined)}

@@ -845,11 +845,25 @@ function Correct({ settings, change }: Part): React.JSX.Element {
 
 export function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (on: boolean) => void }): React.JSX.Element {
   const [view, setView] = useState<PhoneView>({ count: 0 })
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     void window.geckit.phone.state().then(setView)
-    return window.geckit.phone.onState(setView)
-  }, [])
+    // A code works once and for five minutes, so the one shown is asked for again while this is open.
+    const again = window.setInterval(() => void window.geckit.phone.state().then(setView), 30_000)
+    const off = window.geckit.phone.onState(setView)
+    return () => {
+      window.clearInterval(again)
+      off()
+    }
+  }, [on])
+
+  const copy = (code: string): void => {
+    void navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
 
   return (
     <div className="field">
@@ -859,17 +873,19 @@ export function PhoneAccess({ on, change }: { readonly on: boolean; readonly cha
         Open the conversations on your phone
       </label>
       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-        Scan the code with the GeckIt app on your phone. The phone talks to this computer directly, and only with the key in this code.
+        Scan the code with the GeckIt app on your phone, or copy it and paste it there. A code works once, for five minutes.
       </span>
-      {on && view.qr !== undefined ? (
+      {on && view.qr !== undefined && view.code !== undefined ? (
         <div className="phone-link">
           <img src={view.qr} alt="QR code for the GeckIt app" width={160} height={160} />
           <span>
-            {view.count === 0 ? 'No phone connected' : `${String(view.count)} ${view.count === 1 ? 'phone' : 'phones'} connected`}
+            <code className="phone-code">{view.code}</code>
+            <button type="button" className="quiet" onClick={() => copy(view.code ?? '')}>
+              {copied ? 'Copied' : 'Copy code'}
+            </button>
             <button type="button" className="quiet" onClick={() => window.geckit.phone.newCode()}>
               New code
             </button>
-            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>Phones paired with the old code will have to scan again.</span>
           </span>
         </div>
       ) : null}

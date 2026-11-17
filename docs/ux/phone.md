@@ -7,6 +7,8 @@ created: 2026-09-24
 
 # UX: GeckIt on the phone
 
+> Pairing changed on 2026-11-17 (follow-up to spec 034). There is one way to pair: Settings, Phone on the computer shows a connection code as a QR code and as text with Copy; the app opens on Connect a computer with Scan code and a field to paste the code, connects through the computer's service, opens the computer it last had at the next launch, and forgets one through the computer menu, Manage computers, Edit, Remove. The phone's computer menu has no This computer. The pairing screen, Connecting, Cannot reach the Mac and List of Macs below describe the obsolete old link; that link now carries only the computer's screen, and only when the code was scanned from Settings, Phone. A pasted code opens everything but the screen, and the screen sheet says to scan the code in Settings, Phone.
+
 ## 1. Why
 
 Away from the Mac, Alex cannot see which conversations are working, which ones wait for Alex, and what they finished, and a session that stopped on a permission card stays stopped until Alex is back at the desk. Remote Control in the Claude app covers one conversation at a time and knows nothing of the board, the goals or the cards. Alex wants an app of their own: open it, scan a code on the Mac once, and from then on manage the conversations from the phone, with the phone talking to the Mac directly rather than through somebody's service.

@@ -1158,9 +1158,10 @@ export function updateText(update: UpdateView): string {
   }
 }
 
-/** The phone as Settings shows it: the code to scan while the switch is on, and how many phones are joined. */
+/** The phone as Settings shows it: the connection code while the switch is on, as text and as a QR code, and how many phones are joined. */
 export interface PhoneView {
   readonly qr?: string
+  readonly code?: string
   readonly count: number
   /** Why phones cannot find this Mac, when they cannot. */
   readonly trouble?: string

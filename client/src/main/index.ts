@@ -11,7 +11,8 @@ import QRCode from 'qrcode'
 import { ANYWHERE, DEFAULT_SETTINGS, assistantsIn, homeOf, noticeWanted, providerOf, shownProjects } from '../shared/api'
 import type { Anywhere, Answered, ErrorAnswer, PhoneView, Recording, ScreenControl, ScreenSource, SessionImage, SessionNotice, Settings, TranscribeRequest } from '../shared/api'
 import type { LocalAsk } from '../shared/local'
-import { newKey, pairingLink, SIGNAL } from '../shared/pairing'
+import { SIGNAL } from '../shared/pairing'
+import { invitationLink } from '../shared/remote/protocol'
 import { isRemote, machineName } from '../shared/hosts'
 import { geckoState } from '../shared/gecko'
 import type { GeckoPose } from '../shared/gecko'
@@ -30,7 +31,7 @@ import { copyRichText, correctionText } from './clipboard'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
 import { fileAt, fileMenu, openFile, pickApp } from './open-with'
 import { extensionFolder } from '../cli/browser'
-import { getSettings, onSettings, setSettings, configureSettingsClient } from './store'
+import { getSettings, onSettings, configureSettingsClient } from './store'
 import { drawTray, startTray } from './tray'
 import { geckoListens, startGecko, tellGecko } from './gecko'
 import { checkForUpdates, follow, restartToUpdate, startUpdates, updateView } from './updates'
@@ -82,9 +83,10 @@ let counted: ServiceSnapshot['sessions'] = []
 let phoneOn = false
 let phoneKey = ''
 let phoneState: { readonly count: number; readonly trouble?: string } = { count: 0 }
-let phonesHere = 0
 const AWAY_AFTER = 60
-let phoneCode: { readonly key: string; readonly qr: string } | undefined
+let phoneCode: { readonly code: string; readonly qr: string; readonly made: number } | undefined
+// A code works once and for five minutes; the one shown is replaced after a minute, while Settings asks.
+const CODE_SHOWN = 60_000
 let shownDisplay: string | undefined
 let awake: number | undefined
 let watched: string | undefined
@@ -386,7 +388,6 @@ function keepPhone(on: boolean, key: string): void {
   phoneKey = key
   closePeer()
   phoneState = { count: 0 }
-  phonesHere = 0
   keepPeer()
   if (on && awake === undefined) awake = powerSaveBlocker.start('prevent-app-suspension')
   if (!on && awake !== undefined) {
@@ -405,14 +406,19 @@ function keepPeer(): void {
 }
 
 
-/** What Settings shows: the code to scan, and how many phones are on it. */
-async function phoneView(): Promise<PhoneView> {
+/** What Settings shows: the connection code `geckit pair` prints, as text and as a QR code that also carries the old link's key for the screen. */
+async function phoneView(fresh = false): Promise<PhoneView> {
   if (!phoneOn) return { count: 0 }
-  const key = getSettings().phoneKey
-  if (phoneCode?.key !== key) {
-    phoneCode = { key, qr: await QRCode.toDataURL(pairingLink({ key, signal: SIGNAL }), { margin: 1, width: 400 }) }
+  if (fresh || phoneCode === undefined || Date.now() - phoneCode.made > CODE_SHOWN) {
+    try {
+      const { code } = await invoke('remote:pair')
+      const link = `${code.startsWith('geckit://') ? code : invitationLink(code, SIGNAL)}&screen=${getSettings().phoneKey}`
+      phoneCode = { code, qr: await QRCode.toDataURL(link, { margin: 1, width: 400 }), made: Date.now() }
+    } catch (error) {
+      return { ...phoneState, trouble: error instanceof Error ? error.message : String(error) }
+    }
   }
-  return { qr: phoneCode.qr, ...phoneState }
+  return { qr: phoneCode.qr, code: phoneCode.code, ...phoneState }
 }
 
 function notice(notice: SessionNotice): void {
@@ -422,7 +428,6 @@ function notice(notice: SessionNotice): void {
   const sound = noticeWanted(soundFor, notice.asks)
   if (sound) shell.beep()
   if (process.platform === 'win32' && !watchingChat() && noticeWanted(flashFor, notice.asks)) shownChat()?.flashFrame(true)
-  if (phoneOn && phonesHere === 0 && powerMonitor.getSystemIdleState(AWAY_AFTER) !== 'active') send('push:send', notice)
   if (watchingChat()) { shownChat()?.webContents.send('chat:notice', notice); return }
   if (Notification.isSupported()) {
     const request = notice.request
@@ -731,7 +736,7 @@ function wire(): void {
 
   ipcMain.handle('phone:state', () => phoneView())
 
-  ipcMain.on('phone:newCode', () => setSettings({ phoneKey: newKey() }))
+  ipcMain.on('phone:newCode', () => void phoneView(true).then((view) => tell('phone:state', view)))
 
   // Only the phone's own window may speak for the phone.
   ipcMain.handle('peer:pairing', (event) =>
@@ -942,7 +947,6 @@ const PHONE_CALLS = {
   'update.view': () => updateView(),
   'mac.version': () => app.getVersion(),
   'screen.control': (order: ScreenControl) => control(order, shownDisplay),
-  'push.here': (count: number) => { phonesHere = count },
   'orders.do': () => invoke('orders:do'),
 }
 

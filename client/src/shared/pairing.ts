@@ -1,6 +1,8 @@
 import type { SessionItem } from './api'
 
 /**
+ * Obsolete as a pairing (spec 035): a phone pairs with the computer's service; this key now carries only the screen link and shared pages.
+ *
  * What the phone and the Mac share once the QR code is scanned, and how they
  * use it to find each other through Firestore.
  *

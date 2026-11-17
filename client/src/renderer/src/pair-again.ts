@@ -1,3 +1,4 @@
+// Obsolete: the old phone link asks for pairing again; the app no longer opens that link (spec 035).
 import { PAIR_AGAIN } from '../../shared/pairing'
 
 /** A phone paired the old way reads but cannot send; this says so until it is paired again. */

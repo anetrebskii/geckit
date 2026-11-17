@@ -91,7 +91,7 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
   const stage = useRef<HTMLDivElement>(null)
   useBack(onClose, stage)
   const [trouble, setTrouble] = useState<string | undefined>(() =>
-    screenLink() === undefined ? 'Only the phone shows the host\'s screen.' : undefined,
+    screenLink() === undefined ? 'To see this computer\'s screen, scan the code in GeckIt Settings, Phone, on it.' : undefined,
   )
   const [live, setLive] = useState(false)
   const [tries, setTries] = useState(0)

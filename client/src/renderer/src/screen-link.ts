@@ -7,4 +7,6 @@ export interface ScreenLink {
   readonly control: (order: ScreenControl) => Promise<ScreenControlled>
 }
 
-export const screenLink = (): ScreenLink | undefined => (window as { geckitScreen?: ScreenLink }).geckitScreen
+// In a server's workspace on the phone, the app around the frame holds the screen link of the computer that frame is open on.
+export const screenLink = (): ScreenLink | undefined =>
+  (window as { geckitScreen?: ScreenLink }).geckitScreen ?? (window.parent === window ? undefined : (window.parent as { geckitScreen?: ScreenLink }).geckitScreen)

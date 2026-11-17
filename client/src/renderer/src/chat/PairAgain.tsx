@@ -1,3 +1,4 @@
+// Obsolete: shown only over the old phone link, which the app no longer opens (spec 035).
 import { useSyncExternalStore } from 'react'
 import { macs } from '../macs'
 import { pairAgain } from '../pair-again'
