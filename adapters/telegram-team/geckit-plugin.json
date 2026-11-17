@@ -1,0 +1,8 @@
+{
+  "apiVersion": 2,
+  "kind": "channel",
+  "entry": "index.mjs",
+  "channel": {"id":"channel:telegram-team","name":"Telegram team adapter","icon":"chat","description":"A separate team topic and personal Manager conversations; private file configuration."},
+  "capabilities":["conversations","manager","replies","delivery","files"],
+  "config":[{"key":"configFile","label":"Private configuration file","type":"text","required":true,"help":"Absolute path to the adapter JSON file. The bot token stays in its private token file."}]
+}
