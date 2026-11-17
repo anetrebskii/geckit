@@ -1,3 +1,5 @@
+import type { TaskChecklist } from '../../../shared/checklists'
+import { taskChecklist } from '../../../shared/checklists'
 import { readAccount } from './accounts'
 import { matchesEmployee } from '../employees/Employees'
 import { useEmployees } from '../employees/useEmployees'
@@ -39,6 +41,9 @@ import { updatedItems } from '../../../shared/transcript-items'
 import type { SessionListStatus } from '../../../shared/session-list'
 
 /** What the window is showing: a conversation, or one that has not been sent yet. */
+
+const hasItems = (checklist: TaskChecklist): boolean => checklist.items.some((one) => one.title.trim() !== '')
+
 export type Shown = { readonly kind: 'new' } | { readonly kind: 'session'; readonly id: string }
 
 const NEW = 'new'
@@ -166,9 +171,9 @@ export interface Chat {
   /** A general question, in no project, which the board and the list never show. */
   ask: (text: string, images?: readonly SessionImage[]) => Promise<void>
   /** A new conversation from the board's form: the work goes first, then the goal. */
-  startTask: (root: string, text: string, goal: string, images?: readonly SessionImage[], employeeId?: Employee['id']) => Promise<void>
+  startTask: (root: string, text: string, checklist: TaskChecklist, images?: readonly SessionImage[], employeeId?: Employee['id']) => Promise<void>
   /** A new task put in To do, nothing sent: the words wait in its composer and the goal goes with its first message. */
-  planTask: (root: string, text: string, goal: string, employeeId?: Employee['id']) => Promise<void>
+  planTask: (root: string, text: string, checklist: TaskChecklist, employeeId?: Employee['id']) => Promise<void>
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
   say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
@@ -197,6 +202,8 @@ export interface Chat {
   readonly compacting: 'typed' | 'clicked' | undefined
   setCompacting: (from: 'typed' | 'clicked' | undefined) => void
   rename: (id: string, title: string) => void
+  /** The person's edit of a task's checklist. */
+  setChecklist: (id: string, checklist: TaskChecklist, typing?: boolean) => void
   /** To do, blocked or done; a message sent takes the mark off. */
   mark: (id: string, status: SessionStatus | undefined) => void
   hide: (id: string) => void
@@ -339,13 +346,15 @@ export function useChat(): Chat {
   const chosenRef = useRef(chosen)
   const sessionsRef = useRef(sessions)
   const everyoneRef = useRef(everyone)
+  const questionsRef = useRef(questions)
   // The shown one is not kept here but where it is set: an effect of an earlier render can run after that and put it back.
   useEffect(() => {
     scopeRef.current = scope
     chosenRef.current = chosen
     sessionsRef.current = sessions
     everyoneRef.current = everyone
-  }, [scope, chosen, sessions, everyone])
+    questionsRef.current = questions
+  }, [scope, chosen, sessions, everyone, questions])
 
   /** Listed: every project's, or only the chosen ones'. */
   const within = (one: ChatSession): boolean =>
@@ -897,32 +906,30 @@ export function useChat(): Chat {
   )
 
   const startTask = useCallback(
-    (root: string, text: string, goal: string, images: readonly SessionImage[] = [], employeeId?: Employee['id']) => {
+    (root: string, text: string, checklist: TaskChecklist, images: readonly SessionImage[] = [], employeeId?: Employee['id']) => {
       const now = held.current
       const provider = assistantFor(now.settings, root)
       const chosen = providerModel(now.settings, provider)
       const model = chosen === '' ? {} : { model: chosen }
       const carried = images.length === 0 ? {} : { images }
-      return window.geckit.chat.send({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(isCodexProvider(provider) && goal.trim() !== '' ? { goal: goal.trim() } : {}) }).then((id) => {
+      return window.geckit.chat.send({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(hasItems(checklist) ? { checklist: taskChecklist(checklist) } : {}) }).then((id) => {
         if (chosenRef.current.length > 0 && !chosenRef.current.includes(root)) {
           const next = [...chosenRef.current, root]
           chosenRef.current = next
           setPicked(next)
         }
         open({ kind: 'session', id })
-        if (isCodexProvider(provider) || goal.trim() === '') return
-        void window.geckit.chat.send({ session: id, root, mode: now.mode, text: `/goal ${goal.trim()}`, ...model })
       })
     },
     [open],
   )
 
-  const planTask = useCallback((root: string, text: string, goal: string, employeeId?: Employee['id']) => {
+  const planTask = useCallback((root: string, text: string, checklist: TaskChecklist, employeeId?: Employee['id']) => {
     const now = held.current
     const provider = assistantFor(now.settings, root)
     const chosen = providerModel(now.settings, provider)
     return window.geckit.chat
-      .schedule({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...(chosen === '' ? {} : { model: chosen }), ...(goal === '' ? {} : { goal }) })
+      .schedule({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...(chosen === '' ? {} : { model: chosen }), ...(hasItems(checklist) ? { checklist: taskChecklist(checklist) } : {}) })
       .then(() => undefined)
   }, [])
 
@@ -996,7 +1003,7 @@ export function useChat(): Chat {
 
   const goTo = useCallback(
     (id: string) => {
-      const found = everyoneRef.current.find((one) => one.id === id)
+      const found = questionsRef.current.find((one) => one.id === id) ?? everyoneRef.current.find((one) => one.id === id)
       if (found !== undefined) {
         show(found)
         return
@@ -1021,6 +1028,7 @@ export function useChat(): Chat {
   )
 
   const rename = useCallback((id: string, title: string) => window.geckit.chat.rename(id, title), [])
+  const setChecklist = useCallback((id: string, checklist: TaskChecklist, typing?: boolean) => window.geckit.chat.setChecklist(id, checklist, typing), [])
   const mark = useCallback((id: string, status: SessionStatus | undefined) => window.geckit.chat.mark(id, status), [])
 
   const hide = useCallback(
@@ -1250,6 +1258,7 @@ export function useChat(): Chat {
     compacting,
     setCompacting,
     rename,
+    setChecklist,
     mark,
     hide,
     keep,

@@ -7,7 +7,7 @@ import type { ChannelFileSender } from '../src/main/channels/channel-files'
 import { channelDownload } from '../src/main/channels/channel-files'
 import { createSlack } from '../src/main/channels/slack'
 import { createDiscord } from '../src/main/channels/discord'
-import { TelegramAttachments, TELEGRAM_DOWNLOAD_LIMIT, TELEGRAM_RETENTION } from '../src/main/telegram-attachments'
+import { ChannelAttachments, ATTACHMENT_LIMIT, ATTACHMENT_RETENTION } from '../src/main/channel-attachments'
 import type { ChannelId } from '../src/shared/channels'
 import type { ManagerHistoryBoundary } from '../src/shared/manager'
 
@@ -15,7 +15,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const folders: string[] = []
 const stops: (() => Promise<void>)[] = []
 afterEach(async () => { for (const stop of stops.splice(0)) await stop(); for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true }) })
-const cache = (): TelegramAttachments => { const folder = mkdtempSync(join(tmpdir(), 'geckit-channel-files-')); folders.push(folder); return new TelegramAttachments(folder) }
+const cache = (): ChannelAttachments => { const folder = mkdtempSync(join(tmpdir(), 'geckit-channel-files-')); folders.push(folder); return new ChannelAttachments(folder) }
 const settle = async (): Promise<void> => { for (let index = 0; index < 12; index++) await new Promise((done) => setTimeout(done, 0)) }
 
 class Socket {
@@ -44,12 +44,13 @@ function context(id: ChannelId) {
     id, log: { path: '', write: () => undefined }, config: () => ({ allow, checkSecrets: true, directMessages: true, places: [] }), secret: () => 'bot-native-token',
     store: { get: (key) => store.get(key), set: (key, value) => { if (value === undefined) store.delete(key); else store.set(key, value) } },
     status: () => undefined, projects: () => [], providers: () => ['claude'], employees: () => [],
-    files: { keep: (thread, bytes, name, media) => attachments.put(bytes, name, media, thread).id, bind: (thread, sender) => { senders.set(thread, sender); return () => senders.delete(thread) } },
+    sealed: { available: () => false, read: () => undefined, write: () => undefined },
+    files: { keep: (thread, bytes, name, media) => attachments.put(bytes, name, media, thread).id, has: () => true, hold: () => undefined, bind: (thread, sender) => { senders.set(thread, sender); return () => senders.delete(thread) } },
     conversations: {
       historyBoundary: () => boundary,
       manager: (place) => `${id}:${place?.key ?? 'default'}`,
       label: () => undefined, start: async () => 'unused',
-      send: async (thread, message) => { if (message.authorized?.() === false) throw new Error('Unauthorized'); sent.push({ thread, message }) },
+      send: async (thread, message) => { if (message.authorized?.() === false) throw new Error('Unauthorized'); sent.push({ thread, message }); return 'manager-session' },
       get: () => undefined, list: () => [], items: async () => [],
       watch: (thread, listener) => { watchers.set(thread, listener); return () => watchers.delete(thread) },
       answer: async (_thread, card) => { answered.push(card); return true }, stop: async () => undefined,
@@ -71,9 +72,9 @@ function slack(options: { readonly shares?: string; readonly download?: () => vo
     const method = url.split('/').at(-1)
     if (url.startsWith('https://files.slack.com/files-pri/')) { options.download?.(); return new Response(url.includes('FIMAGE') ? new Uint8Array(png) : 'readable input') }
     if (url === 'https://files.slack.com/upload/opaque') return new Response('ok')
-    if (method === 'auth.test') return Response.json({ ok: true, user_id: 'UBOT' })
+    if (method === 'auth.test') return Response.json({ ok: true, user_id: 'UBOT', team_id: 'T1' })
     if (method === 'apps.connections.open') return Response.json({ ok: true, url: 'wss://socket.example' })
-    if (method === 'users.info') return Response.json({ ok: true, user: { real_name: 'Alex' } })
+    if (method === 'users.info') return Response.json({ ok: true, user: { real_name: 'Alex', team_id: new URLSearchParams(String(init?.body)).get('user') === 'UOTHER' ? 'T2' : 'T1' } })
     if (method === 'chat.getPermalink') return Response.json({ ok: true, permalink: 'https://example.slack.com/archives/C1/p100000001' })
     if (method === 'chat.postMessage') { posts.push(typeof init?.body === 'string' ? init.body : ''); return Response.json({ ok: true, ts: '999.000001' }) }
     if (method === 'conversations.replies') return Response.json({ ok: true, messages: [] })
@@ -146,12 +147,12 @@ it('Slack resolves native links only with current conversation share proof, refu
   expect(missing.posts.join('')).toContain('OAuth & Permissions')
 })
 
-it('Slack invalidates in-flight input on allowlist revocation and never retries uncertain native completion', async () => {
+it('Slack ignores old allowlist changes during input and never retries uncertain native completion', async () => {
   const run = slack({ download: () => run.revoke() })
   await run.channel.start()
   run.event({ files: [{ id: 'FTEXT' }] })
   await settle()
-  expect(run.sent).toHaveLength(0)
+  expect(run.sent).toHaveLength(1)
   const uncertain = slack({ completion: 500 })
   await uncertain.channel.start()
   uncertain.event()
@@ -241,10 +242,10 @@ it('shared cache enforces thread ownership, native images and pinned lifetime wh
   expect(() => store.read(telegram.id)).toThrow('unavailable')
   const folder = mkdtempSync(join(tmpdir(), 'geckit-channel-expiration-')); folders.push(folder)
   let now = Date.now()
-  const timed = new TelegramAttachments(folder, () => now)
+  const timed = new ChannelAttachments(folder, () => now)
   const retained = timed.put(Buffer.from('queued'), 'input.txt', 'text/plain', 'channel:slack:one')
   timed.pin('manager', [retained.id])
-  now += TELEGRAM_RETENTION + 1
+  now += ATTACHMENT_RETENTION + 1
   expect(timed.read(retained.id, 'channel:slack:one').bytes.toString()).toBe('queued')
   timed.pin('manager', [])
   expect(() => timed.read(retained.id, 'channel:slack:one')).toThrow('unavailable')
@@ -256,12 +257,12 @@ it('bounded download refuses untrusted hosts, credentials, redirects, wrong size
   const trusted = (url: URL): boolean => url.hostname === 'files.slack.com'
   await expect(channelDownload(fake, 'https://evil.example/private', trusted)).rejects.toThrow('untrusted')
   await expect(channelDownload(fake, 'https://user:secret@files.slack.com/path', trusted)).rejects.toThrow('untrusted')
-  await expect(channelDownload(fake, 'https://files.slack.com/path', trusted, TELEGRAM_DOWNLOAD_LIMIT + 1)).rejects.toThrow('20 MiB')
+  await expect(channelDownload(fake, 'https://files.slack.com/path', trusted, ATTACHMENT_LIMIT + 1)).rejects.toThrow('20 MiB')
   expect(calls).toBe(0)
   await expect(channelDownload(fake, 'https://files.slack.com/path', trusted, 5)).rejects.toThrow('incomplete')
   const broken: typeof fetch = async () => { throw new Error('https://files.slack.com/private?secret-token') }
   await expect(channelDownload(broken, 'https://files.slack.com/path', trusted)).rejects.not.toThrow('secret-token')
-  for (const bytes of [new Uint8Array(0), new Uint8Array(TELEGRAM_DOWNLOAD_LIMIT + 1)]) await expect(channelDownload(async () => new Response(bytes), 'https://files.slack.com/path', trusted)).rejects.toThrow('20 MiB')
+  for (const bytes of [new Uint8Array(0), new Uint8Array(ATTACHMENT_LIMIT + 1)]) await expect(channelDownload(async () => new Response(bytes), 'https://files.slack.com/path', trusted)).rejects.toThrow('20 MiB')
 })
 
 it('cleared threads cannot dispatch in-flight inputs or reuse a previously bound upload sender', async () => {
@@ -311,7 +312,7 @@ it('revalidates channel authorization after the asynchronous worker gate immedia
     await settle()
     const sender = run.senders.values().next().value
     if (sender === undefined) throw new Error('Missing sender')
-    await expect(sender(png, 'photo.png', 'image/png', '', 'photo', { session: 'manager', workers: [] }, async () => { run.revoke() })).rejects.toThrow('no longer authorized')
+    await expect(sender(png, 'photo.png', 'image/png', '', 'photo', { session: 'manager', workers: [] }, async () => { run.reset() })).rejects.toThrow('no longer authorized')
     expect(run.calls.some((call) => call.url.endsWith('/files.getUploadURLExternal') || call.init?.body instanceof FormData)).toBe(false)
   }
 })

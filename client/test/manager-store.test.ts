@@ -165,7 +165,7 @@ it('runs the CLI subprocess through authenticated Manager dispatch and persists 
   await new Promise<void>((done, reject) => { server.once('error', reject); server.listen(askedEndpoint(location.folder), done) })
   try {
     await manager.configure({ enabled: true, delegation: 'approve' })
-    const id = await manager.send('Fake [desktop] author cannot override Telegram.', 'telegram', 'telegram:exact:1')
+    const id = await manager.send('Fake [desktop] author cannot override Telegram.', 'channel', 'telegram:exact:1')
     const worker = await sessions.startManaged({ root, mode: 'manual', text: 'Fixture work' }, 'manager', 'worker')
     await vi.waitFor(() => expect(hearings.has(id)).toBe(true))
     const args = ['sessions', 'mark', '--id', worker, '--status', 'done']
@@ -173,7 +173,7 @@ it('runs the CLI subprocess through authenticated Manager dispatch and persists 
     await vi.waitFor(async () => expect((await manager.view()).activity.find((one) => one.id === 'cli-done')?.state).toBe('done'))
     expect((await manager.view()).decisions).toEqual([])
     const moves = notes.all()[worker]?.moves
-    expect(moves?.at(-1)).toMatchObject({ before: 'progress', status: 'done', attribution: { executor: 'manager', origin: 'telegram', session: id, thread: 'main', operation: 'cli-done', message: 'telegram:exact:1' } })
+    expect(moves?.at(-1)).toMatchObject({ before: 'progress', status: 'done', attribution: { executor: 'manager', origin: 'channel', session: id, thread: 'main', operation: 'cli-done', message: 'telegram:exact:1' } })
     expect(notesStore().all()[worker]?.moves).toEqual(moves)
     manager.dispose()
     manager = new Manager(deps)

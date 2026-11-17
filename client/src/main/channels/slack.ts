@@ -1,28 +1,28 @@
+import { containsSecret } from '../../shared/channel-safety'
 import { channelDownload } from './channel-files'
 import type { ChannelFileSender } from './channel-files'
 import type { ChannelInfo } from '../../shared/channels'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule } from './channel-api'
 import { StatusMessage } from '../manager-status'
+import { ChannelShortcutError } from './channel-api'
 import { heard as speechOf, say } from '../manager-voice'
 
 class SlackApiFailure extends Error {}
 
-const SECRET = /\b(?:xox[abposr]-[\w-]{10,}|xapp-[\w-]{10,}|sk-[\w-]{16,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|[MNO][\w-]{23,27}\.[\w-]{6}\.[\w-]{27,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/
 
 export const SLACK_INFO: ChannelInfo = {
   id: 'channel:slack',
   name: 'Slack',
-  icon: 'chat',
+  icon: 'slack',
   description: 'Each Slack thread with the bot is a Manager thread of its own.',
+  capabilities: ['conversations', 'manager', 'delivery', 'files'],
   fields: [
-    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, users:read, files:read, files:write, reactions:write.' },
+    { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, channels:read, groups:read, users:read, files:read, files:write, reactions:write.' },
     { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode.' },
-    { key: 'allow', label: 'People who may write', type: 'list', help: 'Slack user IDs, such as U012ABC. Nobody else is answered. Empty: every member of the bot\'s workspace, but not guests, people from other workspaces or bots.' },
-    { key: 'checkSecrets', label: 'Refuse messages that contain a token or key', type: 'boolean', default: true },
   ],
 }
 
-export const containsSecret = (text: string): boolean => SECRET.test(text)
+export { containsSecret } from '../../shared/channel-safety'
 export const cleanMention = (text: string): string => text.replace(/<@[A-Z0-9]+>/g, '').trim()
 
 interface SlackFile {
@@ -64,7 +64,7 @@ interface SlackMessage {
 
 const CONTEXT_LIMIT = 30_000
 const PAGES = 10
-const READ_METHODS = new Set(['conversations.replies', 'users.info', 'chat.getPermalink', 'files.info', 'files.getUploadURLExternal'])
+const READ_METHODS = new Set(['conversations.replies', 'users.info', 'chat.getPermalink', 'files.info', 'files.getUploadURLExternal', 'conversations.list'])
 
 /** Whether Slack timestamp a comes after b; both are seconds and microseconds, too precise for one float. */
 export const after = (a: string, b: string): boolean => {
@@ -78,7 +78,16 @@ const stamp = (ts: string): string => new Date(Number(ts.split('.')[0]) * 1000).
 /** How long what Slack said about a person is trusted, so someone who leaves or becomes a guest stops being answered. */
 const MEMBER_TTL = 10 * 60_000
 
+interface SlackDestination {
+  readonly id: string
+  readonly name?: string
+  readonly is_member?: boolean
+  readonly is_archived?: boolean
+}
+
 interface SlackReply {
+  readonly channel?: string
+  readonly channels?: readonly SlackDestination[]
   readonly file?: SlackFile
   readonly file_id?: string
   readonly upload_url?: string
@@ -179,17 +188,13 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     return name
   }
 
-  const listed = (): readonly unknown[] => { const allow = context.config()['allow']; return Array.isArray(allow) ? allow.filter((one) => typeof one === 'string' && one.trim() !== '') : [] }
-
-  /** Whether a person may write, from what is already known: on the list when there is one, otherwise a full member of the bot's own workspace. */
   const allowedNow = (user: string): boolean => {
-    if (listed().length > 0) return listed().includes(user)
     const found = members.get(user)?.user
-    return team !== undefined && found?.team_id === team && found.is_bot !== true && found.deleted !== true && found.is_restricted !== true && found.is_ultra_restricted !== true
+    return team !== undefined && found?.team_id === team && found.is_bot !== true && found.deleted !== true
   }
 
   const allowed = async (user: string): Promise<boolean> => {
-    if (listed().length === 0) await member(user)
+    await member(user)
     return allowedNow(user)
   }
 
@@ -239,8 +244,11 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   }
 
   const places = (): readonly { readonly key: string; readonly channel: string; readonly ts: string }[] => {
-    const value = context.store.get('threads')
-    return Array.isArray(value) ? value.flatMap((one) => one !== null && typeof one === 'object' && !Array.isArray(one) && typeof one['key'] === 'string' && typeof one['channel'] === 'string' && typeof one['ts'] === 'string' ? [{ key: one['key'], channel: one['channel'], ts: one['ts'] }] : []) : []
+    const ordinary = context.store.get('threads')
+    const shortcuts = context.store.get('shortcut-threads')
+    const value = [...Array.isArray(ordinary) ? ordinary : [], ...Array.isArray(shortcuts) ? shortcuts : []]
+    const places = value.flatMap((one) => one !== null && typeof one === 'object' && !Array.isArray(one) && typeof one['key'] === 'string' && typeof one['channel'] === 'string' && typeof one['ts'] === 'string' ? [{ key: one['key'], channel: one['channel'], ts: one['ts'] }] : [])
+    return [...new Map(places.map((one) => [one.key, one] as const)).values()]
   }
 
   const boundary = (key: string): string | undefined => context.conversations.historyBoundary?.(key)?.revision
@@ -263,7 +271,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       if (!current()) throw new Error('The Manager conversation changed.')
       const bytes = await channelDownload(transport.fetch, url, (location) => location.hostname === 'files.slack.com' && location.pathname.startsWith('/files-pri/'), file.size, context.secret('botToken'))
       if (!current()) throw new Error('The Manager conversation changed.')
-      if (context.config()['checkSecrets'] !== false && containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
+      if (containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
       if (context.files === undefined) throw new Error('Attachment storage is unavailable.')
       ids.push(context.files.keep(thread, bytes, file.name ?? 'attachment', file.mimetype ?? 'application/octet-stream'))
     }
@@ -278,7 +286,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       const validate = (): void => {
         const writer = context.store.get(`writer:${key}`)
         if (!current() || typeof writer !== 'string' || !allowedNow(writer)) throw new Error('The originating Slack conversation is no longer authorized.')
-        if (context.config()['checkSecrets'] !== false && (containsSecret(caption) || containsSecret(bytes.toString('utf8')))) throw new Error('The selected file or caption appears to contain a token or key.')
+        if (containsSecret(caption) || containsSecret(bytes.toString('utf8'))) throw new Error('The selected file or caption appears to contain a token or key.')
       }
       const writer = context.store.get(`writer:${key}`)
       if (typeof writer === 'string') await allowed(writer)
@@ -331,6 +339,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         shown.clear()
         if (event.change.action === 'delete') {
           context.store.set('threads', places().filter((one) => one.key !== key))
+          context.store.set('shortcut-threads', places().filter((one) => one.key !== key))
           context.store.set(`thread:${key}`, undefined)
           watching.get(thread)?.(); watching.delete(thread)
         } else { watching.get(thread)?.(); watching.delete(thread); follow(thread, channel, ts, key) }
@@ -376,8 +385,8 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     }
     const text = await named(event.text ?? '')
     if (text === '' && event.thread_ts === undefined && (event.files?.length ?? 0) === 0) return
-    if (!mention && !direct && !pending(key).some((one) => one.values.includes(text.toLowerCase())) && (event.files?.length ?? 0) === 0 && fileLinks(event.text ?? '').length === 0) return
-    if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(event.channel, ts, say(speechOf(text)).secret); return }
+    if (!mention && !direct && context.store.get(`shortcut:${key}`) !== true && !pending(key).some((one) => one.values.includes(text.toLowerCase())) && (event.files?.length ?? 0) === 0 && fileLinks(event.text ?? '').length === 0) return
+    if (containsSecret(text)) { await post(event.channel, ts, say(speechOf(text)).secret); return }
     const from = await person(event.user)
     const link = known ? undefined : await slack('chat.getPermalink', { channel: event.channel, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
     if (!current()) return
@@ -428,6 +437,43 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   }
 
   return {
+    destinations: async () => {
+      const available: SlackDestination[] = []
+      let cursor = ''
+      do {
+        const reply = await slack('conversations.list', { types: 'public_channel,private_channel', exclude_archived: true, limit: 200, cursor })
+        available.push(...reply.channels ?? [])
+        cursor = reply.response_metadata?.next_cursor ?? ''
+      } while (cursor !== '')
+      return available.filter((one) => one.is_member === true && one.is_archived !== true).map((one) => ({ id: one.id, name: `#${one.name ?? one.id} (${one.id})`, model: 'thread' as const }))
+    },
+    publishShortcut: async (input) => {
+      if (stopped) throw new ChannelShortcutError(false, 'Slack is stopped.')
+      const parts = input.text.match(/[\s\S]{1,39000}/g) ?? []
+      const write = async (text: string, ts?: string): Promise<SlackReply & Required<Pick<SlackReply, 'ts' | 'channel'>>> => {
+        input.beforeSend?.()
+        if (stopped) throw new ChannelShortcutError(false, 'Slack is stopped.')
+        let receipt: SlackReply
+        try { receipt = await slack('chat.postMessage', { channel: input.destination, ...(ts === undefined ? {} : { thread_ts: ts }), text, unfurl_links: false, unfurl_media: false, parse: 'none', mrkdwn: false, link_names: false }) } catch (error) {
+          throw new ChannelShortcutError(!(error instanceof SlackApiFailure), said(error))
+        }
+        if (receipt.channel !== input.destination || typeof receipt.ts !== 'string' || !/^\d+\.\d+$/.test(receipt.ts)) throw new ChannelShortcutError(true, 'Slack result delivery is uncertain: no matching native receipt.')
+        return { ...receipt, ts: receipt.ts, channel: receipt.channel }
+      }
+      const root = await write(input.title?.trim() || 'Scheduled result')
+      const ts = root.ts
+      const key = keyOf(input.destination, ts)
+      const link = await slack('chat.getPermalink', { channel: input.destination, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
+      const thread = input.bind({ key, ...(input.title === undefined ? {} : { title: input.title }), ...(link === undefined ? {} : { link }), labels: { channel: input.destination, thread: ts } })
+      context.store.set(`thread:${key}`, true)
+      context.store.set(`shortcut:${key}`, true)
+      context.store.set('shortcut-threads', [...places().filter((one) => one.key !== key), { key, channel: input.destination, ts }])
+      follow(thread, input.destination, ts, key)
+      let message: string | undefined
+      for (const text of parts) { const receipt = await write(text, ts); message = receipt.ts; context.store.set(`seen:${key}`, receipt.ts) }
+      if (message === undefined) throw new ChannelShortcutError(true, 'Slack result delivery is uncertain: result was empty.')
+      return { destination: input.destination, thread: key, message, ...(link === undefined ? {} : { link }) }
+    },
     start: async () => {
       context.status('starting', 'Connecting to Slack')
       const auth = await slack('auth.test')

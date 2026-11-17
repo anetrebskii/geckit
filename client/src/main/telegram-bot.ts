@@ -1,7 +1,7 @@
 import type { Json, JsonObject } from '../shared/elicitation'
 import { jsonObject } from '../shared/elicitation'
-import { TelegramAttachmentFailure, TELEGRAM_DOWNLOAD_LIMIT } from './telegram-attachments'
-import type { TelegramAttachment } from './telegram-attachments'
+import { AttachmentFailure, ATTACHMENT_LIMIT } from '../shared/channel-files'
+import type { ChannelAttachment } from '../shared/channel-files'
 import type { TelegramAccount, TelegramBot } from '../shared/telegram'
 
 export class TelegramFailure extends Error {
@@ -10,7 +10,7 @@ export class TelegramFailure extends Error {
   }
 }
 
-export type TelegramFile = Pick<TelegramAttachment, 'name' | 'media'> & Partial<Pick<TelegramAttachment, 'size'>> & {
+export type TelegramFile = Pick<ChannelAttachment, 'name' | 'media'> & Partial<Pick<ChannelAttachment, 'size'>> & {
   readonly fileId: string
   readonly photo: boolean
 }
@@ -59,7 +59,7 @@ function fileOf(message: JsonObject): TelegramFile | undefined {
   const variants = photos.flatMap((entry) => {
     const item = jsonObject(entry)
     return item !== undefined && typeof item['file_id'] === 'string' && item['file_id'] !== '' && integer(item['width']) && item['width'] > 0 && integer(item['height']) && item['height'] > 0 ? [{ fileId: item['file_id'], pixels: item['width'] * item['height'], ...(integer(item['file_size']) && item['file_size'] >= 0 ? { size: item['file_size'] } : {}) }] : []
-  }).filter((item) => item.size === undefined || item.size <= TELEGRAM_DOWNLOAD_LIMIT).sort((a, b) => b.pixels - a.pixels)
+  }).filter((item) => item.size === undefined || item.size <= ATTACHMENT_LIMIT).sort((a, b) => b.pixels - a.pixels)
   const best = variants[0]
   return best === undefined ? undefined : { fileId: best.fileId, name: 'photo.jpg', media: 'image/jpeg', photo: true, ...(best.size === undefined ? {} : { size: best.size }) }
 }
@@ -109,16 +109,16 @@ export class TelegramBotClient {
   }
 
   async download(file: TelegramFile, signal: AbortSignal): Promise<Buffer> {
-    if (file.size !== undefined && (file.size < 1 || file.size > TELEGRAM_DOWNLOAD_LIMIT)) throw new TelegramAttachmentFailure('Telegram downloads are limited to 20 MiB. Send a smaller file.')
+    if (file.size !== undefined && (file.size < 1 || file.size > ATTACHMENT_LIMIT)) throw new AttachmentFailure('Telegram downloads are limited to 20 MiB. Send a smaller file.')
     const result = jsonObject(await this.call('getFile', { file_id: file.fileId }, signal))
     const path = result?.['file_path']
-    if (typeof path !== 'string' || !/^[A-Za-z0-9_./-]+$/.test(path) || path.startsWith('/') || path.split('/').some((part) => part === '..' || part === '.' || part === '')) throw new TelegramAttachmentFailure('Telegram returned an invalid file location. Resend the file.')
-    if (typeof result?.['file_size'] === 'number' && (result['file_size'] < 1 || result['file_size'] > TELEGRAM_DOWNLOAD_LIMIT)) throw new TelegramAttachmentFailure('Telegram downloads are limited to 20 MiB. Send a smaller file.')
+    if (typeof path !== 'string' || !/^[A-Za-z0-9_./-]+$/.test(path) || path.startsWith('/') || path.split('/').some((part) => part === '..' || part === '.' || part === '')) throw new AttachmentFailure('Telegram returned an invalid file location. Resend the file.')
+    if (typeof result?.['file_size'] === 'number' && (result['file_size'] < 1 || result['file_size'] > ATTACHMENT_LIMIT)) throw new AttachmentFailure('Telegram downloads are limited to 20 MiB. Send a smaller file.')
     try {
       const response = await this.fetcher(`https://api.telegram.org/file/bot${this.token}/${path}`, { redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) })
-      if (!response.ok || response.body === null) throw new TelegramAttachmentFailure('Download rejected')
+      if (!response.ok || response.body === null) throw new AttachmentFailure('Download rejected')
       const length = Number(response.headers.get('content-length'))
-      if (length > TELEGRAM_DOWNLOAD_LIMIT) { await response.body.cancel(); throw new TelegramAttachmentFailure('File exceeds 20 MiB') }
+      if (length > ATTACHMENT_LIMIT) { await response.body.cancel(); throw new AttachmentFailure('File exceeds 20 MiB') }
       const reader = response.body.getReader()
       const chunks: Buffer[] = []
       let size = 0
@@ -126,13 +126,13 @@ export class TelegramBotClient {
         const part = await reader.read()
         if (part.done) break
         size += part.value.byteLength
-        if (size > TELEGRAM_DOWNLOAD_LIMIT) { await reader.cancel(); throw new TelegramAttachmentFailure('File exceeds 20 MiB') }
+        if (size > ATTACHMENT_LIMIT) { await reader.cancel(); throw new AttachmentFailure('File exceeds 20 MiB') }
         chunks.push(Buffer.from(part.value))
       }
-      if (file.size !== undefined && size !== file.size || typeof result?.['file_size'] === 'number' && size !== result['file_size'] || response.headers.has('content-length') && size !== length) throw new TelegramAttachmentFailure('Truncated file')
-      if (size === 0) throw new TelegramAttachmentFailure('Empty file')
+      if (file.size !== undefined && size !== file.size || typeof result?.['file_size'] === 'number' && size !== result['file_size'] || response.headers.has('content-length') && size !== length) throw new AttachmentFailure('Truncated file')
+      if (size === 0) throw new AttachmentFailure('Empty file')
       return Buffer.concat(chunks, size)
-    } catch { throw new TelegramAttachmentFailure('Telegram file download failed or exceeded 20 MiB. Check the connection and resend a smaller file.') }
+    } catch { throw new AttachmentFailure('Telegram file download failed or exceeded 20 MiB. Check the connection and resend a smaller file.') }
   }
 
   async upload(chatId: number, bytes: Buffer, name: string, media: string, caption: string, as: 'photo' | 'document', signal: AbortSignal, topicId?: number): Promise<number> {

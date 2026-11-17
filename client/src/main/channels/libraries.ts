@@ -5,8 +5,8 @@ import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { corePlatform, dataDirectory } from '../../core/platform'
-import type { ChannelField, ChannelId, ChannelInfo } from '../../shared/channels'
-import { channelId } from '../../shared/channels'
+import type { ChannelCapability, ChannelField, ChannelId, ChannelInfo } from '../../shared/channels'
+import { channelCapability, channelId } from '../../shared/channels'
 import type { ChannelModule } from './channel-api'
 
 export interface LoadedChannel {
@@ -51,7 +51,9 @@ const field = (value: object): ChannelField => {
 
 export async function channelManifest(path: string): Promise<ChannelInfo & { readonly entry: string }> {
   const parsed = JSON.parse(await readFile(join(path, 'geckit-plugin.json'), 'utf8')) as object | null
-  if (parsed === null || typeof parsed !== 'object' || !('apiVersion' in parsed) || parsed.apiVersion !== 1 || !('kind' in parsed) || parsed.kind !== 'channel') throw new Error('This repository is not a GeckIt channel library.')
+  if (parsed === null || typeof parsed !== 'object' || !('kind' in parsed) || parsed.kind !== 'channel') throw new Error('This repository is not a GeckIt channel library.')
+  const version = 'apiVersion' in parsed ? parsed.apiVersion : undefined
+  if (version !== 1 && version !== 2) throw new Error(`This channel library needs channel API version ${String(version)}, which this GeckIt does not know. Update GeckIt or the library.`)
   if (!('entry' in parsed) || parsed.entry !== 'index.mjs') throw new Error('Channel entry must be index.mjs.')
   if (!('channel' in parsed) || typeof parsed.channel !== 'object' || parsed.channel === null) throw new Error('Invalid channel metadata.')
   const channel = parsed.channel
@@ -63,7 +65,15 @@ export async function channelManifest(path: string): Promise<ChannelInfo & { rea
   if (!Array.isArray(fields) || fields.some((one) => one === null || typeof one !== 'object')) throw new Error('Channel config must be a list of fields.')
   const read = (fields as object[]).map(field)
   if (new Set(read.map((one) => one.key)).size !== read.length) throw new Error('Channel config repeats a field.')
-  return { id: channel.id, name: channel.name, icon: channel.icon, ...('description' in channel ? { description: channel.description as string } : {}), fields: read, entry: parsed.entry }
+  let capabilities: readonly ChannelCapability[] | undefined
+  if (version === 2) {
+    const asked = 'capabilities' in parsed ? parsed.capabilities : undefined
+    if (!Array.isArray(asked)) throw new Error('A version 2 channel library must list its capabilities.')
+    const unknown = asked.filter((one) => !channelCapability(one))
+    if (unknown.length > 0) throw new Error(`Unknown channel capability: ${unknown.map(String).join(', ')}.`)
+    capabilities = [...new Set(asked as ChannelCapability[])]
+  }
+  return { id: channel.id, name: channel.name, icon: channel.icon, ...('description' in channel ? { description: channel.description as string } : {}), fields: read, ...(capabilities === undefined ? {} : { capabilities }), entry: parsed.entry }
 }
 
 export async function loadChannel(path: string): Promise<LoadedChannel> {

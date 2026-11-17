@@ -3,7 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEq
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
-import type { TelegramVault } from '../main/telegram'
+import type { ChannelVault } from '../main/channels/channels'
 
 export interface VaultStorage {
   isEncryptionAvailable(): boolean
@@ -92,7 +92,7 @@ function systemKey(directory: string, platform: NodeJS.Platform, run: NonNullabl
   return undefined
 }
 
-export function initializeVault(directory: string, options: VaultOptions = {}): { readonly vault: TelegramVault; readonly storage: VaultStorage } {
+export function initializeVault(directory: string, options: VaultOptions = {}): { readonly vault: ChannelVault; readonly storage: VaultStorage } {
   const configured = options.key ?? process.env['GECKIT_VAULT_KEY']
   const identityFile = join(directory, 'vault-key-id')
   const existing = existsSync(identityFile)
@@ -118,7 +118,7 @@ export function initializeVault(directory: string, options: VaultOptions = {}): 
     if (key === undefined) throw new Error('Secure storage is unavailable. Unlock the system credential store or configure GECKIT_VAULT_KEY.')
     return key
   }
-  const vault: TelegramVault = {
+  const vault: ChannelVault = {
     available: () => key !== undefined,
     encrypt: (text) => {
       const nonce = randomBytes(NONCE_BYTES)

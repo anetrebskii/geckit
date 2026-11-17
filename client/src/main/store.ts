@@ -1,3 +1,4 @@
+import { shortcutDestinationError } from '../shared/shortcut-destination-validation'
 import { assertProviderSettingsWritable } from './provider-changes'
 import { existsSync, mkdirSync, readFileSync, renameSync, watch, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -92,6 +93,7 @@ export function getSettings(): Settings {
       calendarRecurrenceVersion: _storedRecurrenceVersion,
       cronStartWindowVersion: _storedWindowVersion,
       managerShortcutsVersion: _storedManagerVersion,
+      shortcutDestinationsVersion: _storedDestinationVersion,
       boardColumn: _boardColumn,
       ...found
     } = { ...DEFAULT_SETTINGS, ...(firstRun ? carriedOver() : {}), ...persisted } as Settings & Readonly<Record<string, unknown>>
@@ -131,8 +133,8 @@ export function getSettings(): Settings {
     }
   }
   const calendarTimeZone = localCalendarZone()
-  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1 || settings.cronStartWindowVersion !== 1 || settings.managerShortcutsVersion !== 1) {
-    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, managerShortcutsVersion: 1 }
+  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1 || settings.cronStartWindowVersion !== 1 || settings.managerShortcutsVersion !== 1 || settings.shortcutDestinationsVersion !== 1) {
+    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, managerShortcutsVersion: 1, shortcutDestinationsVersion: 1 }
     if (!loaded) for (const watcher of watchers) watcher(settings)
   }
   return settings
@@ -148,8 +150,11 @@ export function setSettings(change: Partial<Settings>): Settings {
   Reflect.deleteProperty(validated, 'calendarRecurrenceVersion')
   Reflect.deleteProperty(validated, 'cronStartWindowVersion')
   Reflect.deleteProperty(validated, 'managerShortcutsVersion')
+  Reflect.deleteProperty(validated, 'shortcutDestinationsVersion')
   if (change.shortcuts !== undefined) {
     for (const shortcut of change.shortcuts) {
+      const destinationError = shortcutDestinationError(shortcut.destination)
+      if (destinationError !== undefined) throw new Error(destinationError)
       const before = current.shortcuts.find((one) => one.id === shortcut.id)
       if (before === undefined || before.cron !== shortcut.cron || before.startWindowMinutes !== shortcut.startWindowMinutes || !isDeepStrictEqual(before.recurrence, shortcut.recurrence)) {
         const error = startWindowError(shortcut)
@@ -172,7 +177,7 @@ export function setSettings(change: Partial<Settings>): Settings {
     validated = { ...validated, vpnAllowedIps: allowed.ips }
   }
   const next = { ...current, ...validated }
-  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, managerShortcutsVersion: _managerVersion, ...persisted } = next
+  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, managerShortcutsVersion: _managerVersion, shortcutDestinationsVersion: _destinationVersion, ...persisted } = next
   writePreferences(folder(), persisted)
   settings = next
   for (const watcher of watchers) watcher(settings)
@@ -182,8 +187,8 @@ export function setSettings(change: Partial<Settings>): Settings {
 const reloadSettings = (): void => {
   let found: Settings
   try { found = readSettings() } catch { return }
-  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, managerShortcutsVersion: _foundManagerVersion, ...disk } = found
-  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, managerShortcutsVersion: _currentManagerVersion, ...current } = getSettings()
+  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, managerShortcutsVersion: _foundManagerVersion, shortcutDestinationsVersion: _foundDestinationVersion, ...disk } = found
+  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, managerShortcutsVersion: _currentManagerVersion, shortcutDestinationsVersion: _currentDestinationVersion, ...current } = getSettings()
   if (isDeepStrictEqual(disk, current)) return
   const previous = settings
   settings = undefined

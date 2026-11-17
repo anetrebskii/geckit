@@ -33,8 +33,9 @@ Refusals: `{"ok":false,"code":"expired|place|field|program|task|locked|unknown",
 | op | request | answer |
 | --- | --- | --- |
 | `status` | | `store`, `version`, `protocol`, `locked`, `count` |
-| `prepare` | `requestId`, `name`, `kind`, `places`, `field?`, `note?`, `taskId` | `brokerKey` |
-| `accept` | `requestId`, `ciphertext {epk, iv, data}`, `lifetime` | `name`, `secret` (metadata), `expiresAt?` |
+| `prepare` | `requestId`, `name`, `kind`, `places`, `field?`, `note?`, `user?`, `taskId` | `brokerKey` |
+| `accept` | `requestId`, `ciphertext {epk, iv, data}`, `lifetime`, `user?` (used only when `prepare` gave none) | `name`, `secret` (metadata), `expiresAt?` |
+| `update` | `name`, `places`, `note?`, `user?`, `lifetime` | `name`, `secret` (metadata), `expiresAt?`; the value is kept, a changed lifetime counts from now |
 | `list` | | `secrets` (metadata) |
 | `history` | `name?`, `limit?` | `records` |
 | `revoke` | `name` or `all: true` | `removed` |
@@ -46,6 +47,7 @@ Refusals: `{"ok":false,"code":"expired|place|field|program|task|locked|unknown",
 - `fill.field` is `password` for an `input type=password`, otherwise the element description fixed at request time.
 - `run.env` entries are `NAME=value` or `NAME=secret:<name>`. An `http` secret becomes the placeholder `{{secret:<name>}}`, replaced by the broker's proxy only on the secret's hosts. A `command` secret becomes the value only when `argv[0]` matches the secret's program. `secrets[]` adds `http` secrets (proxy) and `ssh` secrets (`SSH_AUTH_SOCK`).
 - `lifetime`: `task`, `once`, `15m`, `1h`, `1d`, `keep`.
+- `user` is the account name or email a `website` secret signs in as. It is not secret: it is kept in the metadata, listed with the secret and typed by the agent itself. Other kinds drop it.
 
 ## Encryption for `accept` and `fill`
 

@@ -27,15 +27,16 @@ afterEach(() => {
 it('migrates legacy ciphertext with verified encrypted replacements and ciphertext backups', () => {
   const path = directory()
   const hostPath = join(path, 'hosts', 'secrets.json')
+  const legacy = ['manager-telegram.sealed']
   const telegramPath = join(path, 'manager-telegram.sealed')
   const hostLegacy = JSON.stringify({ box: Buffer.from('legacy host ciphertext').toString('base64') })
   const telegramLegacy = Buffer.from('legacy telegram ciphertext')
   writeFileSync(hostPath, hostLegacy)
   writeFileSync(telegramPath, telegramLegacy)
   const security = serviceSecurity(path, { key })
-  expect(migrationState(path, security)).toEqual({ available: true, hosts: ['box'], telegram: true })
+  expect(migrationState(path, security, legacy)).toEqual({ available: true, hosts: ['box'], sealed: legacy })
   const telegram = JSON.stringify({ token: 'private-bot-token', bot: { id: 1, username: 'fixture' }, offset: 0 })
-  expect(migrateSecrets(path, security, { hosts: [{ id: 'box', password: 'private-host-password' }], telegram })).toEqual({ available: true, hosts: [], telegram: false })
+  expect(migrateSecrets(path, security, { hosts: [{ id: 'box', password: 'private-host-password' }], sealed: { 'manager-telegram.sealed': telegram } }, legacy)).toEqual({ available: true, hosts: [], sealed: [] })
   expect(security.secrets.get('box')).toBe('private-host-password')
   expect(readFileSync(`${hostPath}.desktop-backup`, 'utf8')).toBe(hostLegacy)
   expect(readFileSync(`${telegramPath}.desktop-backup`)).toEqual(telegramLegacy)
@@ -49,7 +50,7 @@ it('migrates legacy ciphertext with verified encrypted replacements and cipherte
     expect(bytes.includes('private-bot-token')).toBe(false)
     if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600)
   }
-  migrateSecrets(path, security, { hosts: [{ id: 'box', password: 'should not overwrite' }], telegram: '{"token":"should not overwrite"}' })
+  migrateSecrets(path, security, { hosts: [{ id: 'box', password: 'should not overwrite' }], sealed: { 'manager-telegram.sealed': '{"token":"should not overwrite"}' } }, legacy)
   expect(security.secrets.get('box')).toBe('private-host-password')
   expect(security.vault.decrypt(readFileSync(telegramPath))).toBe(telegram)
 })
@@ -67,7 +68,7 @@ it('preserves unmigrated hosts and legacy data when secure storage or verificati
   expect(() => migrateSecrets(path, broken, { hosts: [{ id: 'one', password: 'password' }] })).toThrow('verification failed')
   expect(readFileSync(file, 'utf8')).toBe(original)
   expect(readdirSync(join(path, 'hosts'))).toEqual(['secrets.json'])
-  expect(migrateSecrets(path, security, { hosts: [{ id: 'one', password: 'password' }] })).toEqual({ available: true, hosts: ['two'], telegram: false })
+  expect(migrateSecrets(path, security, { hosts: [{ id: 'one', password: 'password' }] })).toEqual({ available: true, hosts: ['two'], sealed: [] })
   expect(security.secrets.get('one')).toBe('password')
 })
 

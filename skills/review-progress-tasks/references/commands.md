@@ -14,7 +14,10 @@ Check `capabilities` first. Commands below are Manager arguments; ordinary conve
 | Read candidate | `sessions show --id <full-id> --last 30` |
 | Inspect employees | `employees list`, then `employees show <employee-id>` |
 | Inspect projects/providers | `projects list`, `providers list`, `providers models --provider <provider-id>` |
+| Find checklists | `checklists list --project <project>` |
 | Assign new work | `sessions start --project <project> --text <assignment> --goal <condition> --employee <active-id>` |
+| Assign with a checklist | `sessions start --project <project> --text <assignment> --checklist <id-or-name>` or `--items <JSON array>` in place of `--goal` |
+| Change a running task's checklist | `sessions checklist --id <full-id> --items <JSON array>` |
 | Continue same outcome | `sessions send --id <full-id> --text <next-step>` |
 | Correct active work | `sessions steer --id <full-id> --text <correction>` |
 | Retry held operation | `sessions retry --id <full-id>` |
