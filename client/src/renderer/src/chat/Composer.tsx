@@ -508,6 +508,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
         <TaskChecklistEditor
           checklist={taskList}
           goal={goal?.condition}
+          personItem={chat.session.personItem}
           onSave={(next, typing) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, typing) }}
           onClear={() => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, { items: [] }); if (goal !== undefined) chat.say('/goal clear'); setEditingGoal(undefined) }}
           onClose={() => setEditingGoal(undefined)}

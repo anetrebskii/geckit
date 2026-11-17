@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { SECRET_NAME, placesValid, type SecretKind, type SecretLifetime, type SecretMetadata, type SecretUse } from '../../../shared/secrets'
 import { sealFor } from '../../../shared/secret-seal'
 import { Icon } from './Icon'
+import { ON_PHONE } from '../on-phone'
+import { Cell, FullSheet } from '../chat/PhoneKit'
 import { Menu } from './Menu'
 import type { Choice } from './Menu'
 
@@ -19,7 +21,11 @@ const ago = (at: number, now: number): string => {
 }
 const kept = (one: SecretMetadata): string => one.lifetime === 'task' ? 'until this task is done' : one.lifetime === 'once' ? 'after one use' : one.lifetime === 'keep' ? 'kept' : one.expiresAt === undefined ? 'timed' : `expires ${time(one.expiresAt)}`
 const places = (one: SecretMetadata): string => one.places.map((place) => one.kind === 'website' ? place.replace(/^https:\/\//, '') : place).join(', ')
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+const message = (error: unknown): string => {
+  const said = (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+  // A phone paired with a computer whose GeckIt predates these calls.
+  return said.startsWith('No such call') ? 'the GeckIt on your computer is older than this app. Update it there' : said
+}
 const KINDS: readonly SecretKind[] = ['http', 'website', 'command', 'ssh']
 const WHERE: Readonly<Record<SecretKind, string>> = { website: 'Sites, such as https://github.com', http: 'Hosts, such as api.openai.com or *.stripe.com', command: 'Programs, such as psql', ssh: 'Hosts, such as github.com' }
 const EXAMPLE: Readonly<Record<SecretKind, string>> = { website: 'https://github.com', http: 'api.openai.com', command: 'psql', ssh: 'github.com' }
@@ -59,7 +65,7 @@ function SecretForm({ secret, taken, onDone }: { readonly secret?: SecretMetadat
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
   const first = useRef<HTMLInputElement>(null)
-  useEffect(() => { first.current?.focus() }, [])
+  useEffect(() => { if (!ON_PHONE || secret === undefined) first.current?.focus() }, [secret])
   const id = `secret-${secret?.name ?? 'new'}`
   const word = kind === 'website' ? 'password' : 'value'
   const lifetimes = secret?.lifetime === 'task' ? [{ value: 'task' as const, label: 'This task' }, ...LIFETIMES] : LIFETIMES
@@ -86,6 +92,36 @@ function SecretForm({ secret, taken, onDone }: { readonly secret?: SecretMetadat
     } catch (error) { setProblem(message(error)); setBusy(false) }
   }
   const valueProps = { id: `${id}-value`, value, autoComplete: 'off', autoCapitalize: 'off', autoCorrect: 'off', spellCheck: false, disabled: busy, placeholder: editing ? `Leave empty to keep the current ${word}` : '', 'data-geckit-secret': '', onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => { setValue(event.target.value); setProblem('') } }
+  const close = (): void => { if (!busy) onDone(undefined) }
+  const eye = <button type="button" className="icon-button secret-value-eye" aria-label={shown ? `Hide ${word}` : `Show ${word}`} aria-pressed={shown} title={shown ? `Hide ${word}` : `Show ${word}`} disabled={busy} onClick={() => setShown((was) => !was)}><Icon name={shown ? 'hidden' : 'eye'} size={ON_PHONE ? 20 : 16} /></button>
+  if (ON_PHONE) return <FullSheet title={editing ? 'Edit secret' : 'New secret'} action={busy ? 'Saving...' : 'Save'} ready={ready && !busy} onAction={() => void save()} onClose={close}>
+    {editing ? <div className="phone-group secret-sheet-group"><Cell label="Name" value={<span className="secret-sheet-mono">{secret.name}</span>} /><Cell label="Used for" value={KIND[kind]} /></div> : <>
+      <div className="phone-task-label">Name</div>
+      <input ref={first} id={`${id}-name`} className="phone-task-goal secret-sheet-mono" type="text" value={name} placeholder="openai-key" aria-label="Name" autoCapitalize="off" autoCorrect="off" spellCheck={false} maxLength={48} disabled={busy} onChange={(event) => { setName(event.target.value.toLowerCase().replace(/[\s_]/g, '-')); setProblem('') }} />
+      <div className="phone-task-note">Lowercase letters, digits and hyphens. Conversations use the secret by this name.</div>
+      <div className="phone-task-label">Used for</div>
+      <div className="phone-group secret-sheet-group" role="radiogroup" aria-label="Used for">{KINDS.map((one) => <Cell key={one} label={KIND[one]} chosen={kind === one} onPress={() => { if (!busy) { setKind(one); setProblem('') } }} />)}</div>
+    </>}
+    <div className="phone-task-label">{kind === 'website' ? 'Sites' : kind === 'command' ? 'Programs' : 'Hosts'}</div>
+    <input id={`${id}-where`} className="phone-task-goal" type="text" value={where} placeholder={EXAMPLE[kind]} aria-label="Where" autoCapitalize="off" autoCorrect="off" spellCheck={false} disabled={busy} onChange={(event) => { setWhere(event.target.value); setProblem('') }} />
+    <div className="phone-task-note">{WHERE[kind]}. Separate several with commas.</div>
+    {kind === 'website' ? <>
+      <div className="phone-task-label">Username</div>
+      <input id={`${id}-user`} className="phone-task-goal" type="text" value={user} maxLength={200} placeholder="Optional" aria-label="Username" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} disabled={busy} onChange={(event) => { setUser(event.target.value); setProblem('') }} />
+      <div className="phone-task-note">The username or email it signs in as. Not secret: conversations see it and type it themselves.</div>
+    </> : null}
+    <div className="phone-task-label">Note</div>
+    <input id={`${id}-note`} className="phone-task-goal" type="text" value={note} maxLength={200} placeholder="Optional" aria-label="Note" disabled={busy} onChange={(event) => { setNote(event.target.value); setProblem('') }} />
+    <div className="phone-task-label">{kind === 'website' ? 'Password' : 'Value'}</div>
+    <div className={`secret-sheet-value${kind === 'ssh' ? ' multiline' : ''}`}>
+      {kind === 'ssh' ? <textarea {...valueProps} aria-label="Value" placeholder={editing ? 'Leave empty to keep it' : ''} rows={4} className={shown ? '' : 'masked'} /> : <input {...valueProps} aria-label={kind === 'website' ? 'Password' : 'Value'} placeholder={editing ? 'Leave empty to keep it' : 'Required'} type={shown ? 'text' : 'password'} />}
+      {eye}
+    </div>
+    <div className="phone-task-note">Encrypted on this phone before it is sent. GeckIt's AI never sees it.</div>
+    <div className="phone-task-label">Keep it</div>
+    <div className="phone-group secret-sheet-group" role="radiogroup" aria-label="Keep it">{lifetimes.map((one) => <Cell key={one.value} label={one.label} chosen={lifetime === one.value} onPress={() => { if (!busy) { setLifetime(one.value); setProblem('') } }} />)}</div>
+    {problem === '' ? null : <p className="recurrence-error secret-sheet-error" role="alert">{problem}</p>}
+  </FullSheet>
   return <form className="browser-profiles-form secret-form" aria-label={editing ? `Edit ${secret.name}` : 'Add secret'} aria-busy={busy} onSubmit={(event) => { event.preventDefault(); void save() }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!busy) onDone(undefined) } }}>
     <label htmlFor={`${id}-name`}>Name</label>
     {editing ? <span id={`${id}-name`} className="secret-form-fixed secret-form-name">{secret.name}</span>
@@ -105,7 +141,7 @@ function SecretForm({ secret, taken, onDone }: { readonly secret?: SecretMetadat
     <div className="browser-profiles-field">
       <div className={`secret-value${kind === 'ssh' ? ' multiline' : ''}`}>
         {kind === 'ssh' ? <textarea {...valueProps} rows={4} className={shown ? '' : 'masked'} /> : <input {...valueProps} type={shown ? 'text' : 'password'} />}
-        <button type="button" className="icon-button secret-value-eye" aria-label={shown ? `Hide ${word}` : `Show ${word}`} aria-pressed={shown} title={shown ? `Hide ${word}` : `Show ${word}`} disabled={busy} onClick={() => setShown((was) => !was)}><Icon name={shown ? 'hidden' : 'eye'} size={16} /></button>
+        {eye}
       </div>
       <span className="browser-profiles-hint">Encrypted before it leaves this window. GeckIt's AI never sees it.</span>
     </div>
@@ -153,7 +189,7 @@ function SecretRow({ secret, now, taken, focus, refresh, onRemoved, onFocused }:
     catch (error) { setProblem(message(error)); restore.current = true; setAsking(false) }
     finally { setBusy(false) }
   }
-  if (editing) return <li className="browser-profile secret-row asking editing">
+  if (editing && !ON_PHONE) return <li className="browser-profile secret-row asking editing">
     <SecretForm secret={secret} taken={taken} onDone={(saved) => { restore.current = true; setEditing(false); if (saved !== undefined) void refresh() }} />
   </li>
   return <li className={`browser-profile secret-row${asking ? ' asking' : ''}`} onKeyDown={(event) => { if (event.key === 'Escape' && asking) { event.preventDefault(); event.stopPropagation(); cancel() } }}>
@@ -182,6 +218,7 @@ function SecretRow({ secret, now, taken, focus, refresh, onRemoved, onFocused }:
         <tbody>{history.map((use, at) => <tr key={`${use.at}-${at}`}><td>{new Date(use.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{use.taskId ?? ''}</td><td>{use.place ?? use.kind}</td><td>{use.result}</td></tr>)}</tbody>
       </table>}
     {problem === '' ? null : <p className="secret-error" role="alert">{problem}</p>}
+    {editing ? <SecretForm secret={secret} taken={taken} onDone={(saved) => { restore.current = true; setEditing(false); if (saved !== undefined) void refresh() }} /> : null}
     {more === undefined ? null : <Menu anchor={more} choices={choices} autoFocus onPick={pick} onClose={() => setMore(undefined)} />}
   </li>
 }
@@ -196,7 +233,8 @@ export function SecretsSection(): React.JSX.Element {
   const heading = useRef<HTMLHeadingElement>(null)
   const addButton = useRef<HTMLButtonElement>(null)
   const refresh = useCallback(async (): Promise<void> => {
-    const told = await window.geckit.secrets.status()
+    let told: Status
+    try { told = await window.geckit.secrets.status() } catch (error) { setStatus({ problem: message(error) }); return }
     setStatus(told)
     if (told.problem !== undefined) return
     try { const listed = await window.geckit.secrets.list(); setNow(Date.now()); setSecrets(listed) } catch (error) { setStatus({ problem: message(error) }) }

@@ -344,17 +344,18 @@ export function managerTrace(session: Pick<ChatSession, 'managerThread' | 'label
   ]
 }
 
-/** "From <parent title>": the conversation that asked for this one, while it is still there. */
+/** "From <parent title>": the conversation that asked for this one, while it is still there. Its card works it out, so a card drawn again does not hand over the whole list. */
 export function From({
-  chat,
+  parent,
   session,
   className,
+  onGo,
 }: {
-  readonly chat: Pick<Chat, 'sessions' | 'goTo'>
+  readonly parent: Pick<ChatSession, 'id' | 'title'> | undefined
   readonly session: ChatSession
   readonly className: string
+  readonly onGo: (id: string) => void
 }): React.JSX.Element | null {
-  const parent = originFor(chat, session)
   const manager = managerFrom(session)
   if (parent === undefined && manager !== undefined) return <div className={className} title={managerTrace(session).join('\n')}>{manager}</div>
   if (parent === undefined) return null
@@ -365,7 +366,7 @@ export function From({
         type="button"
         onClick={(event) => {
           event.stopPropagation()
-          chat.goTo(parent.id)
+          onGo(parent.id)
         }}
       >
         {parent.title}

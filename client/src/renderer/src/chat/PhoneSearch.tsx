@@ -12,7 +12,7 @@ import { ago } from './time'
 import type { Chat } from './useChat'
 
 /** The Search tab: the Mac's Cmd+P, conversations by name and then by what was said in them. See docs/ux/phone-parity.md. */
-export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; readonly shown: boolean; readonly onSeek: (seek: Seek) => void }): React.JSX.Element {
+export function PhoneSearch({ chat, shown, onSeek, onBack }: { readonly chat: Chat; readonly shown: boolean; readonly onSeek: (seek: Seek) => void; readonly onBack: () => void }): React.JSX.Element {
   const [asked, setAsked] = useState('')
   const [typing, setTyping] = useState(false)
   const { found, words } = useFound(chat, asked)
@@ -28,7 +28,7 @@ export function PhoneSearch({ chat, shown, onSeek }: { readonly chat: Chat; read
   const split = heading === -1 ? found.length : heading
 
   return (
-    <Page title="Search">
+    <Page title="Search" back="Tasks" onBack={onBack}>
       <div className="phone-search">
         <Icon name="search" size={17} />
         <input

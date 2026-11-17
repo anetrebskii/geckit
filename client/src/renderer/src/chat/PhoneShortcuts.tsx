@@ -7,6 +7,8 @@ import { cronOf, describeCron, describeStartWindow, describeTime, isCron, nextRu
 import type { When } from '../../../shared/schedule'
 import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceError } from '../../../shared/recurrence'
 import { saveShortcut } from '../../../shared/shortcut-save'
+import { shortcutChecklist } from '../../../shared/checklists'
+import { ChecklistField } from './ChecklistField'
 import { CustomRecurrence } from './CustomRecurrence'
 import { destinationSummary, ShortcutDelivery, ShortcutDestinationFields, useShortcutDestination, useShortcutRuns } from './ShortcutDestinations'
 import { tap } from '../tap'
@@ -46,8 +48,8 @@ export function PhoneShortcuts({
   onEdit,
 }: {
   readonly chat: ShortcutChat
-  readonly back: string
-  readonly onBack: () => void
+  readonly back?: string
+  readonly onBack?: () => void
   readonly onEdit: (draft: ShortcutDraft) => void
 }): React.JSX.Element {
   const lastRuns = useShortcutRuns(chat.settings)
@@ -80,8 +82,7 @@ export function PhoneShortcuts({
   return (
     <Page
       title="Shortcuts"
-      back={back}
-      onBack={onBack}
+      {...(back === undefined ? {} : { back })} {...(onBack === undefined ? {} : { onBack })}
       actions={
         <button type="button" className="phone-icon" aria-label="New shortcut" onClick={() => onEdit(blank())}>
           <Icon name="plus" size={24} />
@@ -142,7 +143,11 @@ export function PhoneShortcuts({
 
 /** One shortcut, new or kept, with every field the Mac's editor has. */
 export function ShortcutSheet({ chat, given, onClose }: { readonly chat: ShortcutChat; readonly given: ShortcutDraft; readonly onClose: () => void }): React.JSX.Element {
-  const [draft, setDraft] = useState<ShortcutDraft>(given)
+  const [draft, setDraft] = useState<ShortcutDraft>(() => {
+    const { goal: _goal, checklist: _checklist, ...rest } = given
+    const checklist = shortcutChecklist(given)
+    return checklist === undefined ? rest : { ...rest, checklist }
+  })
   const destination = useShortcutDestination(chat.settings, draft.destination, (destination) => {
     const { destination: _destination, ...rest } = draft
     setDraft(destination === undefined ? rest : { ...rest, destination })
@@ -204,18 +209,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
         <input className="phone-task-goal" autoFocus aria-label="Name" value={draft.name} placeholder={name === '' ? 'Morning check' : name} onChange={(event) => change({ name: event.target.value })} />
         <div className="phone-task-label">Prompt</div>
         <textarea className="phone-task-text" value={draft.prompt} placeholder="What to ask each time" onChange={(event) => change({ prompt: event.target.value })} />
-        {manager ? null : <>
-        <div className="phone-task-label">Goal</div>
-        <input
-          className="phone-task-goal"
-          value={draft.goal ?? ''}
-          placeholder="When it is done, as a condition"
-          onChange={(event) => {
-            const { goal: _, ...rest } = draft
-            setDraft(event.target.value === '' ? rest : { ...rest, goal: event.target.value })
-          }}
-        />
-        </>}
+        {manager ? null : <ChecklistField checklists={chat.settings.checklists ?? []} root={draft.root} value={draft.checklist ?? { items: [] }} onChange={(checklist) => change({ checklist })} />}
         <div className="phone-group phone-form-group">
           <Cell label="Target" value={manager ? 'Manager' : 'New task'} onPress={() => setPicking('target')} />
           <Cell label="Folder" value={draft.root === '' ? 'None' : projectLabel(draft.root)} onPress={() => setPicking('project')} />
@@ -285,7 +279,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
         )}
       </FullSheet>
       {picking === 'target' ? <Menu anchor={new DOMRect()} title="Target" chosen={manager ? 'manager' : 'task'} choices={[{ value: 'task', label: 'New task' }, { value: 'manager', label: 'Manager' }]} onPick={(value) => {
-        const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+        const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, checklist: _checklist, ...rest } = draft
         setDraft(value === 'manager' ? { ...rest, target: 'manager' } : rest)
       }} onClose={() => setPicking(undefined)} /> : picking === 'project' ? (
         <Menu
@@ -360,7 +354,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
 }
 
 const WAYS = [
-  { way: 'write', icon: 'pencil', label: 'Write it', says: 'Folder, what to do, a goal' },
+  { way: 'write', icon: 'pencil', label: 'Write it', says: 'Folder, what to do, a checklist' },
   { way: 'say', icon: 'mic', label: 'Say it', says: 'Tell GeckIt what to start, answer or mark' },
   { way: 'record', icon: 'display', label: 'From a recording', says: 'A screen recording or a video; its words and frames become the task' },
 ] as const

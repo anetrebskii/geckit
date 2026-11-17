@@ -21,9 +21,18 @@ declare global {
 
 interface ComputerProps { readonly onConnect?: (id?: string) => void }
 
-export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
+export interface ComputerChoices {
+  /** The GeckIt computer this window shows, or none for this computer. */
+  readonly source: RemoteComputer | undefined
+  readonly computers: readonly Pick<RemoteTrust, 'server'>[]
+  readonly trouble: string
+  /** Shows the chosen computer: `:local` for this one, `:add` to connect another, `:manage` for the saved list. */
+  readonly choose: (id: string) => void
+}
+
+/** The computers a window can switch to, read again whenever `reading` changes. */
+export function useComputers(reading: unknown, onConnect?: (id?: string) => void): ComputerChoices {
   const [source, setSource] = useState(window.geckitRemoteComputer)
-  const [anchor, setAnchor] = useState<DOMRect>()
   const [saved, setSaved] = useState<readonly Pick<RemoteTrust, 'server'>[]>([])
   const [trouble, setTrouble] = useState('')
   useEffect(() => {
@@ -32,16 +41,29 @@ export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
     return () => window.removeEventListener('geckit:computer', changed)
   }, [])
   useEffect(() => {
-    if (source !== undefined || anchor === undefined) return
+    if (source !== undefined || reading === undefined) return
     let active = true
     void savedServers().then((servers) => { if (active) { setSaved(servers.map((one) => ({ server: { ...one.server, name: shownName(one) } }))); setTrouble('') } }).catch(() => { if (active) setTrouble('Saved computers are unavailable. Allow app storage, then try again.') })
     return () => { active = false }
-  }, [source, anchor])
-  const name = source?.server.name ?? 'This computer'
-  const state = source?.state
+  }, [source, reading])
   const servers = source?.choices ?? saved
   const computers = source !== undefined && !servers.some((one) => one.server.id === source.server.id) ? [...servers, { server: source.server }] : servers
-  const status = state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting…' : state === 'reconnecting' ? 'Reconnecting…' : 'Disconnected'
+  const choose = (id: string): void => {
+    if (id === (source?.server.id ?? ':local')) return
+    if (source === undefined) onConnect?.(id)
+    else source.onChoose(id)
+  }
+  return { source, computers, trouble, choose }
+}
+
+export const computerStatus = (state: RemoteView['state'] | undefined): string => state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting…' : state === 'reconnecting' ? 'Reconnecting…' : 'Disconnected'
+
+export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
+  const [anchor, setAnchor] = useState<DOMRect>()
+  const { source, computers, trouble, choose } = useComputers(anchor, onConnect)
+  const name = source?.server.name ?? 'This computer'
+  const state = source?.state
+  const status = computerStatus(state)
   return <>
     <button
       type="button"
@@ -64,11 +86,7 @@ export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
       chosen={source?.server.id ?? ':local'}
       choices={[{ value: ':local', label: 'This computer', icon: 'display' }, ...computers.map((one) => ({ value: one.server.id, label: one.server.name, icon: 'server' })), { value: ':add', label: 'Connect computer…', icon: 'plus' }, ...(computers.length === 0 ? [] : [{ value: ':manage', label: 'Manage computers…', icon: 'settings' }])]}
       {...(trouble === '' ? {} : { note: trouble })}
-      onPick={(id) => {
-        if (id === (source?.server.id ?? ':local')) return
-        if (source === undefined) onConnect?.(id)
-        else source.onChoose(id)
-      }}
+      onPick={choose}
       onClose={() => setAnchor(undefined)}
     />}
   </>

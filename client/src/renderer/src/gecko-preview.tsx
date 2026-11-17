@@ -160,7 +160,7 @@ function Bar({ src, label }: { readonly src: string; readonly label: string }): 
   const [spot, setSpot] = useState<Element | null>(null)
   useLayoutEffect(() => setSpot(held.current?.querySelector('.board-head > .spacer') ?? null), [])
   return <div ref={held} className="gecko-bar">
-    <TopBar chat={chat} onNew={noop} onAsk={noop} onSeek={noop} onSettings={noop} onShortcuts={noop} />
+    <TopBar chat={chat} onNew={noop} onSeek={noop} />
     {spot === null ? null : createPortal(<span className="gecko-spot"><img src={src} alt={label} /></span>, spot)}
   </div>
 }

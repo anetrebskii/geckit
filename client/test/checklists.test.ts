@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Checklist } from '../src/shared/checklists'
-import { checklistContext, checklistDone, checklistGoal, checklistItems, checklistMet, checklistsFor, copyChecklist, defaultChecklist, itemCondition, nextCondition, taskGoal, taskPlan } from '../src/shared/checklists'
+import { checklistContext, checklistDone, checklistGoal, checklistItems, checklistMet, checklistsFor, copyChecklist, defaultChecklist, itemCondition, nextCondition, shortcutChecklist, taskPlan } from '../src/shared/checklists'
 import type { Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import { checklistsCommand } from '../src/main/checklists-cli'
@@ -28,7 +28,7 @@ describe('checklists', () => {
   it('writes several items as one line, in order, with their checks and the items checked again', () => {
     const goal = checklistGoal(copyChecklist(feature))
     expect(goal).not.toContain('\n')
-    expect(goal).toBe('All 3 items of Feature flow hold, in this order, one at a time: (1) UX doc approved - check: stop and ask the person to approve before going on; (2) Tests pass - No test file is skipped - check: `npm test` exits with 0; (3) Lint clean - check: `npm run lint` exits with 0. After each item holds, print "[n/3 passed] <item>" with its evidence. Before finishing, check (3) again.')
+    expect(goal).toBe('All 3 items of Feature flow hold, in this order, one at a time: (1) UX doc approved - check: ready for the person to approve; do not ask them, GeckIt does; (2) Tests pass - No test file is skipped - check: `npm test` exits with 0; (3) Lint clean - check: `npm run lint` exits with 0. After each item holds, print "[n/3 passed] <item>" with its evidence. Before finishing, check (3) again.')
   })
 
   it('offers a folder its own checklists before the shared ones, and its default', () => {
@@ -59,15 +59,12 @@ describe('checklists from the command line', () => {
     expect(() => checklistItems('[{"name": "x"}]')).toThrow(/unknown field name/)
   })
 
-  it('turns a goal, a saved checklist, typed items or the folder default into the goal', () => {
-    const all = [feature, shared]
-    expect(taskGoal(all, '/work/app', { goal: ' Done ' })).toBe('Done')
-    expect(taskGoal(all, '/work/other', { checklist: 'release' })).toContain('All 2 items of Release hold')
-    expect(taskGoal(all, '/work/app', { items: ['Only this'] })).toBe('Only this')
-    expect(taskGoal(all, '/work/app', {})).toContain('of Feature flow')
-    expect(taskGoal(all, '/work/other', {})).toBeUndefined()
-    expect(() => taskGoal(all, '/work/other', { checklist: 'Feature flow' })).toThrow('There are: Release')
-    expect(() => taskGoal(all, '/work/app', { goal: 'x', items: ['y'] })).toThrow(/one of/)
+  it('keeps a shortcut checklist without states, and reads an older shortcut goal as one item', () => {
+    expect(shortcutChecklist({ checklist: { from: { id: 'c1', name: 'Feature flow' }, items: [{ id: 'a', title: ' Tests pass ', check: 'none', state: 'passed' }, { id: 'b', title: ' ', check: 'none' }] } })).toEqual({ from: { id: 'c1', name: 'Feature flow' }, items: [{ id: 'a', title: 'Tests pass', check: 'none' }] })
+    expect(shortcutChecklist({ goal: ' Done ' })).toEqual({ items: [{ id: 'goal', title: 'Done', check: 'none' }] })
+    expect(shortcutChecklist({ checklist: { items: [] }, goal: 'Done' })?.items.map((one) => one.title)).toEqual(['Done'])
+    expect(shortcutChecklist({ goal: ' ' })).toBeUndefined()
+    expect(shortcutChecklist({})).toBeUndefined()
   })
 
   it('lists, adds, edits and removes saved checklists, one default per folder', () => {
@@ -113,7 +110,7 @@ describe('a running task checklist', () => {
       task = checklistMet(task, next) ?? task
     }
     expect(conditions).toEqual([
-      'UX doc approved - check: stop and ask the person to approve before going on',
+      'UX doc approved - check: ready for the person to approve; do not ask them, GeckIt does',
       'Tests pass - No test file is skipped - check: `npm test` exits with 0',
       'Lint clean - check: `npm run lint` exits with 0',
       'Still true after the later work: Lint clean - check: `npm run lint` exits with 0',

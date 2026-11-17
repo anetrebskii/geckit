@@ -21,7 +21,7 @@ Establish what kind of task the checklist is for, which folder it belongs to or 
 4. Choose each item's check. `command` when a command proves it, with that command; it passes when it exits with 0. `person` when the person must approve before work goes on. `review` when the evidence must be shown in the conversation. `none` when the assistant's own word is enough. Mark `final` an item that later steps can break, such as tests after later edits: after the last item, the assistant confirms it still holds. `final` is ignored on `person` items.
 5. Use commands that exist in that folder. Read its package scripts, Makefile or README rather than guessing `npm test`. A shared checklist cannot assume one folder's commands; leave the check `review` there, or make a folder checklist.
 6. Set `--default` only when the person asks for it. A folder has one default; saving another replaces it. New tasks in that folder, and CLI starts with no goal or checklist, then use it.
-7. Remove a checklist only when asked. Tasks already started keep their copy, and shortcuts keep the goal they were saved with.
+7. Remove a checklist only when asked. Tasks already started keep their copy, and shortcuts keep the copy they were saved with.
 
 ## Unknowns
 

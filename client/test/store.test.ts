@@ -426,3 +426,20 @@ it('saves technical status transitions before acknowledgment and preserves legac
     expect(fresh.all()['task']?.moves).toEqual(before)
   } finally { rmSync(state.folder, { recursive: true, force: true }) }
 })
+
+it('keeps the place shown and hidden names across a restart', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-place-'))
+  writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, phoneKey: 'place-test' }))
+  try {
+    expect(getSettings().chatPlace).toBe('tasks')
+    expect(getSettings().navNames).toBe(true)
+    setSettings({ chatPlace: 'manager', navNames: false })
+    await new Promise((done) => setTimeout(done, 350))
+    vi.resetModules()
+    const fresh = await import('../src/main/store')
+    expect(fresh.getSettings().chatPlace).toBe('manager')
+    expect(fresh.getSettings().navNames).toBe(false)
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})

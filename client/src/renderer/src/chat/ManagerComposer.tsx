@@ -4,6 +4,7 @@ import type { ManagerSendRequest, ManagerView } from '../../../shared/manager'
 import { MANAGER_CHAT_UPDATE } from '../../../shared/manager'
 import { keep, readKept } from '../kept'
 import { ON_PHONE } from '../on-phone'
+import { Icon } from '../ui/Icon'
 
 interface PendingSend {
   readonly request: ManagerSendRequest
@@ -66,7 +67,7 @@ export function ManagerComposer({ view, connected, historyReady, closed, posted 
     const textarea = field.current
     if (textarea === null) return
     textarea.style.height = 'auto'
-    textarea.style.height = `${String(Math.min(textarea.scrollHeight, 180))}px`
+    textarea.style.height = `${String(Math.min(textarea.scrollHeight + textarea.offsetHeight - textarea.clientHeight, 180))}px`
   }, [held.text])
   const send = async (): Promise<void> => {
     if (!ready || !historyReady || (draft.pending !== undefined && draft.pending.phase !== 'failed') || blocked !== undefined || held.text.trim() === '') return
@@ -81,13 +82,16 @@ export function ManagerComposer({ view, connected, historyReady, closed, posted 
       await reconcile()
     }
   }
+  const cannotSend = !ready || !historyReady || busy || blocked !== undefined || held.text.trim() === ''
+  const hint = blocked ?? posted ?? ''
+  const textarea = <textarea ref={field} rows={1} value={held.text} disabled={!ready || busy} placeholder="Message Manager" aria-label="Message Manager" onChange={(event) => { void save({ text: event.target.value, ...(held.pending?.phase === 'failed' ? {} : held.pending === undefined ? {} : { pending: held.pending }) }) }} onKeyDown={(event) => {
+    if (!ON_PHONE && event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); void send() }
+  }} />
   return <div className="composer manager-composer">
     {held.pending === undefined ? null : <div className="manager-send-state" role="status"><span>{held.pending.phase === 'sending' ? 'Sending...' : held.pending.phase === 'checking' ? 'Checking whether your message was received...' : 'Message was not sent. Try again.'}</span>{held.pending.phase === 'failed' && held.pending.error !== undefined && held.pending.error !== 'Message was not sent. Try again.' ? <span>{held.pending.error}</span> : null}{held.pending.phase === 'checking' && connected && view.appChat === true ? <button type="button" className="quiet small" onClick={() => { void reconcile() }}>Check status</button> : null}</div>}
     <div className="composer-inner">
-      <textarea ref={field} rows={2} value={held.text} disabled={!ready || busy} placeholder="Message Manager" aria-label="Message Manager" onChange={(event) => { void save({ text: event.target.value, ...(held.pending?.phase === 'failed' ? {} : held.pending === undefined ? {} : { pending: held.pending }) }) }} onKeyDown={(event) => {
-        if (!ON_PHONE && event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); void send() }
-      }} />
-      <div className="manager-composer-actions"><span className="manager-composer-hint" role="status">{blocked ?? (posted ?? (ON_PHONE ? '' : 'Enter to send · Shift+Enter for a new line'))}</span><button type="button" className="primary" disabled={!ready || !historyReady || busy || blocked !== undefined || held.text.trim() === ''} onClick={() => { void send() }}>Send</button></div>
+      {ON_PHONE ? <div className="manager-field">{textarea}<button type="button" className="send" aria-label="Send" title="Send" disabled={cannotSend} onClick={() => { void send() }}><Icon name="send" size={14} /></button></div> : textarea}
+      {ON_PHONE ? (hint === '' ? null : <p className="manager-composer-hint" role="status">{hint}</p>) : <div className="composer-bar"><span className="composer-hint manager-composer-hint" role="status">{hint}</span><span className="spacer" /><button type="button" className="send" aria-label="Send" title="Send (Enter)" disabled={cannotSend} onClick={() => { void send() }}><Icon name="send" size={14} /></button></div>}
     </div>
   </div>
 }

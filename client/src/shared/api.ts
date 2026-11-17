@@ -446,6 +446,8 @@ export interface ChatSession {
   readonly goalMet?: string
   /** The task's own checklist, each item set as the goal in turn. */
   readonly checklist?: TaskChecklist
+  /** The person's item the assistant is working on, which is its goal though no goal is set. */
+  readonly personItem?: string
   /** When it was last moved into the column it stands in, which is the day Done shows it under. */
   readonly since?: number
   /** A command typed after ! that is still running in it, the first where there are more. */
@@ -1208,6 +1210,10 @@ export interface Settings {
   readonly chatGrouping: ChatGrouping
   /** The conversations as a list, or as a board of cards by what stands where. */
   readonly chatView: ChatView
+  /** The place the Chat window shows: tasks, manager, questions, a Workspace place, settings, or `host:<id>`. */
+  readonly chatPlace: string
+  /** The Chat window's sidebar shows its names, or only its icons by the person's choice. */
+  readonly navNames: boolean
   /** A conversation opened from the board comes up over it, or below it with the board shrunk to a strip above. */
   readonly conversationPlace: ConversationPlace
   /** How tall the strip of board above a conversation was dragged, in pixels. */
@@ -1293,8 +1299,10 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly name: string
   readonly root: string
   readonly prompt: string
-  /** What being finished means, sent as `/goal` after the prompt. Nothing is no goal. */
+  /** What being finished means, from before shortcuts kept a checklist; read as a one-item checklist and replaced by one when saved. */
   readonly goal?: string
+  /** The results each run works through one goal at a time, a copy kept with the shortcut. Nothing is no goal. */
+  readonly checklist?: TaskChecklist
   readonly mode: SessionMode
   /** The model the conversation is handed. Nothing is Default. */
   readonly model?: string
@@ -1400,6 +1408,8 @@ export const DEFAULT_SETTINGS: Settings = {
   chatMode: 'auto',
   chatGrouping: 'time',
   chatView: 'board',
+  chatPlace: 'tasks',
+  navNames: true,
   conversationPlace: 'over',
   boardHeight: 240,
   boardColumns: [],

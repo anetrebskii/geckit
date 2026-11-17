@@ -20,12 +20,18 @@ let capture: Promise<MediaStreamTrack> | undefined
 async function screenTrack(): Promise<MediaStreamTrack> {
   const source = await window.geckit.peer.screen()
   if (source.error !== undefined) throw new Error(source.error)
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: source.id, maxWidth: 2560, maxHeight: 1600, maxFrameRate: 15 },
-    } as MediaTrackConstraints,
-  })
+  const stream = await navigator.mediaDevices
+    .getUserMedia({
+      audio: false,
+      video: {
+        mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: source.id, maxWidth: 2560, maxHeight: 1600, maxFrameRate: 15 },
+      } as MediaTrackConstraints,
+    })
+    .catch((error: unknown) => {
+      // macOS refuses to record a locked or sleeping screen, which Chrome reports only as a video source it could not start.
+      if (error instanceof DOMException && error.name === 'NotReadableError') throw new Error('The host could not show its screen. If it is locked or asleep, wake and unlock it, then try again.')
+      throw error
+    })
   const track = stream.getVideoTracks()[0]
   if (track === undefined) throw new Error('The host gave no picture of its screen')
   // Encoded for sharp text rather than smooth motion.

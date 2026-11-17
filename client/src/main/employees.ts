@@ -1,4 +1,5 @@
-import { taskGoal } from '../shared/checklists'
+import { taskPlan } from '../shared/checklists'
+import type { TaskChecklist } from '../shared/checklists'
 import { shortcutDestinationError } from '../shared/shortcut-destination-validation'
 import { randomUUID } from 'node:crypto'
 import { configuration, setConfiguration } from '../core/configuration'
@@ -418,16 +419,19 @@ export class Employees {
       if (reasoningSaid !== undefined && reasoningSaid !== 'default' && !EFFORTS.includes(reasoningSaid as ReasoningEffort)) throw new Error(`Use --reasoning default, ${EFFORTS.join(', ')}.`)
       const reasoning = reasoningSaid === undefined ? undefined : reasoningSaid === 'default' ? '' : reasoningSaid as ReasoningEffort
       const root = project === undefined ? was?.root : team.project(project)
-      const goal = flags.has('--checklist') || flags.has('--items') ? taskGoal(team.settings().checklists ?? [], root ?? '', { goal: goalSaid, checklist: flags.get('--checklist'), items: flags.get('--items') }) ?? '' : goalSaid
+      const planned = flags.has('--checklist') || flags.has('--items') ? taskPlan(team.settings().checklists ?? [], root ?? '', { goal: goalSaid, checklist: flags.get('--checklist'), items: flags.get('--items') }) : undefined
+      const checklist: TaskChecklist | undefined = planned?.checklist
+      const goal = planned === undefined ? goalSaid : planned.goal ?? (checklist === undefined ? '' : undefined)
+      const goalLine = checklist !== undefined ? [`Checklist: ${checklist.from === undefined ? '' : `${checklist.from.name}, `}${String(checklist.items.length)} ${checklist.items.length === 1 ? 'item' : 'items'}`] : goal === undefined ? [] : [goal === '' ? 'Goal: none' : `Goal: ${brief(goal)}`]
       if (reasoning !== undefined && !isCodexProvider(provider ?? was?.provider ?? assistantFor(team.settings(), root))) throw new Error('--reasoning is for Codex shortcuts only. Claude Code takes its effort from the model.')
       if (action === 'add' && (name === undefined || root === undefined || prompt === undefined)) throw new Error('A shortcut needs --name, --project and --prompt or --prompt-file.')
-      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --destination, --name, --project, --prompt, --goal, --every, --cron, --start-window-minutes, --provider, --model, --reasoning or --mode.')
+      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --destination, --name, --project, --prompt, --goal, --checklist, --items, --every, --cron, --start-window-minutes, --provider, --model, --reasoning or --mode.')
       const where = root === undefined ? '' : team.projectName(root)
       const when = timed === undefined ? undefined : timed === '' ? 'By hand' : describeCron(timed)
       const title = name ?? was?.name ?? ''
       const lines = was === undefined
-        ? [`Add shortcut ${quoted(title)} ${owner === undefined ? 'with no employee' : `to ${owner.name}`}`, `${when ?? 'By hand'} in ${where}`, `Prompt: ${brief(prompt ?? '')}`, ...(goal === undefined || goal === '' ? [] : [`Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
-        : [`Change shortcut ${quoted(was.name)}${name === undefined || name === was.name ? '' : `: name to ${quoted(name)}`}`, ...(when === undefined && project === undefined ? [] : [`${when ?? this.#shortcutWhen(was)} in ${where}`]), ...(prompt === undefined ? [] : [`Prompt: ${brief(prompt)}`]), ...(goal === undefined ? [] : [goal === '' ? 'Goal: none' : `Goal: ${brief(goal)}`]), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
+        ? [`Add shortcut ${quoted(title)} ${owner === undefined ? 'with no employee' : `to ${owner.name}`}`, `${when ?? 'By hand'} in ${where}`, `Prompt: ${brief(prompt ?? '')}`, ...(goal === '' ? [] : goalLine), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
+        : [`Change shortcut ${quoted(was.name)}${name === undefined || name === was.name ? '' : `: name to ${quoted(name)}`}`, ...(when === undefined && project === undefined ? [] : [`${when ?? this.#shortcutWhen(was)} in ${where}`]), ...(prompt === undefined ? [] : [`Prompt: ${brief(prompt)}`]), ...goalLine, ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
       if (destinationSaid !== undefined) lines.push(destination === undefined ? 'Result destination: none' : `Result destination: ${destination.channel} / ${destination.label ?? destination.destination}`)
       if (target !== undefined) lines.push(`Target: ${manager ? 'Manager' : 'New task'}`)
       if (windowSaid !== undefined || timed !== undefined && window.startWindowMinutes !== undefined) lines.push(window.startWindowMinutes === undefined ? 'Start window: none' : describeStartWindow(window))
@@ -441,8 +445,8 @@ export class Employees {
           const timedBase = timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: true, ...(kept.startWindowMinutes === undefined ? {} : { startWindowMinutes: kept.startWindowMinutes }) }
           const { startWindowMinutes: _startWindow, ...exactBase } = timedBase
           const windowBase = windowSaid === undefined ? timedBase : windowMinutes === undefined ? exactBase : { ...exactBase, startWindowMinutes: windowMinutes }
-          const { goal: _goal, ...ungoaled } = windowBase
-          const base = goal === undefined ? windowBase : goal === '' ? ungoaled : { ...ungoaled, goal }
+          const { goal: _goal, checklist: _checklist, ...ungoaled } = windowBase
+          const base = checklist !== undefined ? { ...ungoaled, checklist } : goal === undefined ? windowBase : goal === '' ? ungoaled : { ...ungoaled, goal }
           const { target: _target, ...taskBase } = base
           const { employeeId: _employee, ...unassigned } = taskBase
           const selectedBase = manager ? { ...unassigned, target: 'manager' as const } : target === 'task' ? taskBase : base

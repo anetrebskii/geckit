@@ -49,6 +49,7 @@ function Preview(): React.JSX.Element {
   const session: ChatSession = {
     id: 'claude:preview', root: '/work/geckit', title: 'Task checklists', stands: 'Working', state: 'working', at, here: true, mode: 'auto',
     ...(goal === undefined ? {} : { goal: { condition: goal, checks: 0 } }), ...(checklist === undefined ? {} : { checklist }),
+    ...(query.has('queued') ? { queued: [{ id: 'q1', text: 'Also check collapsed UI items', images: 0 }, { id: 'q2', text: 'Bottom bar Manager is not needed any more', images: 0 }] } : {}),
   }
   const chat = {
     employees: [], employeesById: new Map(),
@@ -77,10 +78,11 @@ function Preview(): React.JSX.Element {
     <div className="talk" style={{ flex: 1, minHeight: 0, minWidth: 0, width: '100%' }}>
       <header className="talk-head"><strong>{session.title}</strong><span className="place">geckit / client</span></header>
       <div className="talk-main">
-        <div className="talk-column"><Transcript at={session.id} items={items} working onAnswer={noop} onAgain={noop} onFile={noop} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} onRetry={noop} tasks={undefined} onTasks={noop} find={query.has('find') ? 0 : undefined} onFindClose={noop} /></div>
+        <div className="talk-column"><Transcript at={session.id} items={items} working onAnswer={noop} onAgain={noop} onFile={noop} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} onRetry={noop} tasks={undefined} onTasks={noop} find={query.has('find') ? 0 : undefined} onFindClose={noop} />
+          <Composer chat={fake} onChecklist={phone ? undefined : () => setShown(!shown)} checklistShown={shown} />
+        </div>
         {shown && !phone ? <TaskChecklistEditor key={session.id} panel goal={session.goal?.condition} checklist={shownChecklist(session.checklist, session.goal?.condition, session.goalMet)} onSave={(next, typing) => fake.setChecklist(session.id, next, typing)} onClear={() => fake.setChecklist(session.id, { items: [] })} onClose={() => setShown(false)} /> : null}
       </div>
-      <Composer chat={fake} onChecklist={phone ? undefined : () => setShown(!shown)} checklistShown={shown} />
     </div>
   </main>
 }

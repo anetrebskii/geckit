@@ -55,7 +55,7 @@ const SECTIONS: readonly { readonly value: Section; readonly label: string }[] =
   { value: 'general', label: 'General' },
   { value: 'vpn', label: 'VPN IP check' },
   { value: 'assistants', label: 'Assistants' },
-  { value: 'integrations', label: 'Web Browser' },
+  { value: 'integrations', label: 'Browsers' },
   { value: 'secrets', label: 'Secrets' },
   { value: 'channels', label: 'Channels' },
   { value: 'profiles', label: 'Profiles' },
@@ -142,13 +142,47 @@ export function SettingsDialog({
             ))}
           </nav>
           <div key={section} className="settings-page">
+            <SectionBody section={section} settings={settings} change={change} assistantChat={assistantChat} onWelcome={onClose} />
+          </div>
+        </div>
+
+        <div className="dialog-actions">
+          <button type="button" className="quiet" onClick={onShortcuts}>
+            Keyboard shortcuts ({MOD}+/)
+          </button>
+          <span className="spacer" />
+          <button type="button" className="primary" onClick={close}>
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** One section's body, as the Settings page and the places taken out of it draw it. */
+export function SectionBody({
+  section,
+  settings,
+  change,
+  assistantChat,
+  onWelcome,
+}: {
+  readonly section: Section
+  readonly settings: Settings
+  readonly change: (change: Partial<Settings>) => void
+  readonly assistantChat?: AssistantStatusChat | undefined
+  readonly onWelcome: () => void
+}): React.JSX.Element {
+  return (
+    <>
             {section === 'general' ? (
               <General
                 settings={settings}
                 change={change}
                 onWelcome={() => {
                   change({ welcomed: false })
-                  onClose()
+                  onWelcome()
                 }}
               />
             ) : null}
@@ -164,18 +198,41 @@ export function SettingsDialog({
             {section === 'correct' ? <Correct settings={settings} change={change} /> : null}
             {section === 'phone' ? <PhoneAccess on={settings.phone} change={(phone) => change({ phone })} /> : null}
             {section === 'version' ? <Updates settings={settings} change={change} /> : null}
-          </div>
-        </div>
+    </>
+  )
+}
 
-        <div className="dialog-actions">
-          <button type="button" className="quiet" onClick={onShortcuts}>
-            Keyboard shortcuts ({MOD}+/)
+/** Sections that are places of their own in the Chat window's sidebar, so the Settings page no longer lists them. */
+const PLACED: readonly Section[] = ['integrations', 'secrets', 'checklists']
+
+/** Settings as a page of the Chat window: the section list on the left, the section on the right. */
+export function SettingsPage({
+  settings,
+  change,
+  onShortcuts,
+  assistantChat,
+}: {
+  readonly settings: Settings
+  readonly change: (change: Partial<Settings>) => void
+  readonly onShortcuts: () => void
+  readonly assistantChat?: AssistantStatusChat
+}): React.JSX.Element {
+  const [section, setSection] = useState<Section>('general')
+  return (
+    <div className="settings-body place-settings">
+      <nav className="settings-nav" aria-label="Sections">
+        {SECTIONS.filter((one) => !PLACED.includes(one.value)).map((one) => (
+          <button key={one.value} type="button" className={one.value === section ? 'on' : ''} aria-current={one.value === section ? 'page' : undefined} onClick={() => setSection(one.value)}>
+            {one.label}
           </button>
-          <span className="spacer" />
-          <button type="button" className="primary" onClick={close}>
-            Done
-          </button>
-        </div>
+        ))}
+        <span className="spacer" />
+        <button type="button" className="quiet" title={`Keyboard shortcuts (${MOD}+/)`} onClick={onShortcuts}>
+          Keyboard shortcuts
+        </button>
+      </nav>
+      <div key={section} className="settings-page">
+        <SectionBody section={section} settings={settings} change={change} assistantChat={assistantChat} onWelcome={() => undefined} />
       </div>
     </div>
   )
@@ -262,7 +319,7 @@ function Assistants({ settings, change, assistantChat }: Part & { readonly assis
 function Integrations({ settings, change }: Part): React.JSX.Element {
   return (
     <section className="assistant-settings" aria-labelledby="integration-settings-title">
-      <h3 id="integration-settings-title">Web Browser</h3>
+      <h3 id="integration-settings-title">Browsers</h3>
       <ChromeBridge settings={settings} change={change} />
     </section>
   )

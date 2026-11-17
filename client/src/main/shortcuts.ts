@@ -11,6 +11,7 @@ import { assistantsIn } from '../shared/api'
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo } from '../shared/providers'
 import { isDue, startWindowError } from '../shared/schedule'
+import { shortcutChecklist } from '../shared/checklists'
 import { recurrenceError } from '../shared/recurrence'
 import { getSettings, setSettings } from './store'
 
@@ -116,6 +117,7 @@ async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<stri
       if (session !== undefined && getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
       return session
     }
+    const checklist = shortcutChecklist(one)
     const start = async (): Promise<string> => {
       const session = await given.start({
         root: one.root,
@@ -123,15 +125,12 @@ async function startShortcut(id: string, by: 'hand' | 'timetable'): Promise<stri
         text: one.prompt,
         provider,
         ...(owner === undefined ? {} : { employeeId: owner.id }),
-        ...(isCodexProvider(provider) && one.goal ? { goal: one.goal } : {}),
+        ...(checklist === undefined ? {} : { checklist }),
         ...(one.model === undefined ? {} : { model: one.model }),
         ...(!isCodexProvider(provider) || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
       })
       given.rename(session, one.name)
       if (getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
-      if (provider === 'claude' && one.goal !== undefined && one.goal !== '') {
-        await given.start({ session, root: one.root, mode: 'auto', text: `/goal ${one.goal}` })
-      }
       return session
     }
     return one.destination === undefined ? await start() : await deps.runs!.start({ ...one, destination: one.destination }, start)
@@ -172,7 +171,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     prompt: draft.prompt,
     ...(draft.target === 'manager' ? {} : { provider: draft.provider ?? 'claude' }),
     ...(draft.target === 'manager' || !isCodexProvider(draft.provider ?? 'claude') || draft.reasoning === undefined ? {} : { reasoning: draft.reasoning }),
-    ...(draft.target === 'manager' || draft.goal === undefined || draft.goal.trim() === '' ? {} : { goal: draft.goal.trim() }),
+    ...((checklist) => (draft.target === 'manager' || checklist === undefined ? {} : { checklist }))(shortcutChecklist(draft)),
     mode: 'auto',
     ...(draft.target === 'manager' || draft.model === undefined || draft.model === '' ? {} : { model: draft.model }),
     ...(draft.employeeId === undefined ? {} : { employeeId: draft.employeeId }),

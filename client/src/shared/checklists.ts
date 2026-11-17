@@ -46,9 +46,17 @@ export const newItem = (title = ''): ChecklistItem => ({ id: crypto.randomUUID()
 
 const filled = (items: readonly ChecklistItem[]): readonly ChecklistItem[] => items.filter((one) => one.title.trim() !== '')
 
+const PERSON_PROOF = 'check: ready for the person to approve; do not ask them, GeckIt does'
+
+/** A goal set for a person's item, in today's words or the earlier ones that told the assistant to ask: no goal check can see it met. */
+export const isPersonGoal = (condition: string): boolean => condition.trim().endsWith(PERSON_PROOF) || condition.trim().endsWith('check: stop and ask the person to approve before going on')
+
+/** What the assistant is sent for a person's item: work it to ready, stop, and leave the approval to GeckIt. */
+export const personTurn = (item: ChecklistItem): string => `Next on the checklist: ${[sentence(item.title), sentence(item.description ?? '')].filter((one) => one !== '').join(' - ')}. Work on it until it is ready for the person to review, then stop and say what is ready. Do not ask them to approve it: GeckIt asks them, and any change they want comes as their next message.`
+
 const proof = (item: ChecklistItem): string => {
   if (item.check === 'command' && item.command?.trim()) return `check: \`${item.command.trim()}\` exits with 0`
-  if (item.check === 'person') return 'check: stop and ask the person to approve before going on'
+  if (item.check === 'person') return PERSON_PROOF
   if (item.check === 'review') return 'check: show the evidence in the conversation'
   return ''
 }
@@ -166,10 +174,12 @@ export function taskPlan(all: readonly Checklist[], root: string, asked: GoalAsk
   return fallback === undefined ? {} : { checklist: copyChecklist(fallback) }
 }
 
-/** The same as one goal line, for a shortcut, which keeps a goal and not a checklist. */
-export function taskGoal(all: readonly Checklist[], root: string, asked: GoalAsked): string | undefined {
-  const plan = taskPlan(all, root, asked)
-  return plan.goal ?? (plan.checklist === undefined ? undefined : checklistGoal(plan.checklist) || undefined)
+/** A shortcut's checklist: its own, or the goal an older shortcut kept as one item. */
+export function shortcutChecklist(shortcut: { readonly checklist?: TaskChecklist | undefined; readonly goal?: string | undefined }): TaskChecklist | undefined {
+  const kept = shortcut.checklist === undefined ? undefined : taskChecklist({ ...shortcut.checklist, items: shortcut.checklist.items.map(({ state: _state, ...one }) => one) })
+  if (kept !== undefined && kept.items.length > 0) return kept
+  const goal = shortcut.goal?.trim() ?? ''
+  return goal === '' ? undefined : { items: [{ ...newItem(goal), id: 'goal' }] }
 }
 
 /** What one item says as a goal: the result, how to prove it, and its check. A single plain item reads as a plain goal. */
@@ -220,7 +230,8 @@ export const checklistProgress = (checklist: TaskChecklist): { readonly passed: 
 export function checklistContext(checklist: TaskChecklist): string {
   const items = filled(checklist.items)
   if (items.length < 2) return ''
-  return [`Checklist${checklist.from === undefined ? '' : ` (${checklist.from.name})`}, worked one item at a time: GeckIt sets each item as the goal in turn and ticks it when the goal is met.`, ...items.map((item, at) => `${String(at + 1)}. ${itemCondition(item)}`)].join('\n')
+  const person = items.some((item) => item.check === 'person') ? ' For an item the person approves, stop when it is ready and say so; do not ask them to approve it, GeckIt asks them and sends any changes as a message.' : ''
+  return [`Checklist${checklist.from === undefined ? '' : ` (${checklist.from.name})`}, worked one item at a time: GeckIt sets each item as the goal in turn and ticks it when the goal is met.${person}`, ...items.map((item, at) => `${String(at + 1)}. ${itemCondition(item)}`)].join('\n')
 }
 
 /** A task's checklist as kept: filled items only, a typed one plain. */

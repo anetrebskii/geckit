@@ -193,7 +193,7 @@ stateDiagram-v2
 |---|---|---|---|
 | Board | Opens New task; the folder is resolved automatically | Task form | The draft's folder, otherwise the available remembered folder, current folder or first available folder, in that order |
 | Task form | Chooses a folder | Task form | Its name and path; the choice is saved immediately |
-| Task form | Cancel, Escape or switches to Ask a question | Board or question form | The task form closes; its folder preference stays |
+| Task form | Cancel or Escape | Board | The task form closes; its folder preference stays |
 | Task form | Starts a task | Board/conversation | The task starts in the displayed folder; that folder is remembered |
 | App closed | Opens the app, then New task | Task form | The same available folder after settings are loaded |
 
