@@ -18,3 +18,7 @@ Keep a pending handoff on the live conversation when advancement is deferred by 
 - No renderer markup or styling changed. The running GeckIt backend has not been restarted, so live checklist activation remains unverified and requires loading the updated backend after active work has ended.
 
 Session: Codex `01a1e5d2-ed63-7b63-9dee-f2a35a7a336f`.
+
+## Development publication follow-up
+
+Publish run `44007288381` rejected the test stub's `null` result in typecheck: native `setGoal` returns a `CodexGoal`. The earlier local typecheck preceded that final stub edit, so it did not prove the committed test typechecked. The stub now returns an active goal with the protocol fields. All four typecheck configurations, all 284 session tests and changed-file ESLint pass after this correction. The product handoff code is unchanged.

@@ -1146,7 +1146,7 @@ describe('a task checklist', () => {
 
   it('starts a Codex checklist added during a working turn after that turn finishes', async () => {
     const id = 'codex:checklist-added-while-working'
-    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>().mockResolvedValue(null)
+    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>().mockResolvedValue({ threadId: id, objective: 'Deployed to development', status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1_000, updatedAt: 1_000 })
     const held = heldCodex(id, { setGoal })
     const built = build({ later: soon, codex: held.codex })
     try {
