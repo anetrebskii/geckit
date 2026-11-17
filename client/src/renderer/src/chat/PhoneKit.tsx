@@ -1,15 +1,30 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { useBack } from '../phone-back'
+import { menuSaid } from './places'
 
 /**
  * The parts every screen of the phone's tabs is built of, as iOS draws them:
  * a page with a large title that shrinks into the bar, grouped rows, a switch,
  * and a full-height sheet with its buttons in its own bar.
  */
+
+/** The phone's left menu, opened from the button at the start of every top-level page's bar. */
+export const PhoneMenu = createContext<{ readonly dot: 'asks' | 'unread' | undefined; readonly open: () => void } | undefined>(undefined)
+
+export function MenuButton(): React.JSX.Element | null {
+  const menu = useContext(PhoneMenu)
+  if (menu === undefined) return null
+  return (
+    <button type="button" className="phone-icon place-menu-button" aria-label={menuSaid(menu.dot)} onClick={menu.open}>
+      <Icon name="menu" size={24} />
+      {menu.dot === undefined ? null : <i className={`phone-menu-dot ${menu.dot}`} />}
+    </button>
+  )
+}
 
 export function Page({
   title,
@@ -33,7 +48,7 @@ export function Page({
       {onBack === undefined ? null : <EdgeBack onBack={onBack} />}
       <header className={`phone-bar${scrolled ? ' scrolled' : ''}`}>
         <div className="phone-bar-row">
-          {onBack === undefined ? null : (
+          {onBack === undefined ? <MenuButton /> : (
             <button type="button" className="phone-back" onClick={onBack}>
               <Icon name="left" size={22} />
               {back ?? 'Back'}
@@ -377,8 +392,8 @@ export function EdgeBack({ onBack }: { readonly onBack: () => void }): React.JSX
     <div
       className="phone-edge"
       onPointerDown={(event) => {
-        event.currentTarget.setPointerCapture(event.pointerId)
         drag.current = { x: event.clientX, at: Date.now(), moved: 0 }
+        event.currentTarget.setPointerCapture(event.pointerId)
         const talk = pane(event.currentTarget)
         if (talk !== null) talk.style.transition = 'none'
       }}
@@ -394,6 +409,7 @@ export function EdgeBack({ onBack }: { readonly onBack: () => void }): React.JSX
         drag.current = undefined
         const talk = pane(event.currentTarget)
         if (held === undefined || talk === null) return
+        held.moved = Math.max(held.moved, event.clientX - held.x)
         const fast = held.moved / Math.max(1, Date.now() - held.at) > 0.6
         talk.style.transition = ''
         if (held.moved > talk.offsetWidth / 3 || (fast && held.moved > 40)) {

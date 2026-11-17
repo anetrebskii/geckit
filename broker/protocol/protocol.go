@@ -31,6 +31,7 @@ type Request struct {
 	Places      []string       `json:"places,omitempty"`
 	Field       string         `json:"field,omitempty"`
 	Note        string         `json:"note,omitempty"`
+	User        string         `json:"user,omitempty"`
 	TaskID      string         `json:"taskId,omitempty"`
 	Ciphertext  *accept.Sealed `json:"ciphertext,omitempty"`
 	Lifetime    string         `json:"lifetime,omitempty"`
@@ -124,7 +125,7 @@ func (s *Server) do(r Request, w *writer) map[string]any {
 		if !secrets.NamePattern.MatchString(r.Name) || !secrets.Kinds[r.Kind] || r.RequestID == "" {
 			return map[string]any{"ok": false, "code": "unknown", "say": "The request's name, kind or id is not valid."}
 		}
-		key, err := s.P.Prepare(accept.Request{ID: r.RequestID, Name: r.Name, Kind: r.Kind, Places: r.Places, Field: r.Field, Note: r.Note, TaskID: r.TaskID})
+		key, err := s.P.Prepare(accept.Request{ID: r.RequestID, Name: r.Name, Kind: r.Kind, Places: r.Places, Field: r.Field, Note: r.Note, User: r.User, TaskID: r.TaskID})
 		if err != nil {
 			return refusal(err)
 		}
@@ -137,7 +138,21 @@ func (s *Server) do(r Request, w *writer) map[string]any {
 		if err != nil {
 			return map[string]any{"ok": false, "code": "expired", "say": "The request is unknown, expired or the value could not be opened."}
 		}
-		meta, err := s.M.Save(value, secrets.Meta{Name: req.Name, Kind: req.Kind, Places: req.Places, Field: req.Field, Note: req.Note, TaskID: req.TaskID, Lifetime: r.Lifetime, RequestID: req.ID})
+		user := req.User
+		if user == "" && len(r.User) <= 200 {
+			user = r.User
+		}
+		meta, err := s.M.Save(value, secrets.Meta{Name: req.Name, Kind: req.Kind, Places: req.Places, Field: req.Field, Note: req.Note, User: user, TaskID: req.TaskID, Lifetime: r.Lifetime, RequestID: req.ID})
+		if err != nil {
+			return refusal(err)
+		}
+		out := map[string]any{"ok": true, "name": meta.Name, "secret": meta}
+		if meta.ExpiresAt > 0 {
+			out["expiresAt"] = meta.ExpiresAt
+		}
+		return out
+	case "update":
+		meta, err := s.M.Update(r.Name, r.Places, r.Note, r.User, r.Lifetime)
 		if err != nil {
 			return refusal(err)
 		}

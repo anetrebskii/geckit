@@ -1,4 +1,5 @@
 import type { SharedLink } from './share'
+import type { ManagerQuotedReply } from './manager'
 
 export interface TelegramAccount {
   readonly id: number
@@ -49,8 +50,7 @@ export interface TelegramDecision {
   readonly choices: readonly { readonly label: string; readonly value: string }[]
 }
 
-export interface TelegramApi {
-  view(): Promise<TelegramView>
-  action(action: TelegramAction): Promise<TelegramView>
-  on(said: (view: TelegramView) => void): () => void
+export type ManagerTelegramReply = ManagerQuotedReply & {
+  readonly chatId: TelegramAccount['chatId']
+  readonly messageId: number
 }

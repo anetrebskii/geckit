@@ -24,17 +24,19 @@ Manager is one conversation today. Telegram, every channel and the Manager windo
 | Surface | What appears | When visible |
 |---|---|---|
 | Manager window, new list on the left | Threads: "GeckIt" first, then the others by last message. Each row: where it is from, its title, who wrote last, and a dot for working or needs your answer | Manager on, at least one channel thread exists |
-| Manager window, "Work" above the transcript | One list for the open thread: the workers it tracks. Each row: state dot and title; a click opens the worker in Chat. Collapsible, like Tasks in Chat; absent when the list is empty | A thread with at least one worker |
+| Manager window, "3 tasks" in the thread's subtitle | A button that opens the list of the workers the open thread tracks, as a popover. Each row: state dot, title and when anything last happened in it ("now", "12m", "3:40 PM", "Yesterday", as on the board), and under them its status and where it stands ("In progress · Waiting for your answer", "Blocked · Tests fail on CI"); a click opens the worker in Chat, and an unlink icon ("Stop tracking") at its end, shown on hover or keyboard focus and always on the phone. The button carries the attention dot while one of them needs an answer; absent when the thread tracks none | A thread with at least one worker |
+| Manager window, the unlink icon ("Stop tracking") on a worker row | This thread lets the worker go, as `sessions unfollow` does: no confirmation, the row leaves the list, and no thread gets its updates until one follows it | The open thread tracks that worker |
 | Manager window, thread row | After its dots, the number of its workers working now: "2" | The thread tracks a working worker |
-| Manager window, header | The thread's place and labels under its title: "Slack · #dev · Maria Ivanova", and "Open in Slack" when the channel gave a link | A channel thread is open |
+| Manager window, toolbar | One line above the transcript: the thread's title, under it its place and who wrote ("Slack · Maria Ivanova") or "Manager chat" for GeckIt, and the tasks button. At its end, icon buttons: Open in Slack (when the channel gave a link), Details, More, then Manager settings and Close. Manager's name and state stand above the thread list, level with it; with no thread list they start the toolbar | Manager window open |
 | Manager window, composer | Writing into a channel thread; under it "Manager's answer is also posted to Slack." | A channel thread is open and its channel is on |
-| Manager window header | All labels of the thread, as "key: value" lines, under its place line | A channel thread is open (with the window, after 021) |
+| Manager window, Details popover | The assistant, its model and how many workers Manager manages, then the thread's labels as "key: value" lines. Ids are here rather than in the toolbar | Details pressed |
+| Manager window, a band under the toolbar | Only when there is something to say: Manager off, paused or unavailable, the thread's error, a retry notice, the channel off, with their buttons | One of these holds |
 | Worker's conversation info on the phone (existing) | "Reports to: Slack · Maria Ivanova" and one row per label; no "Reports to" while no thread tracks it | Managed worker |
 | Board card hover on the computer | The same lines as a tooltip over the "From Manager" line: the computer has no conversation info panel for workers | Managed worker |
 | Board card and worker header (existing "From Manager" line) | "From Manager · Slack · Maria Ivanova" for work a channel thread tracks | Worker started by a channel thread |
 | Search (existing) | Label values are found: a Slack thread id or a person's name finds the conversations it labels. Work Manager starts from a thread inherits the thread's labels | Always |
 | Settings, Channels | Telegram (moved from the Manager settings in Team) and Slack as built-in rows; Slack's row line counts threads: "Connected · 3 threads" | Always |
-| Phone, Manager page (existing) | The same list of threads above the transcript, as a menu under the title | Manager on |
+| Phone, Manager page (existing) | The phone's own navigation bar, as on a conversation: "‹ Tasks" back in the accent colour, "Manager" centred with its state under it, settings at the end. Under it the thread toolbar, whose title is the open thread's name with a chevron that opens the thread menu | Manager on |
 
 ```mermaid
 block-beta
@@ -168,8 +170,11 @@ stateDiagram-v2
 - List heading: "Threads"
 - Main thread row: "GeckIt"
 - Channel thread row, first line: its title (the channel's, or the first message shortened); second line: "Slack · Maria Ivanova" (place and who wrote last)
-- Header labels line: "Slack · #dev · Maria Ivanova"
-- Link: "Open in Slack" (the channel's name)
+- Toolbar subtitle: "Slack · Maria Ivanova"; GeckIt's: "Manager chat"
+- Tasks button: "1 task", "3 tasks"; popover title "Tracked by this thread"
+- Worker row action: an unlink icon, tooltip "Stop tracking", named "Stop tracking <task title>"; while it works, a spinner in its place; if it fails, the reason under the list
+- Toolbar buttons (tooltips and names): "Open in Slack" (the channel's name), "Details", "More"
+- Details rows: "Assistant", "Model" ("Default" when none was chosen), "Managed workers", then the labels
 - Composer note: "Manager's answer is also posted to Slack."
 - Channel off: "Slack is off. Turn it on in Settings, Channels to reply in this thread."
 - Not allowed: "Slack may no longer talk to Manager. Allow it in Settings, Channels to reply in this thread."
@@ -195,6 +200,8 @@ stateDiagram-v2
 - **Two messages in one thread at once:** queued in the thread, one turn at a time, as Manager does today.
 - **Many threads at once:** all run; each row shows its working dot.
 - **The tracking thread asks to follow again:** nothing changes; it already gets every update.
+- **Stop tracking from the window while another thread already took the worker:** nothing changes, and the reason is said under the list.
+- **Tracking again after Stop tracking:** ask Manager in any thread to follow it; the window has no Follow button, since a worker no thread tracks is not in any list.
 - **A thread asks to unfollow a worker it does not track:** nothing changes; Manager says which thread tracks it.
 - **No thread tracks a worker:** its updates wake no thread; a question it raises for a native permission still shows in GeckIt's Manager chat.
 - **Channel restarts or reconnects:** the key maps to the same thread, nothing new is created.
@@ -222,6 +229,7 @@ stateDiagram-v2
 | Limit Manager turns at once | No limit | Alex, 2026-11-05: a cap of 3 had no reason a person waiting in Slack would accept |
 | Slack mapping: per Slack thread or per channel | Per Slack thread; a top-level message starts one | Alex: "один thread, это одна сессия менеджера" |
 | Slack: a mention in a thread that began without the bot | One Manager thread for the whole Slack thread, with everything written before the mention | Alex, 2026-11-06: the whole information from the thread is sent |
+| Stop tracking in the window: confirm first? | No | The same as unfollow, which has no card (2026-11-06); nothing is lost, the worker goes on and can be followed again |
 | Product card before attaching or following an existing task | None for attach, follow and unfollow | Alex, 2026-11-06 via Telegram: turn off confirmations for following and the like; asking to watch a Slack task needed an extra attach card |
 | Telegram mapping: one for everything or per chat | Per chat (private chat and each group) | Alex: "в Telegram одна сессия на один чат" |
 | Who keys and labels threads: GeckIt or the channel | The channel, through its API | Each place has its own idea of a thread; GeckIt cannot know it |

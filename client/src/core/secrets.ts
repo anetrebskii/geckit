@@ -3,9 +3,11 @@ import { hostname } from 'node:os'
 
 import { VIEWER } from '../shared/share'
 import { keyHashOf, type SealedValue } from '../shared/secret-seal'
+import { SECRET_NAME, placesValid, type SecretEntry } from '../shared/secrets'
+
+export { SECRET_NAME, placesValid } from '../shared/secrets'
 import { BrokerRefusal, type BrokerOps, type RunChunk, type RunRequest, type SecretKind, type SecretLifetime, type SecretMetadata } from './broker'
 
-export const SECRET_NAME = /^[a-z0-9][a-z0-9-]{1,47}$/
 export const SECRET_KINDS: readonly SecretKind[] = ['website', 'http', 'command', 'ssh']
 const LINK_LIFE = 15 * 60_000
 const POLL = 3_000
@@ -16,6 +18,7 @@ export interface SecretAsk {
   readonly places: readonly string[]
   readonly field?: string
   readonly note?: string
+  readonly user?: string
   readonly taskId: string
   readonly taskTitle?: string
   readonly replace?: boolean
@@ -46,16 +49,6 @@ export const lifetimeSaid = (one: Pick<SecretMetadata, 'lifetime' | 'expiresAt'>
   return left >= 120 ? `expires in ${Math.round(left / 60)} h` : `expires in ${left} min`
 }
 
-export function placesValid(kind: SecretKind, places: readonly string[]): string | undefined {
-  if (places.length === 0) return 'Say where the secret may be used with --for.'
-  for (const one of places) {
-    if (kind === 'website' && !/^https?:\/\/[^/\s]+$/.test(one)) return `${one} is not a site: give it as https://example.com.`
-    if (kind === 'http' && !/^(\*\.)?[a-z0-9.-]+(:\d+)?$/i.test(one)) return `${one} is not a host: give it as api.example.com or *.example.com.`
-    if (kind === 'command' && !/^[^\s/]+$|^\/\S+$/.test(one)) return `${one} is not a program: give its name, such as psql, or its full path.`
-    if (kind === 'ssh' && !/^[a-z0-9.*?-]+$/i.test(one)) return `${one} is not an SSH host pattern.`
-  }
-  return undefined
-}
 
 /** Requests, collects and manages secrets for conversations; values only ever pass between the page and the broker, sealed. */
 let running: Secrets | undefined
@@ -79,8 +72,8 @@ export class Secrets {
     const id = token()
     const linkKey = token()
     const owner = token()
-    const { brokerKey } = await broker.prepare({ requestId: id, name: ask.name, kind: ask.kind, places: ask.places, ...(ask.field === undefined ? {} : { field: ask.field }), ...(ask.note === undefined ? {} : { note: ask.note }), taskId: ask.taskId })
-    const card = { name: ask.name, kind: ask.kind, places: ask.places, note: ask.note ?? '', field: ask.field ?? '', computer: this.host.computer?.() ?? hostname().replace(/\.local$/, ''), task: (ask.taskTitle ?? '').slice(0, 80), brokerKey }
+    const { brokerKey } = await broker.prepare({ requestId: id, name: ask.name, kind: ask.kind, places: ask.places, ...(ask.field === undefined ? {} : { field: ask.field }), ...(ask.note === undefined ? {} : { note: ask.note }), ...(ask.user === undefined || ask.user === '' || ask.kind !== 'website' ? {} : { user: ask.user }), taskId: ask.taskId })
+    const card = { name: ask.name, kind: ask.kind, places: ask.places, note: ask.note ?? '', field: ask.field ?? '', user: ask.kind === 'website' ? ask.user ?? '' : '', computer: this.host.computer?.() ?? hostname().replace(/\.local$/, ''), task: (ask.taskTitle ?? '').slice(0, 80), brokerKey }
     const opened = await (this.host.relay ?? postRelay)({ action: 'open', id, linkKey, owner, card })
     if (opened.status !== 200) throw new BrokerRefusal('relay', `The secret link could not be made (${String(opened.json['error'] ?? opened.status)}).`)
     const expiresAt = Number(opened.json['expiresAt'] ?? this.now() + LINK_LIFE)
@@ -96,10 +89,11 @@ export class Secrets {
       const state = answer.json['state']
       if (state === 'saved') {
         try {
-          const kept = await this.host.broker().accept({ requestId: id, ciphertext: answer.json['ciphertext'] as SealedValue, lifetime: answer.json['lifetime'] as SecretLifetime })
+          const typed = ask.kind === 'website' && (ask.user ?? '') === '' && typeof answer.json['user'] === 'string' ? answer.json['user'].trim().slice(0, 200) : ''
+          const kept = await this.host.broker().accept({ requestId: id, ciphertext: answer.json['ciphertext'] as SealedValue, lifetime: answer.json['lifetime'] as SecretLifetime, ...(typed === '' ? {} : { user: typed }) })
           const device = String(answer.json['device'] ?? '').slice(0, 80)
           const until = kept.expiresAt === undefined ? lifetimeSaid({ lifetime: answer.json['lifetime'] as SecretLifetime }) : `expires ${new Date(kept.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-          this.host.notify(ask.taskId, `${ask.name} was entered`, `${ask.name} is ready (${ask.kind}, ${ask.places.join(', ')}), ${until}.${device === '' ? '' : ` Entered from ${device}.`}`)
+          this.host.notify(ask.taskId, `${ask.name} was entered`, `${ask.name} is ready (${ask.kind}, ${ask.places.join(', ')}${(ask.user ?? '') !== '' ? ` as ${ask.user ?? ''}` : typed === '' ? '' : ` as ${typed}`}), ${until}.${device === '' ? '' : ` Entered from ${device}.`}`)
         } catch (error) {
           this.host.notify(ask.taskId, `${ask.name} was not saved`, error instanceof Error ? error.message : String(error))
         }
@@ -109,6 +103,37 @@ export class Secrets {
       this.waiting.set(id, setTimeout(() => { void tick() }, POLL))
     }
     this.waiting.set(id, setTimeout(() => { void tick() }, POLL))
+  }
+
+  private async entryChecked(entry: SecretEntry): Promise<SecretMetadata | undefined> {
+    if (!SECRET_NAME.test(entry.name)) throw new BrokerRefusal('name', 'Name the secret with lowercase letters, digits and hyphens, such as openai-key.')
+    if (!SECRET_KINDS.includes(entry.kind)) throw new BrokerRefusal('kind', 'Choose what the secret is used for.')
+    const existing = (await this.host.broker().list()).secrets.find((one) => one.name === entry.name)
+    if (!entry.editing && existing !== undefined) throw new BrokerRefusal('name', `A secret named ${entry.name} already exists. Edit it instead.`)
+    if (entry.editing && existing === undefined) throw new BrokerRefusal('unknown', `There is no secret ${entry.name}.`)
+    if (existing !== undefined && existing.kind !== entry.kind) throw new BrokerRefusal('kind', `${entry.name} is used for ${existing.kind}; remove it and add it again to change that.`)
+    if (entry.lifetime === 'task' && existing?.lifetime !== 'task') throw new BrokerRefusal('task', 'A secret added in Settings belongs to no conversation, so it cannot be kept until a task is done.')
+    const wrong = placesValid(entry.kind, entry.places)
+    if (wrong !== undefined) throw new BrokerRefusal('place', wrong)
+    return existing
+  }
+
+  /** Readies the broker for a value Settings seals itself; the value never passes through here. */
+  async prepareEntry(entry: SecretEntry): Promise<{ readonly requestId: string; readonly brokerKey: string }> {
+    const existing = await this.entryChecked(entry)
+    const requestId = token()
+    const { brokerKey } = await this.host.broker().prepare({ requestId, name: entry.name, kind: entry.kind, places: entry.places, ...(existing?.field === undefined ? {} : { field: existing.field }), ...(entry.note === '' ? {} : { note: entry.note }), ...(entry.user === '' || entry.kind !== 'website' ? {} : { user: entry.user }), taskId: existing?.taskId ?? '' })
+    return { requestId, brokerKey }
+  }
+
+  saveEntry(requestId: string, ciphertext: SealedValue, lifetime: SecretLifetime): Promise<{ name: string; expiresAt?: number }> {
+    return this.host.broker().accept({ requestId, ciphertext, lifetime })
+  }
+
+  /** Changes where and how long a secret is kept, keeping its value. */
+  async updateEntry(entry: SecretEntry): Promise<{ name: string; expiresAt?: number }> {
+    await this.entryChecked({ ...entry, editing: true })
+    return this.host.broker().update({ name: entry.name, places: entry.places, note: entry.note, user: entry.kind === 'website' ? entry.user : '', lifetime: entry.lifetime })
   }
 
   list(): Promise<{ secrets: SecretMetadata[] }> { return this.host.broker().list() }

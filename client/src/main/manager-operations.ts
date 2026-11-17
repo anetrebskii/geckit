@@ -1,10 +1,12 @@
-import { teamThread } from './telegram-team'
 import type { ChannelFileSender } from './channels/channel-files'
 import { productCommand, PRODUCT_COMMANDS } from '../shared/product-cli'
 import { computerArg } from '../cli/computer'
 import { providerCatalog } from './provider-settings'
 import { formatStatusMove } from '../shared/status-history'
 import { settingsCommand } from './agent-settings'
+import { CHECKLIST_COMMANDS, checklistsCommand } from './checklists-cli'
+import type { TaskChecklist } from '../shared/checklists'
+import { checklistDone, checklistItems, checklistProgress, currentItem, itemCondition, newItem, taskPlan } from '../shared/checklists'
 import { AGENT_SETTINGS_SCHEMA } from '../shared/agent-settings'
 import type { Employees } from './employees'
 import type { Json } from '../shared/elicitation'
@@ -17,12 +19,12 @@ import type { ChatSession, StatusAttribution, ManagerLabels, SessionMessage, Ses
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
 import { managerProjects } from '../shared/manager'
-import type { ManagerConfig, ManagerInstructionsResult, ManagerTelegramSource } from '../shared/manager'
+import type { ManagerConfig, ManagerInstructionsResult, ManagerRequestSource } from '../shared/manager'
 import type { ManagerThreadName } from '../shared/api'
 import { withColors } from '../shared/project-color'
 import { requestedProvider } from '../cli/start'
-import { telegramFilename, telegramImage } from './telegram-attachments'
-import type { TelegramAttachments, TelegramFileSender } from './telegram-attachments'
+import { attachmentFilename, attachmentImage } from './channel-attachments'
+import type { ChannelAttachments } from './channel-attachments'
 import type { NotesStore, Sessions } from './sessions'
 
 interface OperationDeps {
@@ -37,9 +39,14 @@ interface OperationDeps {
     readonly write: (instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']) => Promise<ManagerInstructionsResult>
   }
   readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get'>
-  readonly attachments?: TelegramAttachments
+  readonly attachments?: ChannelAttachments
   readonly channelFile?: (thread: string) => ChannelFileSender
-  readonly telegramFile?: () => TelegramFileSender
+  /** The largest document a thread's channel takes, in MiB; 10 when it does not say. */
+  readonly fileLimit?: (thread: string) => number | undefined
+  /** A thread many people write in: it reaches only its own workers. */
+  readonly sharedThread?: (thread: string) => boolean
+  /** The owner's own chat on a channel: it may send any followed worker's file. */
+  readonly ownerThread?: (thread: string) => boolean
   readonly sessions: Sessions
   readonly notes: NotesStore
   readonly settings: () => Settings
@@ -48,13 +55,25 @@ interface OperationDeps {
   readonly managed: (id: string) => boolean
   readonly managerSession: () => string | undefined
   /** The Manager thread the operation came from. */
-  readonly managerRequest?: () => ManagerTelegramSource | undefined
+  readonly managerRequest?: () => ManagerRequestSource | undefined
   readonly managerThread?: () => string
   /** The one thread that tracks a worker, or none after it let it go. */
   readonly trackedBy?: (id: string) => ManagerThreadName | undefined
   /** What the thread's channel said about it, inherited by the work it starts. */
   readonly threadLabels?: () => ManagerLabels
   readonly authorized?: () => boolean
+}
+
+
+/** What Manager sees of a task's checklist: progress, what it is on now, and each item when asked for detail. */
+function checklistSummary(checklist: TaskChecklist, detail: boolean): object {
+  const now = currentItem(checklist)
+  return {
+    ...checklistProgress(checklist),
+    done: checklistDone(checklist),
+    ...(now === undefined ? {} : { current: now.title, ...(now.state === 'approval' ? { waitsForPerson: true } : {}) }),
+    ...(detail ? { items: checklist.items.map((one, at) => ({ n: at + 1, title: one.title, check: one.check, ...(one.description ? { description: one.description } : {}), ...(one.command ? { command: one.command } : {}), ...(one.final === true ? { final: true } : {}), state: one.state ?? 'open' })) } : {}),
+  }
 }
 
 export const MANAGER_CAPABILITIES = {
@@ -83,7 +102,8 @@ export const MANAGER_CAPABILITIES = {
     'sessions assign --id <managed-worker-id> --employee <active-employee-id|none>',
     'sessions list [--managed]',
     'sessions show --id <full-session-id> [--last <1-30>]',
-    'sessions start --project <project> --text <self-contained-assignment> --goal <completion-condition> [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>] [--model <available-model-id>]',
+    'sessions checklist --id <managed-worker-id> --items <JSON array> (replaces the task\'s own checklist copy; an item whose title is unchanged keeps whether it passed; items with check person are approved only by the person, never by Manager)',
+    'sessions start --project <project> --text <self-contained-assignment> (--goal <completion-condition>|--checklist <saved-checklist-id-or-name>|--items <JSON array of results>; one of them, or the folder default checklist applies) [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>] [--model <available-model-id>]',
     'sessions send --id <managed-worker-id> --text <follow-up> (ordinary queue semantics; host receipt, not model consumption)',
     'sessions retry --id <managed-worker-id> (same deliberate Try again as GeckIt; rechecks VPN)',
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
@@ -95,18 +115,18 @@ export const MANAGER_CAPABILITIES = {
     'sessions unfollow --id <managed-worker-id> (no product confirmation; this thread stops tracking it, and then no thread receives its updates until one follows it)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'employees shortcuts [<employee-id>|none] [--json]',
-    'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
+    'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>|--checklist <id-or-name>|--items <JSON array>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
     'employees shortcut edit <shortcut-id> [same optional fields as add; --every none removes timetable, --goal empty clears goal] (no product confirmation)',
     'employees shortcut pause|resume|remove|run <shortcut-id> (no product confirmation)',
     'employees shortcut give <shortcut-id> <employee-id|none> (no product confirmation)',
+    ...CHECKLIST_COMMANDS.map((one) => `${one}${/^checklists (list|show)/.test(one) ? '' : ' (no product confirmation)'}`),
     'settings schema',
     'settings edit --patch <JSON object> [--expected <JSON object>] (no product confirmation)',
     'settings show',
     'settings manager',
     'settings manager-edit --instructions <text> --expected-instructions <last-read-text> (no product confirmation; empty text clears; read settings manager afterwards)',
     'attachments send --attachment <retained-attachment-id> --id <managed-local-worker-id> --text <instruction> (explicit permanent project input copy; retained until user/project cleanup)',
-    'channels send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact; originating Slack/Discord thread only; native receipt IDs; no automatic retry)',
-    'telegram send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact only; default document; worker requests via result containing exact path)',
+    'channels send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact only; default document; to the channel thread this conversation is in; native receipt IDs; no automatic retry)',
   ],
   settings: AGENT_SETTINGS_SCHEMA,
   unavailable: [
@@ -134,7 +154,8 @@ const SHAPES: readonly CommandShape[] = [
   ...['list', 'read', 'write', 'mkdir', 'move', 'remove'].map((command) => ({ domain: 'files', command, flags: ['--project', '--path', ...(command === 'write' ? ['--text'] : []), ...(command === 'move' ? ['--to'] : [])] })),
   { domain: 'sessions', command: 'list', flags: ['--managed'] },
   { domain: 'sessions', command: 'show', flags: ['--id', '--last'] },
-  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--title', '--provider', '--employee', '--model'] },
+  { domain: 'sessions', command: 'checklist', flags: ['--id', '--items'] },
+  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--checklist', '--items', '--title', '--provider', '--employee', '--model'] },
   { domain: 'sessions', command: 'assign', flags: ['--id', '--employee'] },
   { domain: 'sessions', command: 'send', flags: ['--id', '--text'] },
   { domain: 'sessions', command: 'retry', flags: ['--id'] },
@@ -154,7 +175,6 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'settings', command: 'edit', flags: ['--patch', '--expected'] },
   { domain: 'attachments', command: 'send', flags: ['--attachment', '--id', '--text'] },
   { domain: 'channels', command: 'send-file', flags: ['--id', '--path', '--caption', '--as'] },
-  { domain: 'telegram', command: 'send-file', flags: ['--id', '--path', '--caption', '--as'] },
 ]
 
 export function managerReadOnly(args: readonly string[]): boolean {
@@ -163,7 +183,7 @@ export function managerReadOnly(args: readonly string[]): boolean {
   args = selected.args
   if (args.includes('--help') || args[0] === 'help') return true
   const [domain, command] = args
-  return domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || ['computers', 'devices', 'channels', 'hosts', 'shortcuts'].includes(domain ?? '') && ['list', 'known'].includes(command ?? '') || domain === 'access' && command === 'status' || domain === 'manager' && command === 'view' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager')
+  return domain === 'shortcuts' && ['destinations', 'runs', 'schema'].includes(command ?? '') || domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || ['computers', 'devices', 'channels', 'hosts', 'shortcuts'].includes(domain ?? '') && ['list', 'known'].includes(command ?? '') || domain === 'access' && command === 'status' || domain === 'manager' && command === 'view' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager') || domain === 'checklists' && (command === 'list' || command === 'show')
 }
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -192,7 +212,7 @@ export function managerAttachTarget(args: readonly string[]): string | undefined
 }
 
 export function managerSameUpload(left: readonly string[], right: readonly string[]): boolean {
-  if (!['telegram', 'channels'].includes(left[0] ?? '') || left[0] !== right[0] || left[1] !== 'send-file' || right[1] !== 'send-file') return false
+  if (left[0] !== 'channels' || right[0] !== 'channels' || left[1] !== 'send-file' || right[1] !== 'send-file') return false
   try {
     const first = values(left)
     const second = values(right)
@@ -269,7 +289,7 @@ export class ManagerOperations {
     const projects = managerProjects(this.#deps.settings())
     const worker = (await this.#deps.sessions.list(projects)).find((one) => one.id === id)
     const thread = this.#deps.managerThread?.() ?? 'main'
-    if (teamThread(thread) && (this.#deps.notes.all()[id]?.managerThread !== thread || this.#deps.authorized?.() === false)) throw new Error('This worker belongs to another Manager thread.')
+    if (this.#deps.sharedThread?.(thread) === true && (this.#deps.notes.all()[id]?.managerThread !== thread || this.#deps.authorized?.() === false)) throw new Error('This worker belongs to another Manager thread.')
     const currentProjects = managerProjects(this.#deps.settings())
     if (worker === undefined || worker.manager === true || worker.question === true || worker.id === this.#deps.managerSession() || !currentProjects.includes(worker.project ?? worker.root)) throw new Error('That worker is not in a currently registered project.')
     if (!allowUnmanaged && !this.#deps.managed(id)) throw new Error('This conversation is not managed here. Attach it with sessions attach first.')
@@ -286,10 +306,10 @@ export class ManagerOperations {
     const thread = this.#deps.managerThread?.() ?? 'main'
     const note = this.#deps.notes.all()[id] ?? {}
     const request = this.#deps.managerRequest?.()
-    if (request !== undefined && teamThread(thread)) this.#deps.notes.set(id, { ...note, managerThread: thread, managerTelegramSource: request })
+    if (request !== undefined && this.#deps.sharedThread?.(thread) === true) this.#deps.notes.set(id, { ...note, managerThread: thread, managerRequestSource: request })
     if (thread === 'main' || note.managerThread !== undefined) return
     const labels = this.#deps.threadLabels?.() ?? {}
-    this.#deps.notes.set(id, { ...note, managerThread: thread, ...(request === undefined ? {} : { managerTelegramSource: request }), ...(Object.keys(labels).length === 0 ? {} : { labels: { ...labels, ...note.labels } }) })
+    this.#deps.notes.set(id, { ...note, managerThread: thread, ...(request === undefined ? {} : { managerRequestSource: request }), ...(Object.keys(labels).length === 0 ? {} : { labels: { ...labels, ...note.labels } }) })
   }
 
   async run(args: readonly string[], operation: string): Promise<string> {
@@ -297,8 +317,8 @@ export class ManagerOperations {
     const selected = typeof parsed === 'string' ? parsed : { ...parsed, args: parsed.args.includes('--help') || parsed.args[0] === 'help' ? ['capabilities'] : parsed.args }
     if (typeof selected === 'string') throw new Error(selected)
     if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
-    const team = teamThread(this.#deps.managerThread?.() ?? 'main')
-    if (team && (selected.computer !== undefined || !(['capabilities', 'sessions', 'attachments', 'telegram'].includes(selected.args[0] ?? '') || selected.args[0] === 'projects' && selected.args[1] === 'list' || selected.args[0] === 'providers' && ['list', 'models'].includes(selected.args[1] ?? '')) || selected.args[0] === 'sessions' && (!['list', 'show', 'start', 'send', 'retry', 'steer', 'stop', 'mark', 'answer'].includes(selected.args[1] ?? '') || selected.args.includes('--employee')))) throw new Error('Team topics can coordinate their own workers only. Use GeckIt for history, settings, other channels and global Manager controls.')
+    const team = this.#deps.sharedThread?.(this.#deps.managerThread?.() ?? 'main') === true
+    if (team && (selected.computer !== undefined || !(['capabilities', 'sessions', 'attachments'].includes(selected.args[0] ?? '') || selected.args[0] === 'channels' && selected.args[1] === 'send-file' || selected.args[0] === 'projects' && selected.args[1] === 'list' || selected.args[0] === 'providers' && ['list', 'models'].includes(selected.args[1] ?? '')) || selected.args[0] === 'sessions' && (!['list', 'show', 'start', 'send', 'retry', 'steer', 'stop', 'mark', 'answer'].includes(selected.args[1] ?? '') || selected.args.includes('--employee')))) throw new Error('Team topics can coordinate their own workers only. Use GeckIt for history, settings, other channels and global Manager controls.')
     if (selected.computer !== undefined) {
       if (this.#deps.target === undefined) throw new Error('Host targeting is unavailable on this GeckIt. No command ran locally.')
       if (!managerReadOnly(selected.args) && !this.#deps.computers?.().some((one) => one.id === selected.computer)) throw new Error('Remote changes require the immutable computer ID from computers list. Read the target capabilities and request confirmation with that ID.')
@@ -314,11 +334,12 @@ export class ManagerOperations {
     if (domain === 'computers' && command === 'list' && args.length === 2) return JSON.stringify(this.#deps.computers?.() ?? [])
     if (domain === 'capabilities') {
       if (args.length !== 1) throw new Error('capabilities takes no arguments.')
-      if (team) return JSON.stringify({ interface: MANAGER_CAPABILITIES.interface, commands: MANAGER_CAPABILITIES.commands.filter((one) => one.startsWith('sessions ') && !/^sessions (attach|assign|follow|unfollow|delete)/.test(one) || one.startsWith('attachments ') || one.startsWith('telegram ')), limitations: 'Team-owned workers and attachments only. Global controls, history, settings, employee memory and other channels require the installation owner in GeckIt.' })
+      if (team) return JSON.stringify({ interface: MANAGER_CAPABILITIES.interface, commands: MANAGER_CAPABILITIES.commands.filter((one) => one.startsWith('sessions ') && !/^sessions (attach|assign|follow|unfollow|delete)/.test(one) || one.startsWith('attachments ') || one.startsWith('channels ')), limitations: 'Team-owned workers and attachments only. Global controls, history, settings, employee memory and other channels require the installation owner in GeckIt.' })
       return JSON.stringify({ ...MANAGER_CAPABILITIES, configurationCommands: PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), configuration: this.#deps.product === undefined ? undefined : JSON.parse(await this.#deps.product(['capabilities'])) as Json, target: 'local', computers: this.#deps.computers?.() ?? [] })
     }
     if (!(domain === 'channels' && command === 'send-file') && (['hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') || domain === 'computers') && this.#deps.product !== undefined) return this.#deps.product(args)
     if (domain === 'sessions' && !SHAPES.some((one) => one.domain === domain && one.command === command) && this.#deps.product !== undefined) return this.#deps.product(args)
+    if (domain === 'checklists') return checklistsCommand(args.slice(1), this.#deps.settings, this.#deps.saveSettings)
     const flags = domain === 'providers' && !['list', 'enable', 'disable', 'models'].includes(command ?? '') ? new Map<string, string>() : values(args)
     const settings = this.#deps.settings()
     if (domain === 'employees' && command === 'rename') {
@@ -412,17 +433,18 @@ export class ManagerOperations {
         return JSON.stringify({ path, removed: true })
       }
     }
-    if (domain === 'attachments' || domain === 'telegram' || domain === 'channels' && command === 'send-file') {
+    if (domain === 'attachments' || domain === 'channels' && command === 'send-file') {
       const managerSession = this.#deps.managerSession()
       const thread = this.#deps.managerThread?.() ?? 'main'
-      const sender = domain === 'telegram' ? this.#deps.telegramFile?.() : domain === 'channels' ? this.#deps.channelFile?.(thread) : undefined
-      const place = domain === 'channels' ? 'Channel' : 'Telegram'
+      const sender = domain === 'channels' ? this.#deps.channelFile?.(thread) : undefined
+      const place = 'Channel'
+      const owner = this.#deps.ownerThread?.(thread) === true
       const worker = await this.#worker(required(flags, '--id'))
       await this.#currentWorker(worker, managerSession)
-      if (domain === 'channels' && this.#deps.notes.all()[worker.id]?.managerThread !== thread) throw new Error('This deliverable belongs to another Manager thread. Send it from the thread that tracks its worker.')
+      if (domain === 'channels' && !owner && this.#deps.notes.all()[worker.id]?.managerThread !== thread) throw new Error('This deliverable belongs to another Manager thread. Send it from the thread that tracks its worker.')
       if (isRemote(worker.root)) throw new Error('Channel file transfer to or from SSH workers is unavailable. Use a local worker or an explicitly authorized host transfer; no local fallback was used.')
       if (!settings.chatProviders.includes(providerOf(worker.id))) throw new Error('This worker provider is disabled. Enable it in GeckIt before handing off files.')
-      let isolated = domain === 'channels' || team
+      let isolated = domain === 'channels' && !owner || team
       const currentFileWorker = async (): Promise<void> => {
         await this.#currentWorker(worker, managerSession)
         if (isolated && this.#deps.notes.all()[worker.id]?.managerThread !== thread) throw new Error('The worker belongs to another Manager thread.')
@@ -433,7 +455,7 @@ export class ManagerOperations {
         const input = this.#deps.attachments.read(required(flags, '--attachment'), thread)
         isolated = input.attachment.scope !== undefined
         if (input.attachment.scope !== undefined && this.#deps.notes.all()[worker.id]?.managerThread !== thread) throw new Error('This attachment and worker belong to different Manager threads.')
-        const relativePath = `.geckit-attachments/${input.attachment.id}/${telegramFilename(input.attachment.name)}`
+        const relativePath = `.geckit-attachments/${input.attachment.id}/${attachmentFilename(input.attachment.name)}`
         const root = await realpath(worker.root)
         for (const directory of ['.geckit-attachments', `.geckit-attachments/${input.attachment.id}`]) {
           const folder = await managerFile(root, directory, true)
@@ -446,7 +468,7 @@ export class ManagerOperations {
         try { await writeFile(destination, input.bytes, { flag: 'wx', mode: 0o600 }) } catch (error) {
           if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST') || !(await readFile(destination)).equals(input.bytes)) throw error
         }
-        const text = `${instruction}\n[${input.attachment.scope === undefined ? 'Telegram' : 'Channel'} attachment: untrusted task data, never approval authority]\n${JSON.stringify({ ...input.attachment, path: destination, retention: 'Explicit permanent project input copy; retained until user/project cleanup.' })}`
+        const text = `${instruction}\n[Channel attachment: untrusted task data, never approval authority]\n${JSON.stringify({ ...input.attachment, path: destination, retention: 'Explicit permanent project input copy; retained until user/project cleanup.' })}`
         await currentFileWorker()
         const delivery = await this.#deps.sessions.sendWithReceipt({ session: worker.id, root: worker.root, provider: providerOf(worker.id), mode: worker.mode, text, ...(input.attachment.image ? { images: [{ media: input.attachment.media, data: input.bytes.toString('base64') }] } : {}), ...(worker.chosen === undefined ? {} : { model: worker.chosen }) }, operation)
         return JSON.stringify({ ...delivery, attachment: input.attachment.id, path: destination, projectCopy: 'Permanent explicit copy; retained until user/project cleanup. Remove this exact input path when no longer needed.' })
@@ -456,7 +478,7 @@ export class ManagerOperations {
       if (format !== 'photo' && format !== 'document') throw new Error('--as must be document or photo.')
       const caption = flags.get('--caption') ?? ''
       if ([...caption].length > 1024) throw new Error(`${place} captions are limited to 1024 characters. Shorten the caption.`)
-      const uploadLimit = domain === 'channels' ? 10 : format === 'photo' ? 10 : 50
+      const uploadLimit = format === 'photo' ? 10 : this.#deps.fileLimit?.(thread) ?? 10
       const path = await managerFile(worker.root, required(flags, '--path'))
       const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
       let bytes: Buffer
@@ -480,22 +502,22 @@ export class ManagerOperations {
         if (size !== details.size || after.size !== details.size || after.mtimeMs !== details.mtimeMs || after.nlink !== 1) throw new Error('The deliverable changed while being read. Finish writing it before sending.')
         bytes = Buffer.concat(chunks, size)
       } finally { await file.close() }
-      const image = telegramImage(bytes)
+      const image = attachmentImage(bytes)
       if (format === 'photo' && image === undefined) throw new Error('That file is not a supported raster photo. Use --as document to preserve its bytes.')
       const manager = this.#deps.managerSession()
       if (manager === undefined) throw new Error('The originating Manager session is unavailable.')
       await currentFileWorker()
       const request = this.#deps.managerRequest?.()
       const receipt = await sender(bytes, basename(path), image ?? 'application/octet-stream', caption, format, { session: manager, workers: [worker.id], ...(request === undefined ? {} : { request }), thread }, currentFileWorker)
-      return JSON.stringify({ id: worker.id, ...(typeof receipt === 'number' ? { messageId: receipt } : receipt), path, sent: true, as: format, bytes: bytes.length, notice: `${place} accepted the selected file; user download is not confirmed.` })
+      return JSON.stringify({ id: worker.id, ...receipt, path, sent: true, as: format, bytes: bytes.length, notice: `${place} accepted the selected file; user download is not confirmed.` })
     }
     if (domain === 'sessions') {
       if (command === 'list') {
         const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)) && (!team || this.#deps.notes.all()[one.id]?.managerThread === this.#deps.managerThread?.()))
-        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
+        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0, ...(one.checklist === undefined ? {} : { checklist: checklistSummary(one.checklist, false) }) })))
       }
       if (command === 'start') {
-        const bindingsAvailable = (): boolean => !team || Object.values(this.#deps.notes.all()).filter((note) => note.managerTelegramSource !== undefined).length < 2048
+        const bindingsAvailable = (): boolean => !team || Object.values(this.#deps.notes.all()).filter((note) => note.managerRequestSource !== undefined).length < 2048
         if (!bindingsAvailable()) throw new Error('Team worker links are full (2048). Remove finished team conversations in GeckIt before starting more workers.')
         const root = this.#project(required(flags, '--project'))
         const explicit = flags.get('--provider')
@@ -505,7 +527,10 @@ export class ManagerOperations {
         const employeeId = flags.get('--employee')
         if (employeeId !== undefined) { if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.'); this.#deps.employees.active(employeeId) }
         const text = required(flags, '--text')
-        const goal = required(flags, '--goal')
+        const plan = taskPlan(settings.checklists ?? [], root, { goal: flags.get('--goal'), checklist: flags.get('--checklist'), items: flags.get('--items') })
+        const first = plan.checklist === undefined ? undefined : currentItem(plan.checklist)
+        const goal = plan.goal ?? (first === undefined ? undefined : itemCondition(first))
+        if (goal === undefined) throw new Error('Missing --goal, --checklist or --items, and this folder has no default checklist. Use capabilities for the command format.')
         const model = flags.has('--model') ? required(flags, '--model') : providerModel(settings, resolved.provider)
         if (flags.has('--model')) {
           const session = this.#deps.managerSession()
@@ -515,15 +540,15 @@ export class ManagerOperations {
           if (session !== this.#deps.managerSession() || this.#deps.authorized?.() === false || !managerProjects(current).includes(root) || managerProvider(current, root, provider).provider !== resolved.provider) throw new Error('The Manager, project or provider changed while validating the model. Read current state before retrying.')
           if (employeeId !== undefined) this.#deps.employees?.active(employeeId)
         }
-        const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
+        const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, checklist: plan.checklist ?? { items: [newItem(goal)] }, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
         const manager = this.#deps.managerSession()
         const request = this.#deps.managerRequest?.()
-        const ownership = team ? { managerThread: this.#deps.managerThread?.() ?? 'main', ...(request === undefined ? {} : { managerTelegramSource: request }), labels: this.#deps.threadLabels?.() ?? {} } : undefined
+        const ownership = team ? { managerThread: this.#deps.managerThread?.() ?? 'main', ...(request === undefined ? {} : { managerRequestSource: request }), labels: this.#deps.threadLabels?.() ?? {} } : undefined
         const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, manager, () => manager === this.#deps.managerSession() && this.#deps.authorized?.() !== false && bindingsAvailable(), ownership)
         this.#own(id)
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)
-        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, model, modelReason: flags.has('--model') ? 'task' : 'default', employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
+        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, model, modelReason: flags.has('--model') ? 'task' : 'default', employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal, ...(plan.checklist === undefined ? {} : { checklist: { ...checklistProgress(plan.checklist), items: plan.checklist.items.map((one) => one.title) } }) })
       }
       const id = required(flags, '--id')
       const managerSession = this.#deps.managerSession()
@@ -559,7 +584,17 @@ export class ManagerOperations {
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)
         if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error('--last must be an integer from 1 to 30.')
-        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, status: worker.status, history: (worker.moves ?? []).map(formatStatusMove), moves: worker.moves ?? [], delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, status: worker.status, history: (worker.moves ?? []).map(formatStatusMove), moves: worker.moves ?? [], delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, ...(worker.checklist === undefined ? {} : { checklist: checklistSummary(worker.checklist, true) }), items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+      }
+      if (command === 'checklist') {
+        const was = worker.checklist?.items ?? []
+        const items = checklistItems(required(flags, '--items')).map((one) => {
+          const same = was.find((old) => old.title.trim() === one.title && old.check === one.check)
+          return same?.state === undefined ? one : { ...one, id: same.id, state: same.state }
+        })
+        const next: TaskChecklist = { ...(worker.checklist ?? {}), items }
+        this.#deps.sessions.setChecklist(id, next)
+        return JSON.stringify({ id, checklist: checklistSummary(next, true), notice: 'Saved. If the current item changed, its goal is set once the worker rests.' })
       }
       if (command === 'retry' || command === 'steer') {
         if (!settings.chatProviders.includes(providerOf(id))) throw new Error('This worker provider is disabled. No replacement was selected.')
@@ -599,7 +634,7 @@ export class ManagerOperations {
         const cardId = required(flags, '--card')
         const card = (await this.#deps.sessions.items(id)).find((item) => item.id === cardId)
         if (managerSession !== this.#deps.managerSession() || this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
-        if (card?.kind !== 'card' || card.card.kind !== 'question' || card.card.answered !== undefined) throw new Error('That question is no longer awaiting an answer. Native permissions require the user’s bound Telegram buttons or the GeckIt UI; the Manager CLI cannot approve them.')
+        if (card?.kind !== 'card' || card.card.kind !== 'question' || card.card.answered !== undefined) throw new Error('That question is no longer awaiting an answer. Native permissions require the user’s own channel buttons or the GeckIt UI; the Manager CLI cannot approve them.')
         await this.#deps.sessions.answer(id, cardId.replace(/^card:/, ''), required(flags, '--text'))
         return JSON.stringify({ id, card: cardId, answered: true })
       }

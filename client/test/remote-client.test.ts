@@ -75,4 +75,14 @@ describe('remote workspace calls', () => {
       expect(second.requests.filter((one) => one.type === 'core-call')).toHaveLength(1)
     } finally { connection.close() }
   })
+
+  it('says why a first connection failed', async () => {
+    vi.mocked(devicePublicKey).mockResolvedValue('device key')
+    vi.mocked(remoteDial).mockRejectedValueOnce(new Error('the server did not answer. Check that GeckIt is running there and the code is new.'))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const views: string[] = []
+    const signal = { id: 'room', key: 'k', signal: 'http://127.0.0.1:47932' } as unknown as Parameters<typeof connectRemote>[0]
+    connectRemote(signal, 'Client', (view) => views.push(`${view.state}: ${view.message}`))
+    await vi.waitFor(() => expect(views.at(-1)).toBe('error: Could not connect: the server did not answer. Check that GeckIt is running there and the code is new.'))
+  })
 })

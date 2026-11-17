@@ -91,12 +91,13 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
         if (stopped || channel !== link) return
         channel = undefined; snapshotPending = false; rejectPending()
         change({ state: 'reconnecting', message: 'Reconnecting…' })
-        if (trust === undefined) { fail('error', 'Could not connect. Check the code and server, then try again.'); return }
+        if (trust === undefined) { fail('error', 'Could not connect: the server closed the connection before pairing finished. Run geckit pair there for a new code.'); return }
         refresh = setTimeout(() => { refresh = undefined; void dial() }, [2000, 5000, 10_000, 30_000][Math.min(tries++, 3)] ?? 30_000)
       })
-    } catch {
+    } catch (error) {
       if (stopped) return
-      if (trust === undefined) { fail('error', 'Could not connect. Check the code and server, then try again.'); return }
+      console.warn('Connect computer failed:', error)
+      if (trust === undefined) { fail('error', `Could not connect: ${error instanceof Error ? error.message : String(error)}`); return }
       change({ state: 'reconnecting', message: 'Reconnecting…' })
       refresh = setTimeout(() => { refresh = undefined; void dial() }, [2000, 5000, 10_000, 30_000][Math.min(tries++, 3)] ?? 30_000)
     }

@@ -35,12 +35,15 @@ Do not do that work here, and do not only mention it at the end of an answer: a 
 
 {{send}}
 
-{{exactForm}}For one conversation, `{{said}} start --project <name> [--title <title>] [--goal <condition>] <text>` does the same, provided the text has no quotes, `$`, `;` or `&` in it.
+{{exactForm}}For one conversation, `{{said}} start --project <name> [--title <title>] [--goal <condition>|--checklist <name>|--items <JSON array>] <text>` does the same, provided the text has no quotes, `$`, `;` or `&` in it.
 
 - `project` is the folder's name as `sessions` prints it. At most 20 at once.
 - `title` is what the person reads on the card to decide, so say the work in a few words.
 - `text` is all the new conversation is given, and it knows nothing of this one. Write what to do, where - files, commands, links -, what you already found, and how to tell it is done.
 - `goal` is optional. Give it when being done can be checked, such as tests passing or a page loading.
+- `checklist` names a saved checklist instead: results to reach in order, the folder's own first, then shared ones. `{{said}} checklists list --project <name>` shows what there is. Use one that fits the job rather than writing the same steps again.
+- `items` gives this conversation its own checklist when none fits and the job has more than one result to reach: `["Failing test reproduces the bug", {"title": "npm test passes", "command": "npm test"}]`. Each item is a result, not a step.
+- Give one of `goal`, `checklist` or `items`. With none, the folder's default checklist applies, if it has one.
 
 The command prints one line per conversation in the order sent - started or queued with its id, or refused - with the person's note on one if there is one, and their reply to you last. A note on a started one was also given to that conversation. A queued one is a conversation already, whose first message waits until fewer of the person's conversations are working. A refusal is an answer: do not send the same thing again, and follow the reply. Then say in your answer what you sent and how it stands.
 

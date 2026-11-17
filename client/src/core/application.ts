@@ -1,5 +1,6 @@
 import { providerChange } from '../main/provider-changes'
 import { assertProviderUnused } from '../main/provider-settings'
+import type { ChannelScreenRequest } from '../shared/channel-ui'
 import type { ProductAuthority } from '../shared/product-cli'
 import { dispatchProduct } from './product-cli'
 import { homedir, hostname } from 'node:os'
@@ -12,7 +13,7 @@ import type { HostAnswer, HostDraft } from '../shared/hosts'
 import { hostOf, isRemote, machineName } from '../shared/hosts'
 import type { LocalAsk } from '../shared/local'
 import type { ManagerConfig } from '../shared/manager'
-import type { TelegramAction } from '../shared/telegram'
+import type { ChannelJson } from '../shared/channels'
 import type { ChannelChange, ChannelId, ChannelInspectRequest } from '../shared/channels'
 import { recordedNote } from '../shared/recording'
 import { commandsFor } from '../main/commands'
@@ -40,7 +41,6 @@ import { keepRecording, startRecording, addToRecording, dropRecording } from '..
 import { removeShortcut, runShortcut, saveShortcut } from '../main/shortcuts'
 import { forgetProject, getSettings, rememberProject, setSettings } from '../main/store'
 import type { Sessions } from '../main/sessions'
-import { configureManagerAccess, phoneTelegramView, telegramActionAccess } from '../main/telegram-access'
 import { transcribe } from '../main/transcribe'
 import { voiceMemosConnection } from '../main/voice-memos'
 import { checkVpnIp } from '../main/vpn-ip'
@@ -51,6 +51,8 @@ import type { SessionProvider } from '../shared/api'
 import type { CoreRuntime } from './runtime'
 import { dataDirectory } from './platform'
 import { runningSecrets } from './secrets'
+import type { SecretEntry, SecretLifetime } from '../shared/secrets'
+import type { SealedValue } from '../shared/secret-seal'
 
 export function uninstallProvider(runtime: Pick<CoreRuntime, 'managerView'> & { readonly sessions: Pick<Sessions, 'providerInUse' | 'setInstructions' | 'refresh'> }, id: string, safe = false): Promise<void> {
   const { sessions } = runtime
@@ -97,7 +99,7 @@ export function uninstallProvider(runtime: Pick<CoreRuntime, 'managerView'> & { 
 }
 
 export function application(runtime: CoreRuntime) {
-  const { sessions, employees, manager, telegram, routes, shares, channels } = runtime
+  const { sessions, employees, manager, routes, shares, channels } = runtime
   let cutOffered = false
   let planned: { readonly orders: readonly Order[]; readonly told: readonly Told[]; readonly recording?: Recording } | undefined
   const unfavorite = (ids: readonly string[]): void => {
@@ -173,8 +175,7 @@ export function application(runtime: CoreRuntime) {
     'phone:settings': () => ({ ...getSettings(), profile: '', chatProjects: [], chatAll: true }),
     'phone:list': (root: string | undefined) => list(root, getSettings().projects),
     'phone:search': (asked: string, root: string | undefined) => search(asked, root, getSettings().projects),
-    'phone:telegram': () => phoneTelegramView(telegram.view()),
-    'phone:telegramAction': (action: TelegramAction) => telegramActionAccess(manager, telegram, action, false),
+    'phone:channelRequest': (id: ChannelId, request: ChannelJson) => channels.request(id, request, 'phone'),
     'employees:list': () => employees.list(),
     'employees:save': (draft: EmployeeDraft) => employees.save(draft),
     'employees:archive': (id: string, revision: number) => employees.archive(id, revision),
@@ -182,7 +183,7 @@ export function application(runtime: CoreRuntime) {
     'employees:retryInstructions': () => employees.retryInstructions(),
     'employees:memory': (id: string, cursor?: string) => employees.memory(id, cursor),
     'manager:view': () => manager.view(),
-    'manager:configure': (change: Partial<ManagerConfig>) => configureManagerAccess(manager, telegram, change),
+    'manager:configure': (change: Partial<ManagerConfig>) => runtime.configureManager(change),
     'manager:history': (...args: Parameters<typeof manager.history>) => manager.history(...args),
     'manager:inspect': (...args: Parameters<typeof manager.inspect>) => manager.inspect(...args),
     'manager:sendApp': (request: Parameters<typeof manager.sendApp>[0]) => manager.sendApp(request, 'desktop'),
@@ -190,15 +191,16 @@ export function application(runtime: CoreRuntime) {
     'manager:receipt': (...args: Parameters<typeof manager.receipt>) => manager.receipt(...args),
     'manager:answerApp': (...args: Parameters<typeof manager.answerApp>) => manager.answerApp(...args),
     'manager:answerCard': (...args: Parameters<typeof manager.answerCard>) => manager.answerCard(...args),
+    'manager:unfollow': (...args: Parameters<typeof manager.unfollow>) => manager.unfollow(...args),
     'manager:voice-memos': () => voiceMemosConnection({ transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }, manager.voiceMemosDirectory()),
-    'telegram:view': () => telegram.view(),
     'channels:view': () => channels.view(),
     'channels:install': (url: string) => channels.install(url),
     'channels:configure': (id: ChannelId, change: ChannelChange) => channels.configure(id, change),
     'channels:remove': (id: ChannelId) => channels.remove(id),
     'channels:inspect': (id: ChannelId, request: ChannelInspectRequest) => channels.inspect(id, request),
     'channels:checkUpdates': () => channels.checkUpdates(),
-    'telegram:action': (action: TelegramAction) => telegramActionAccess(manager, telegram, action, true),
+    'channels:screen': (id: ChannelId, request: ChannelScreenRequest) => channels.screen(id, request),
+    'channels:request': (id: ChannelId, request: ChannelJson) => channels.request(id, request, 'desktop'),
     'correct': (request: CorrectRequest) => correct(request),
     'transcribe': (request: TranscribeRequest) => transcribe(request),
     'speech:model': () => speechModel(),
@@ -245,6 +247,8 @@ export function application(runtime: CoreRuntime) {
     },
     'orders:do': () => executeOrders(),
     'orders:cancel': () => { planned = undefined },
+    'shortcuts:destinations': () => runtime.channels.shortcutDestinations(),
+    'shortcuts:runs': (id?: string) => runtime.shortcutRuns.all(id),
     'shortcuts:save': (draft: ShortcutDraft) => saveShortcut(draft),
     'shortcuts:remove': (id: string) => removeShortcut(id),
     'shortcuts:run': (id: string) => runShortcut(id, 'hand'),
@@ -284,6 +288,9 @@ export function application(runtime: CoreRuntime) {
     'secrets:list': async () => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.list()).secrets },
     'secrets:history': async (name: string) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); const key = (id: string): string => id.split(':').pop() ?? id; const titles = new Map(runtime.current().sessions.map((one) => [key(one.id), one.title])); return (await secrets.history(name, 20)).records.map((one) => one.taskId === undefined ? one : { ...one, taskId: titles.get(key(one.taskId)) ?? 'a finished conversation' }) },
     'secrets:revoke': async (name: string) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.revoke(name)).removed },
+    'secrets:prepare': async (entry: SecretEntry) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return secrets.prepareEntry(entry) },
+    'secrets:save': async (requestId: string, ciphertext: SealedValue, lifetime: SecretLifetime) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.saveEntry(requestId, ciphertext, lifetime)).name },
+    'secrets:update': async (entry: SecretEntry) => { const secrets = runningSecrets(); if (secrets === undefined) throw new Error('Secrets are not started yet.'); return (await secrets.updateEntry(entry)).name },
     'secrets:status': async (): Promise<{ readonly store?: string; readonly locked?: boolean; readonly problem?: string }> => { const secrets = runningSecrets(); if (secrets === undefined) return { problem: 'the secrets broker has not started' }; try { const status = await secrets.status(); return { store: status.store, locked: status.locked } } catch (error) { return { problem: (error as Error).message } } },
     'hosts:list': () => routes.hosts.views(),
     'hosts:known': () => routes.hosts.known(),
@@ -332,6 +339,7 @@ export function application(runtime: CoreRuntime) {
     'chat:mode': (...args: Parameters<Sessions['mode']>) => sessions.mode(...args),
     'chat:transport': (...args: Parameters<Sessions['transport']>) => sessions.transport(...args),
     'chat:rename': (...args: Parameters<Sessions['rename']>) => sessions.rename(...args),
+    'chat:setChecklist': (...args: Parameters<Sessions['setChecklist']>) => sessions.setChecklist(...args),
     'chat:mark': (id: string, status: Parameters<Sessions['mark']>[1]) => sessions.mark(id, status, { executor: 'user', origin: 'desktop' }),
     'chat:markPhone': (id: string, status: Parameters<Sessions['mark']>[1]) => sessions.mark(id, status, { executor: 'user', origin: 'phone' }),
     'chat:keep': (...args: Parameters<Sessions['keep']>) => sessions.keep(...args),

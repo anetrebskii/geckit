@@ -95,6 +95,7 @@ type Request struct {
 	Places  []string
 	Field   string
 	Note    string
+	User    string
 	TaskID  string
 	key     *ecdh.PrivateKey
 	created time.Time

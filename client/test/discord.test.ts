@@ -31,7 +31,7 @@ interface Call { readonly method: string; readonly path: string; readonly body: 
 function harness(options: { readonly config?: object; readonly manager?: boolean; readonly history?: readonly object[]; readonly threadFails?: boolean } = {}) {
   FakeSocket.all = []
   const calls: Call[] = []
-  const sent: [string, { text: string; from?: string }][] = []
+  const sent: [string, { text: string; from?: string; replyTo?: object }][] = []
   const answered: [string, string, unknown][] = []
   const opened: { key: string; labels?: { [key: string]: string } }[] = []
   const statuses: [string, string | undefined][] = []
@@ -44,6 +44,7 @@ function harness(options: { readonly config?: object; readonly manager?: boolean
   let posted = 0
   const context = {
     id: 'channel:discord',
+    capabilities: new Set(['conversations', 'manager', 'replies', 'delivery', 'files']),
     log: { path: '', write: () => undefined },
     config: () => ({ allow: [ALLOWED, OTHER], checkSecrets: true, directMessages: true, places: [], ...options.config }),
     secret: (key: string) => key === 'botToken' ? 'test-token' : undefined,
@@ -56,13 +57,14 @@ function harness(options: { readonly config?: object; readonly manager?: boolean
       manager: (place: { key: string; labels?: { [key: string]: string } }) => { opened.push(place); return options.manager === false ? undefined : `channel:discord:${place.key}` },
       label: () => undefined,
       start: async () => 'never',
-      send: async (id: string, message: { text: string; from?: string }) => { sent.push([id, message]) },
+      send: async (id: string, message: { text: string; from?: string }) => { sent.push([id, message]); return 'manager-session' },
       get: () => undefined,
       list: () => [],
       items: async () => [],
       watch: (id: string, listener: (event: ChannelEvent) => void) => { watchers.set(id, listener); return () => watchers.delete(id) },
       answer: async (id: string, card: string, answer: unknown) => { answered.push([id, card, answer]); return true },
       stop: async () => undefined,
+      current: (reply: { session: string }) => reply.session !== 'gone',
     },
   } as unknown as ChannelContext
   const fetch = (async (url: string, init: { method: string; body?: string }) => {
@@ -171,8 +173,30 @@ it('opens a Discord thread per mention, keeps each thread and direct message its
   await run.channel.stop()
 })
 
-it('answers only the people allowed, refuses tokens, honours chosen channels and direct messages off', async () => {
-  const run = harness({ config: { places: [TEXT], directMessages: false } })
+it('passes a reply to an answer as a reference to the work it was about, and not once that work is gone', async () => {
+  const run = harness()
+  await run.channel.start()
+  run.ready()
+  const dm = (id: string, content: string, reference?: string): void => run.dispatch('MESSAGE_CREATE', { id, channel_id: 'dm-channel-1', type: 0, author: { id: ALLOWED, global_name: 'Maria Ivanova' }, content, mentions: [], ...(reference === undefined ? {} : { message_reference: { message_id: reference } }) })
+  dm('600000000000000001', 'start the report')
+  await run.settle()
+  const thread = 'channel:discord:dm:dm-channel-1'
+  run.watchers.get(thread)?.({ kind: 'answer', text: 'Report started.', reply: { session: 'manager-1', thread, workers: ['worker-1'] } })
+  run.watchers.get(thread)?.({ kind: 'answer', text: 'Old work.', reply: { session: 'gone', thread, workers: [] } })
+  await run.settle()
+  const count = run.posts().length
+  const current = `90000000000000000${String(count - 1)}`
+  const gone = `90000000000000000${String(count)}`
+  dm('600000000000000002', 'make it shorter', current)
+  dm('600000000000000003', 'and this one', gone)
+  await run.settle()
+  expect(run.sent.at(-2)).toEqual([thread, { text: 'make it shorter', from: 'Maria Ivanova', replyTo: { session: 'manager-1', thread, workers: ['worker-1'], text: 'Report started.', message: current } }])
+  expect(run.sent.at(-1)).toEqual([thread, { text: 'and this one', from: 'Maria Ivanova' }])
+  await run.channel.stop()
+})
+
+it('keeps user restrictions and secret checks but ignores old channel and direct-message restrictions', async () => {
+  const run = harness({ config: { places: [TEXT], directMessages: false, checkSecrets: false } })
   await run.channel.start()
   run.ready()
   run.message('510000000000000001', STRANGER, `<@${BOT}> run rm -rf`)
@@ -182,12 +206,10 @@ it('answers only the people allowed, refuses tokens, honours chosen channels and
   run.dispatch('MESSAGE_CREATE', { id: '510000000000000005', channel_id: 'dm-3', type: 0, author: { id: STRANGER }, content: 'let me in', mentions: [] })
   run.dispatch('MESSAGE_CREATE', { id: '510000000000000006', channel_id: TEXT, guild_id: GUILD, type: 0, author: { id: '777', bot: true }, content: `<@${BOT}> loop`, mentions: [{ id: BOT }] })
   await run.settle()
-  expect(run.sent).toEqual([])
+  expect(run.sent.map(([thread]) => thread)).toEqual(['channel:discord:510000000000000003', 'channel:discord:dm:dm-2'])
   expect(run.posts().map((one) => [one.path.split('/')[2], one.body['content']])).toEqual([
     [TEXT, 'Sorry, I can only take requests from people GeckIt lets me work for.'],
     [TEXT, "That message looks like it holds a token or key, so I didn't take it. Remove it and write again."],
-    [ELSEWHERE, "I don't answer in this channel. Choose it for me in GeckIt, Settings, Channels, Discord."],
-    ['dm-2', 'Личные сообщения мне выключены. Упомяни меня в канале сервера.'],
     ['dm-3', 'Sorry, I can only take requests from people GeckIt lets me work for.'],
   ])
   await run.channel.stop()
@@ -372,7 +394,7 @@ it('reconnects when a heartbeat goes unanswered and identifies afresh after a se
   await run.channel.stop()
 })
 
-it('binds buttons to the part that carries them and refuses a press outside the chosen channels', async () => {
+it('binds buttons to the part that carries them and ignores old channel restrictions while rejecting unrelated questions', async () => {
   const run = harness()
   await run.channel.start()
   run.ready()
@@ -392,7 +414,7 @@ it('binds buttons to the part that carries them and refuses a press outside the 
   fenced.ready()
   fenced.dispatch('INTERACTION_CREATE', { id: 'i9', application_id: '111', type: 3, token: 't-i9', channel_id: TEXT, guild_id: GUILD, data: { custom_id: custom, component_type: 2 }, member: { user: { id: ALLOWED } }, message: { id: '1' } })
   await fenced.settle()
-  expect(fenced.calls.find((one) => one.path === '/interactions/i9/t-i9/callback')?.body).toMatchObject({ type: 4, data: { content: "I don't answer in this channel. Choose it for me in GeckIt, Settings, Channels, Discord.", flags: 64 } })
+  expect(fenced.calls.find((one) => one.path === '/interactions/i9/t-i9/callback')?.body).toMatchObject({ type: 4, data: { content: "This question is already closed.", flags: 64 } })
   expect(fenced.answered).toEqual([])
   await run.channel.stop()
   await fenced.channel.stop()

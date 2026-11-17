@@ -17,50 +17,159 @@
   display: none;
 }
 
-/* The tab bar stands under the lists, so they end above it rather than under the home indicator. */
+/* With no tab bar under them, the lists end above the home indicator. */
 .phone-home .phone-list {
-  padding-bottom: 24px;
+  padding-bottom: calc(var(--bottom) + 24px);
 }
 
-.phone-tabs {
-  display: grid;
-  flex: none;
-  grid-template-columns: repeat(4, 1fr);
-  padding-bottom: var(--bottom);
-  background: var(--ground);
-  box-shadow: inset 0 0.5px 0 var(--separator);
-}
-
-html.keyboard .phone-tabs {
-  display: none;
-}
-
-.phone-tabs button {
+.phone-home {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-  justify-content: center;
-  height: 50px;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-faint);
 }
 
-.phone-tabs button.on {
-  color: var(--accent);
+/* The left menu: the Mac sidebar's places in a panel over the screen from the left edge. */
+.place-menu-button {
+  position: relative;
+  margin-inline: -10px 2px;
 }
 
-.phone-tab-badge {
+.phone-menu-dot {
   position: absolute;
-  top: 6px;
-  left: calc(50% + 9px);
+  top: 9px;
+  right: 7px;
   width: 9px;
   height: 9px;
   background: var(--asks, #d97706);
   border: 1.5px solid var(--ground);
   border-radius: 50%;
+}
+
+.phone-menu-dot.unread {
+  background: var(--accent);
+}
+
+.place-menu-scrim {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  background: rgb(0 0 0 / 28%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+}
+
+.place-menu-scrim.open {
+  opacity: 1;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.place-menu {
+  position: absolute;
+  z-index: 21;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(300px, 82vw);
+  padding: calc(var(--top) + 12px) 12px calc(var(--bottom) + 8px);
+  background: var(--bg-raised);
+  box-shadow: 0 0 40px rgb(0 0 0 / 20%);
+  transform: translateX(-104%);
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  touch-action: pan-y;
+}
+
+.place-menu.open {
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .place-menu,
+  .place-menu-scrim {
+    transition: none;
+  }
+}
+
+.place-menu-items {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.place-menu-group {
+  margin: 18px 12px 6px;
+  font-size: 13px;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.place-menu-item {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  font-size: 17px;
+  color: var(--text);
+  text-align: start;
+  border-radius: 10px;
+}
+
+.place-menu-item svg {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.place-menu-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.place-menu-item.on {
+  font-weight: 600;
+  background: var(--fill);
+}
+
+.place-menu-item.on svg {
+  color: var(--accent);
+}
+
+.place-menu-count {
+  flex: none;
+  min-width: 22px;
+  padding: 1px 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+  background: var(--asks, #d97706);
+  border-radius: 11px;
+}
+
+.place-menu-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.place-menu-foot {
+  padding-top: 8px;
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+
+/* A Mac settings section drawn on a phone page. */
+.phone-section {
+  padding: 0 16px calc(var(--bottom) + 24px);
+  font-size: 15px;
 }
 
 /* Rows of a grouped list: a label, what it says under it, and its value or control at the end. */
@@ -627,10 +736,6 @@ html.keyboard .phone-tabs {
   color: var(--danger);
 }
 
-.phone-tab-badge.unread {
-  background: var(--accent);
-}
-
 /* The New task sheet: the ways to start one, then the shortcuts. See docs/ux/phone-tabs.md. */
 .phone-ways .sheet-option {
   justify-content: flex-start;
@@ -724,4 +829,333 @@ html.keyboard .phone-tabs {
   margin: 7px 16px 0;
   font-size: 13px;
   color: var(--text-faint);
+}
+
+/* Settings > Web Browser: a profile's coloured letter, its geckit: name and whether its browser is open. */
+.phone-browser-badge {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  border-radius: 50%;
+}
+
+.phone-browser-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phone-browser-prefix {
+  color: var(--text-faint);
+}
+
+.phone-browser-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 6px;
+  vertical-align: 1px;
+  background: var(--text-faint);
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+.phone-browser-dot.on {
+  background: var(--success-text);
+  opacity: 1;
+}
+
+.phone-cell-pair .phone-cell-says {
+  padding-inline-start: 38px;
+}
+
+.phone-browser-skeleton {
+  min-height: 60px;
+}
+
+.phone-browser-skeleton .phone-cell-words {
+  gap: 8px;
+}
+
+.phone-browser-skeleton .browser-bone.line {
+  width: 42%;
+  height: 12px;
+}
+
+.phone-browser-skeleton .browser-bone.line.short {
+  width: 64%;
+  height: 10px;
+}
+
+.phone-browser-skeleton:nth-child(3) .browser-bone { animation-delay: 120ms; }
+.phone-browser-skeleton:nth-child(3) .browser-bone.line { width: 34%; }
+.phone-browser-skeleton:nth-child(4) .browser-bone { animation-delay: 240ms; }
+.phone-browser-skeleton:nth-child(4) .browser-bone.line.short { width: 50%; }
+
+.phone-browser-problem {
+  color: var(--danger);
+}
+
+.phone-note.phone-browser-hint {
+  margin-inline: 16px;
+}
+
+/* Under a pushed page's own edge, which goes back. */
+.place-menu-edge {
+  z-index: 3;
+}
+
+/* In a page's centred bar the button sits at the start of its column, where Back sits on a pushed page. */
+.phone-nav > .place-menu-button {
+  justify-self: start;
+  margin-inline: 2px 0;
+}
+
+/* Checklists and Secrets on the phone, as iOS grouped lists: rows on one raised card split by inset hairlines, the add action as an accent row of its own under them, and what the page is for as the note at the foot. */
+html.phone :is(.checklists-section, .secrets-section) {
+  gap: 0;
+  padding-block-start: 12px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+html.phone :is(.checklists-section, .secrets-section) > .browser-profiles-header,
+html.phone :is(.checklists-section, .secrets-section) .secrets-heading {
+  display: contents;
+}
+
+html.phone :is(.checklists-section, .secrets-section) > :not(.browser-profiles-header) {
+  order: 1;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .checklists-group + .checklists-group {
+  margin-block-start: 24px;
+}
+
+html.phone .checklists-group {
+  gap: 0;
+}
+
+html.phone .checklists-group-title {
+  margin: 0 16px 7px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profiles-group {
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profile {
+  position: relative;
+  padding: 0 4px 0 16px;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profile + .browser-profile {
+  border-block-start: 0;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profile + .browser-profile::before {
+  position: absolute;
+  top: 0;
+  inset-inline: 16px 0;
+  height: 0.5px;
+  content: '';
+  background: var(--separator);
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profile:hover:not(.asking) {
+  background: none;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .checklist-open {
+  min-height: 60px;
+  padding-block: 10px;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profile-lines {
+  justify-content: center;
+  gap: 2px;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profile-title strong {
+  font-size: 17px;
+  font-weight: 400;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .secret-row-line {
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profile-actions .icon-button {
+  width: 44px;
+  height: 44px;
+  color: var(--accent);
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profiles-new {
+  order: 2;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin-block-start: 24px;
+  padding: 10px 16px;
+  font-size: 17px;
+  color: var(--accent);
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .secrets-heading p {
+  order: 3;
+  margin: 7px 16px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+html.phone :is(.checklists-section, .secrets-section) .checklists-empty {
+  padding: 20px 16px;
+  font-size: 15px;
+  color: var(--text-dim);
+  border: 0;
+  border-radius: 12px;
+}
+
+/* A new checklist is written where New checklist was pressed, in its place, rather than at the top of a list that may be scrolled away. */
+html.phone :is(.checklists-section, .secrets-section) > .browser-profiles-group {
+  order: 2;
+  margin-block-start: 24px;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profiles-new:disabled {
+  display: none;
+}
+
+/* A checklist opened in its row fills the row, edge to edge of the card. */
+html.phone :is(.checklists-section, .secrets-section) .browser-profile.editing {
+  padding: 0;
+}
+
+html.phone :is(.checklists-section, .secrets-section) .browser-profiles-form {
+  background: none;
+}
+
+html.phone .secrets-section .browser-profile-main {
+  min-height: 60px;
+  padding-block: 10px;
+}
+
+html.phone .secrets-section :is(.secrets-foot, .secrets-empty) {
+  order: 3;
+  margin: 7px 16px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+html.phone .secrets-section .secrets-empty {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
+html.phone .secrets-section .browser-profiles-notice {
+  padding: 14px 16px;
+  font-size: 15px;
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+}
+
+/* Secrets keep their list in that group and add inside it, so it stays above the add row. */
+html.phone .secrets-section > .browser-profiles-group {
+  order: 1;
+  margin-block-start: 0;
+}
+
+/* As in iOS lists with icons, the line between secrets starts where their names do. */
+html.phone .secrets-section .browser-profile + .browser-profile::before {
+  inset-inline-start: 60px;
+}
+
+/* Adding or editing a secret on the phone: a sheet of grouped rows, as Settings edits a password. */
+.secret-sheet-group {
+  margin: 0;
+}
+
+.secret-sheet-mono {
+  font-family: var(--font-code);
+  font-size: 16px;
+}
+
+.secret-sheet-value {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline-end: 4px;
+  background: var(--bg-raised);
+  border-radius: 12px;
+}
+
+.secret-sheet-value :is(input, textarea) {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 0 11px 16px;
+  font-family: var(--font-code);
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--text);
+  resize: none;
+  background: none;
+  border: 0;
+  outline: none;
+}
+
+.secret-sheet-value.multiline {
+  align-items: flex-start;
+}
+
+.secret-sheet-value .secret-value-eye {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 44px;
+  color: var(--text-faint);
+}
+
+.secret-sheet-error {
+  margin: 16px 16px 0;
+}
+.secret-sheet-value textarea.masked { -webkit-text-security: disc; }
+
+/* The sheet's fields are the grouped rows themselves, not boxed inputs: by element, as the base rule for text inputs is. */
+.phone-task-form input.phone-task-goal {
+  padding: 11px 16px;
+  font-size: 17px;
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.phone-task-form input.phone-task-goal.secret-sheet-mono {
+  font-size: 16px;
+}
+
+.secret-sheet-value :is(input, textarea)::placeholder,
+.phone-task-form input.secret-sheet-mono::placeholder {
+  font-family: var(--font-ui, -apple-system, system-ui, sans-serif);
+  font-size: 17px;
 }

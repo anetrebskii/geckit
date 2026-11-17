@@ -8,7 +8,7 @@ import { claimSignIn, setLiveServer, signInLink } from '../src/cli/live-view'
 import { camoufoxHeadless } from '../src/cli/testing'
 import { refusedCli } from '../src/core/cli-run'
 import { computerNamed } from '../src/service/remote/computers'
-import { readSignIn } from '../src/shared/live-view'
+import { addressOf, readSignIn } from '../src/shared/live-view'
 
 const folders: string[] = []
 const temporary = (): string => { const folder = mkdtempSync(join(tmpdir(), 'geckit-accounts-')); folders.push(folder, `${folder}-state`); return folder }
@@ -83,5 +83,24 @@ describe('test browsers on Linux', () => {
     expect(camoufoxHeadless('darwin', {})).toBe(false)
     expect(camoufoxHeadless('linux', { DISPLAY: ':0' })).toBe(false)
     expect(camoufoxHeadless('linux', {})).toBe(true)
+  })
+})
+
+describe('the live view address', () => {
+  it('gives a typed host its scheme, http on this computer and the local network', () => {
+    expect(addressOf(' github.com/login ')).toBe('https://github.com/login')
+    expect(addressOf('www.example.co.uk')).toBe('https://www.example.co.uk')
+    expect(addressOf('localhost:3000/app')).toBe('http://localhost:3000/app')
+    expect(addressOf('127.0.0.1:8080')).toBe('http://127.0.0.1:8080')
+    expect(addressOf('192.168.1.20')).toBe('http://192.168.1.20')
+    expect(addressOf('printer.local')).toBe('http://printer.local')
+    expect(addressOf('8.8.8.8')).toBe('https://8.8.8.8')
+  })
+  it('keeps an address that has its scheme and searches for words', () => {
+    expect(addressOf('http://example.com')).toBe('http://example.com')
+    expect(addressOf('HTTPS://Example.com')).toBe('HTTPS://Example.com')
+    expect(addressOf('github login')).toBe('https://duckduckgo.com/?q=github%20login')
+    expect(addressOf('github')).toBe('https://duckduckgo.com/?q=github')
+    expect(addressOf('   ')).toBe('')
   })
 })

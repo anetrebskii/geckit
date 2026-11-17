@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { TelegramAttachments, TELEGRAM_CACHE_LIMIT, TELEGRAM_DOWNLOAD_LIMIT, TELEGRAM_RETENTION, telegramFilename } from '../src/main/telegram-attachments'
+import { ChannelAttachments, ATTACHMENT_CACHE_LIMIT, ATTACHMENT_LIMIT, ATTACHMENT_RETENTION, attachmentFilename } from '../src/main/channel-attachments'
 import { TelegramBotClient, telegramUpdate } from '../src/main/telegram-bot'
 import type { TelegramFile } from '../src/main/telegram-bot'
 
@@ -19,34 +19,34 @@ const response = (result: object): Response => Response.json({ ok: true, result 
 describe('bounded Telegram attachment storage', () => {
   it('keeps exact image/file bytes under generated paths, safely handles metadata.json and reopens after restart', () => {
     const directory = temporary()
-    const store = new TelegramAttachments(directory)
+    const store = new ChannelAttachments(directory)
     const photo = store.put(png, '../../CON.png', 'application/octet-stream')
     const text = store.put(Buffer.from('Task data\nsecond line'), 'metadata.json', 'text/plain')
     expect(photo.name).toBe('__.._CON.png')
     expect(store.input([photo.id]).images).toEqual([{ media: 'image/png', data: png.toString('base64') }])
-    const restarted = new TelegramAttachments(directory)
+    const restarted = new ChannelAttachments(directory)
     const read = restarted.read(text.id)
     expect(read.bytes.toString()).toBe('Task data\nsecond line')
-    expect(read.path).toBe(join(realpathSync(directory), 'telegram-attachments', text.id, 'content.json'))
+    expect(read.path).toBe(join(realpathSync(directory), 'channel-attachments', text.id, 'content.json'))
     expect(restarted.input([text.id]).text).toContain('Task data\nsecond line')
     expect(statSync(read.path).mode & 0o777).toBe(0o600)
-    expect(telegramFilename('CON.txt')).toBe('_CON.txt')
-    expect(telegramFilename('hello. ')).toBe('hello')
+    expect(attachmentFilename('CON.txt')).toBe('_CON.txt')
+    expect(attachmentFilename('hello. ')).toBe('hello')
   })
 
   it('expires unreferenced inputs at 24h, pins queued references and counts them toward its 200MiB cap', () => {
     const directory = temporary()
     let now = 1_800_000_000_000
-    const store = new TelegramAttachments(directory, () => now)
+    const store = new ChannelAttachments(directory, () => now)
     const kept = store.put(Buffer.from('keep'), 'kept.txt', 'text/plain')
     const expired = store.put(Buffer.from('expire'), 'expired.txt', 'text/plain')
     store.pin('queued', [kept.id])
-    now += TELEGRAM_RETENTION + 1
+    now += ATTACHMENT_RETENTION + 1
     store.cleanup()
     expect(store.read(kept.id).bytes.toString()).toBe('keep')
     expect(() => store.read(expired.id)).toThrow('expired or is unavailable')
-    const block = Buffer.alloc(TELEGRAM_DOWNLOAD_LIMIT, 65)
-    for (let index = 0; index < TELEGRAM_CACHE_LIMIT / TELEGRAM_DOWNLOAD_LIMIT - 1; index++) store.put(block, 'large.bin', 'application/octet-stream')
+    const block = Buffer.alloc(ATTACHMENT_LIMIT, 65)
+    for (let index = 0; index < ATTACHMENT_CACHE_LIMIT / ATTACHMENT_LIMIT - 1; index++) store.put(block, 'large.bin', 'application/octet-stream')
     expect(() => store.put(block, 'full.bin', 'application/octet-stream')).toThrow('storage is full')
     expect(store.read(kept.id).bytes.toString()).toBe('keep')
     store.pin('queued', [])
@@ -57,14 +57,14 @@ describe('bounded Telegram attachment storage', () => {
   })
 
   it('bounds tiny attachment entries independently of their payload byte count', () => {
-    const store = new TelegramAttachments(temporary())
+    const store = new ChannelAttachments(temporary())
     for (let index = 0; index < 256; index++) store.put(Buffer.from('x'), 'tiny.txt', 'text/plain')
     expect(() => store.put(Buffer.from('x'), 'tiny.txt', 'text/plain')).toThrow('256 files')
   })
 
   it('rejects changed bytes, symlinked cache and payload paths without reading outside files', () => {
     const directory = temporary()
-    const store = new TelegramAttachments(directory)
+    const store = new ChannelAttachments(directory)
     const asset = store.put(Buffer.from('source'), 'source.txt', 'text/plain')
     const path = store.read(asset.id).path
     writeFileSync(path, 'different size')
@@ -77,15 +77,15 @@ describe('bounded Telegram attachment storage', () => {
     symlinkSync(join(directory, 'outside.txt'), file)
     expect(() => store.read(second.id)).toThrow('unavailable')
     const linkedDirectory = temporary()
-    symlinkSync(store.directory, join(linkedDirectory, 'telegram-attachments'))
-    expect(() => new TelegramAttachments(linkedDirectory).cleanup()).toThrow('storage is a link')
+    symlinkSync(store.directory, join(linkedDirectory, 'channel-attachments'))
+    expect(() => new ChannelAttachments(linkedDirectory).cleanup()).toThrow('storage is a link')
     expect(readFileSync(join(directory, 'outside.txt'), 'utf8')).toBe('private')
   })
 })
 
 describe('Telegram binary transport contract', () => {
   it('selects highest resolution downloadable photo and preserves document caption and media-group identity', () => {
-    const source = { message_id: 4, date: 100, chat: { id: 81, type: 'private' }, from: { id: 81, first_name: 'Alex' }, caption: 'Inspect this', media_group_id: 'album-4', photo: [{ file_id: 'tiny', width: 20, height: 20, file_size: 100 }, { file_id: 'best', width: 1600, height: 1200, file_size: 4000 }, { file_id: 'too-large', width: 5000, height: 4000, file_size: TELEGRAM_DOWNLOAD_LIMIT + 1 }] }
+    const source = { message_id: 4, date: 100, chat: { id: 81, type: 'private' }, from: { id: 81, first_name: 'Alex' }, caption: 'Inspect this', media_group_id: 'album-4', photo: [{ file_id: 'tiny', width: 20, height: 20, file_size: 100 }, { file_id: 'best', width: 1600, height: 1200, file_size: 4000 }, { file_id: 'too-large', width: 5000, height: 4000, file_size: ATTACHMENT_LIMIT + 1 }] }
     const photo = telegramUpdate({ update_id: 4, message: source })?.message
     expect(photo?.file?.fileId).toBe('best')
     expect(photo?.text).toBe('Inspect this')
@@ -112,15 +112,15 @@ describe('Telegram binary transport contract', () => {
   it('rejects advertised, getFile and streamed oversize, invalid paths, empty bodies and network errors', async () => {
     let calls = 0
     const client = new TelegramBotClient('token', async () => { calls++; return response({ file_path: '../private' }) })
-    await expect(client.download({ ...document, size: TELEGRAM_DOWNLOAD_LIMIT + 1 }, new AbortController().signal)).rejects.toThrow('20 MiB')
+    await expect(client.download({ ...document, size: ATTACHMENT_LIMIT + 1 }, new AbortController().signal)).rejects.toThrow('20 MiB')
     expect(calls).toBe(0)
     await expect(client.download(document, new AbortController().signal)).rejects.toThrow('invalid file location')
     expect(calls).toBe(1)
-    for (const body of [new Uint8Array(0), new Uint8Array(TELEGRAM_DOWNLOAD_LIMIT + 1)]) {
+    for (const body of [new Uint8Array(0), new Uint8Array(ATTACHMENT_LIMIT + 1)]) {
       const stream = new TelegramBotClient('token', async (url) => String(url).endsWith('/getFile') ? response({ file_path: 'documents/file.txt' }) : new Response(body))
       await expect(stream.download(document, new AbortController().signal)).rejects.toThrow('download failed')
     }
-    const oversized = new TelegramBotClient('token', async () => response({ file_path: 'documents/file.txt', file_size: TELEGRAM_DOWNLOAD_LIMIT + 1 }))
+    const oversized = new TelegramBotClient('token', async () => response({ file_path: 'documents/file.txt', file_size: ATTACHMENT_LIMIT + 1 }))
     await expect(oversized.download(document, new AbortController().signal)).rejects.toThrow('20 MiB')
   })
 

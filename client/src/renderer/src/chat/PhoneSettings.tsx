@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { assistantsIn, providerOf, SESSION_MODES, shownProjects } from '../../../shared/api'
-import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, ShortcutDraft, Theme } from '../../../shared/api'
+import { assistantsIn, providerOf, SESSION_MODES } from '../../../shared/api'
+import type { Folders as FolderList, HiddenFolder, ProjectProfile, SessionMode, SessionProvider, Theme } from '../../../shared/api'
 import { projectColor } from '../../../shared/project-color'
 import { independentProviderInfo, llmProviderInfo } from '../../../shared/providers'
-import { TEAM_EVENT } from '../employees/Employees'
-import { PhoneTeam } from '../employees/PhoneTeam'
+import type { ChannelView, ChannelsView } from '../../../shared/channels'
 import { ear, setEar, voice } from '../dictate'
 import type { Ear } from '../dictate'
 import { macs } from '../macs'
@@ -19,7 +18,6 @@ import { PhoneVpnSettings } from '../ui/VpnIpSettings'
 import { AssistantStatus } from './AssistantStatus'
 import { Cell, Page, Switch, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
-import { PhoneShortcuts } from './PhoneShortcuts'
 import { computerName } from './PhoneHosts'
 import { PhoneProject } from './PhoneProject'
 import { homePath, projectLabel } from './project'
@@ -34,13 +32,11 @@ import type { Chat } from './useChat'
 
 type Where =
   | { readonly page: 'root' }
-  | { readonly page: 'employees'; readonly first?: string }
   | { readonly page: 'profiles' }
   | { readonly page: 'profile'; readonly id: string }
   | { readonly page: 'projects' }
   | { readonly page: 'hidden' }
   | { readonly page: 'phrases' }
-  | { readonly page: 'shortcuts' }
   | { readonly page: 'vpn' }
 
 const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
@@ -49,25 +45,11 @@ const THEMES: readonly { readonly value: Theme; readonly label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ]
 
-export function PhoneSettings({
-  chat,
-  onEdit,
-}: {
-  readonly chat: Chat
-  readonly onEdit: (draft: ShortcutDraft) => void
-}): React.JSX.Element {
+export function PhoneSettings({ chat }: { readonly chat: Chat }): React.JSX.Element {
   const [trail, setTrail] = useState<readonly Where[]>([{ page: 'root' }])
   const where = trail[trail.length - 1] ?? { page: 'root' }
   const go = (next: Where): void => setTrail([...trail, next])
   const back = (): void => setTrail(trail.slice(0, -1))
-  useEffect(() => {
-    const open = (event: Event): void => {
-      const first = (event as CustomEvent<string | undefined>).detail
-      setTrail([{ page: 'root' }, { page: 'employees', ...(first === undefined ? {} : { first }) }])
-    }
-    window.addEventListener(TEAM_EVENT, open)
-    return () => window.removeEventListener(TEAM_EVENT, open)
-  }, [])
   const before = (): string => {
     const one = trail[trail.length - 2]
     return one === undefined || one.page === 'root'
@@ -79,13 +61,11 @@ export function PhoneSettings({
           : 'Back'
   }
 
-  if (where.page === 'employees') return <PhoneTeam key={where.first ?? 'list'} chat={chat} back={before()} first={where.first} onBack={back} onEdit={onEdit} />
   if (where.page === 'profiles') return <Profiles chat={chat} back={before()} onBack={back} onOpen={(id) => go({ page: 'profile', id })} />
   if (where.page === 'profile') return <Profile chat={chat} id={where.id} back={before()} onBack={back} />
   if (where.page === 'projects') return <Projects chat={chat} back={before()} onBack={back} />
   if (where.page === 'hidden') return <Hidden chat={chat} back={before()} onBack={back} />
   if (where.page === 'phrases') return <Phrases chat={chat} back={before()} onBack={back} />
-  if (where.page === 'shortcuts') return <PhoneShortcuts chat={chat} back={before()} onBack={back} onEdit={onEdit} />
   if (where.page === 'vpn') return <PhoneVpnSettings settings={chat.settings} back={before()} onBack={back} />
   return <Root chat={chat} go={go} />
 }
@@ -154,6 +134,8 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
         <Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} says="Applies to the paired computer" onPress={() => go({ page: 'vpn' })} />
       </div>
 
+      <PhoneChannels />
+
       <div className="phone-head">Assistants</div>
       <div className="phone-group">
         <AssistantStatus chat={chat} phone />
@@ -173,7 +155,6 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
 
       <div className="phone-head">Board</div>
       <div className="phone-group">
-        <Cell label="Team" value={String(chat.employees.filter((one) => !one.archived).length)} onPress={() => go({ page: 'employees' })} />
         <Cell label="Profiles" value={profile?.name ?? 'All folders'} onPress={() => go({ page: 'profiles' })} />
         <Cell label="Folders" value={String(settings.projects.length)} onPress={() => go({ page: 'projects' })} />
         <Cell label="Hidden conversations" onPress={() => go({ page: 'hidden' })} />
@@ -186,11 +167,6 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
       </div>
       <div className="phone-note">
         What a task started from the phone or the host runs in, until changed in it. Past the limit, a message waits in its conversation, and the highest card in In progress goes first when one working stops.
-      </div>
-
-      <div className="phone-head">Shortcuts</div>
-      <div className="phone-group">
-        <Cell label="Shortcuts" value={String(settings.shortcuts.filter((one) => shownProjects(settings).includes(one.root)).length)} onPress={() => go({ page: 'shortcuts' })} />
       </div>
 
       <div className="phone-head">Messages</div>
@@ -563,5 +539,32 @@ function Phrases({ chat, back, onBack }: { readonly chat: Chat; readonly back: s
       </div>
       <div className="phone-note">Each is a button over the message field that adds its words to the message. Holding one there removes it too.</div>
     </Page>
+  )
+}
+
+// Each channel's switch; setting one up and its allowed people stay on the computer, where its tokens are typed.
+function PhoneChannels(): React.JSX.Element | null {
+  const [view, setView] = useState<ChannelsView>()
+  const [problem, setProblem] = useState('')
+  useEffect(() => {
+    void window.geckit.channels.view().then(setView).catch(() => undefined)
+  }, [])
+  if (view === undefined || view.channels.length === 0) return null
+  const turn = (id: ChannelView['id'], enabled: boolean): void => {
+    setProblem('')
+    window.geckit.channels.configure(id, { enabled }).then(setView).catch((error: unknown) => setProblem(error instanceof Error ? error.message : String(error)))
+  }
+  return (
+    <>
+      <div className="phone-head">Channels</div>
+      <div className="phone-group">
+        {view.channels.map((one) => (
+          <Cell key={one.id} label={one.name} says={one.state === 'setup' ? 'Set up on the computer' : one.state === 'failed' ? (one.says ?? 'Could not connect') : one.state === 'connected' ? (one.says ?? 'Connected') : one.state === 'starting' ? 'Connecting' : 'Off'}>
+            <Switch on={one.state !== 'off'} label={one.name} disabled={one.state === 'setup'} onChange={(on) => turn(one.id, on)} />
+          </Cell>
+        ))}
+      </div>
+      <div className="phone-note">{problem === '' ? 'Where Manager can be written to besides this app. Each thread shows on Manager.' : problem}</div>
+    </>
   )
 }

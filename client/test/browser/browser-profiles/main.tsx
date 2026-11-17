@@ -27,7 +27,7 @@ canvas.height = 360
 const context = canvas.getContext('2d')
 if (context !== null) { context.fillStyle = '#f4f4f6'; context.fillRect(0, 0, 640, 360); context.fillStyle = '#1d1d1f'; context.font = '20px sans-serif'; context.fillText('Synthetic live sign-in boundary', 100, 150); context.font = '14px sans-serif'; context.fillText('No website or account is contacted.', 100, 185) }
 const browser: Geckit['browser'] = {
-  state: async () => { if (fixture.failState) throw new Error('Fixture browser state failed: remote computer disconnected.'); return snapshot() },
+  state: async () => { if (params.get('slow') === '1') await new Promise((done) => setTimeout(done, 60_000)); if (fixture.failState) throw new Error('Fixture browser state failed: remote computer disconnected.'); return snapshot() },
   fetchModel: async () => undefined,
   deleteModel: async () => undefined,
   openFolder: async () => undefined,

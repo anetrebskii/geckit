@@ -13,13 +13,13 @@ Alex needs to remove conversations with Manager itself, or empty one conversatio
 
 ### Path to a result
 
-Open Manager, select the GeckIt, Telegram or Slack conversation in the existing thread selector, then open "Conversation actions" in that conversation. Choose "Clear history…" to retain the selected conversation/place with empty history and new native context, or "Delete conversation…" to remove that conversation. The confirmation identifies the selected title/place, explains stopped response/canceled queue and preserved work, and offers Cancel before the destructive action. Completion is an empty fresh conversation after clear; after delete it is the remaining/default conversation. A deleted default GeckIt conversation becomes a fresh empty default slot. No provider connection/setup is added. The same actions work on empty, active and inactive conversations; while disconnected they cannot be submitted. Returning after refresh/restart sees the persisted result. Failure is reported locally and does not claim success.
+Open Manager, select the GeckIt, Telegram or Slack conversation in the existing thread selector, then open More (the "…" button in the conversation's toolbar). Choose "Clear history…" to retain the selected conversation/place with empty history and new native context, or "Delete conversation…" to remove that conversation. The confirmation identifies the selected title/place, explains stopped response/canceled queue and preserved work, and offers Cancel before the destructive action. Completion is an empty fresh conversation after clear; after delete it is the remaining/default conversation. A deleted default GeckIt conversation becomes a fresh empty default slot. No provider connection/setup is added. The same actions work on empty, active and inactive conversations; while disconnected they cannot be submitted. Returning after refresh/restart sees the persisted result. Failure is reported locally and does not claim success.
 
 ## 2. Surfaces
 
 | Surface | Addition | Visible |
 | --- | --- | --- |
-| ManagerChat selected-thread header, desktop and phone | Conversation actions menu, Clear history… and Delete conversation… | A selected/default conversation exists |
+| ManagerChat selected-thread header, desktop and phone | More ("…") menu, Clear history… and Delete conversation… | A selected/default conversation exists |
 | Existing app dialog | Target name/place, distinct consequence and Cancel/confirm | After choosing an action |
 | Existing Manager empty transcript | Fresh empty history after clear; default/remaining selection after delete | After durable completion |
 | Error within confirmation | Concrete failure and retained safe state | Host/runtime/provider cleanup failed |
@@ -30,7 +30,7 @@ Use GeckIt menus, dialogs, spacing, type and danger tokens; no new visual system
 
 | State | When | User sees | Next action |
 | --- | --- | --- | --- |
-| Ready | Normal selected conversation | Conversation actions | Choose action or chat |
+| Ready | Normal selected conversation | More ("…") | Choose action or chat |
 | Confirm clear | Clear chosen | "Clear history?" and selected object | Cancel or Clear history |
 | Confirm delete | Delete chosen | "Delete conversation?" and selected object | Cancel or Delete conversation |
 | Applying | Confirmed, host mutating | "Clearing history…" / "Deleting conversation…", controls disabled | Wait |
@@ -86,7 +86,7 @@ Exactly one selected conversation per action, because this request is selective.
 
 ## 7. Wording
 
-- Action opener: "Conversation actions".
+- Action opener: the "…" icon button named "More"; the menu's title stays "Conversation actions".
 - Actions: "Clear history…", "Delete conversation…".
 - Clear title/action: "Clear history?" / "Clear history".
 - Delete title/action: "Delete conversation?" / "Delete conversation".

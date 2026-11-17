@@ -1,7 +1,4 @@
-import { Computer } from '../remote/Computer'
-import { EmployeeAvatar, EmployeeCardAssign, EmployeeFilter, EmployeeSelect, TeamButton } from '../employees/Employees'
-import { managerFace } from '../employees/TeamManager'
-import { openManagerChat } from './manager-chat-open'
+import { EmployeeCardAssign, EmployeeFilter, EmployeeSelect } from '../employees/Employees'
 import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -16,19 +13,23 @@ import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictat
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
-import geckoGlyph from '../gecko/frames/hA.webp'
+import type { HostView } from '../../../shared/hosts'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import { Sheet } from '../ui/Sheet'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { NameField } from './NameField'
+import { ChecklistField } from './ChecklistField'
+import { checklistLabel } from './TaskChecklist'
+import type { TaskChecklist } from '../../../shared/checklists'
+import { checklistDone, checklistGoal, copyChecklist, defaultChecklist, newItem } from '../../../shared/checklists'
 import { PhoneProject } from './PhoneProject'
 import { PhoneRecord } from './PhoneRecord'
 import { Preview } from './Preview'
-import { From, startedLine, StartedMenu } from './Request'
+import { From, originFor, startedLine, StartedMenu } from './Request'
 import { Projects } from './Projects'
 import { queueWhy } from './Queued'
-import { QuestionsMenu } from './Questions'
 import { HostTag } from './HostTag'
 import { emptyProfile, hostName, projectLabel, projectName, tint } from './project'
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
@@ -62,26 +63,13 @@ function landingAt(column: HTMLElement, x: number, y: number, tiled: boolean): n
 export function TopBar({
   chat,
   onNew,
-  onAsk,
   onSeek,
-  onSettings,
-  onShortcuts,
-  onTeam,
-  onServers,
-  teamOn = false,
 }: {
   readonly chat: Chat
   readonly onNew: () => void
-  readonly onAsk: () => void
   /** A conversation opened on something said in it, marked there as the Cmd+P panel marks it. */
   readonly onSeek: (seek: Seek) => void
-  readonly onSettings: () => void
-  readonly onShortcuts: () => void
-  readonly onServers?: (id?: string) => void
-  readonly onTeam?: (() => void) | undefined
-  readonly teamOn?: boolean
 }): React.JSX.Element {
-  const [asked, setAsked] = useState<DOMRect | undefined>()
   const [ways, setWays] = useState<DOMRect | undefined>()
   return (
     <div className="board-head drag">
@@ -90,52 +78,7 @@ export function TopBar({
       </div>
       {ON_PHONE ? <><Projects chat={chat} /><EmployeeFilter chat={chat} /></> : <TaskFilters chat={chat} />}
       <BoardSearch chat={chat} onSeek={onSeek} />
-      <button
-        type="button"
-        className="icon-button no-drag"
-        aria-label="Shortcuts"
-        title={`Shortcuts: saved prompts to run by hand or on a timetable (${MOD}+J)`}
-        onClick={onShortcuts}
-      >
-        <Icon name="bolt" />
-      </button>
-      <Computer {...(onServers === undefined ? {} : { onConnect: onServers })} />
-      {onTeam === undefined ? null : <TeamButton chat={chat} on={teamOn} onTeam={onTeam} />}
-      <button type="button" className="manager-open no-drag" aria-label="Chat with Manager" aria-haspopup="dialog" title="Chat with Manager" onClick={openManagerChat}><EmployeeAvatar employee={managerFace(chat.settings)} /><span>Manager</span></button>
-      {chat.settings.showGecko || ON_PHONE ? null : (
-        <button type="button" className="icon-button no-drag" aria-label="Show the gecko" title="Show the gecko" onClick={() => chat.change({ showGecko: true })}>
-          <img className="gecko-glyph" src={geckoGlyph} alt="" />
-        </button>
-      )}
-      <button
-        type="button"
-        className="icon-button no-drag"
-        aria-label="Settings"
-        title={`Settings (${MOD}+,)`}
-        onClick={onSettings}
-      >
-        <Icon name="settings" />
-      </button>
       <span className="spacer" />
-      <button
-        type="button"
-        className={`icon-button no-drag board-questions${asked === undefined ? '' : ' on'}`}
-        aria-label={chat.questions.length === 0 ? 'Ask a question' : `Questions (${String(chat.questions.length)})`}
-        aria-haspopup={chat.questions.length === 0 ? undefined : 'menu'}
-        aria-expanded={chat.questions.length === 0 ? undefined : asked !== undefined}
-        title={`${chat.questions.length === 0 ? 'Ask a question' : `Questions (${String(chat.questions.length)})`} (${MOD}+Shift+N)`}
-        data-focus-tip
-        onClick={(event) => {
-          if (chat.questions.length === 0) onAsk()
-          else setAsked(event.currentTarget.getBoundingClientRect())
-        }}
-      >
-        <Icon name="chat" />
-        {chat.questions.length === 0 ? null : <span className="board-question-count" aria-hidden="true">{chat.questions.length}</span>}
-      </button>
-      {asked === undefined ? null : (
-        <QuestionsMenu chat={chat} anchor={asked} autoFocus onAsk={onAsk} onClose={() => setAsked(undefined)} />
-      )}
       {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
       <span className="board-split no-drag">
         <button type="button" className="new-session board-new" onClick={onNew}>
@@ -347,6 +290,11 @@ const BoardView = memo(function BoardView({
   useEffect(() => {
     latest.current = { press, targets }
   })
+  // The board as it is now, for what a card calls or opens; one object, so React's development build does not diff the whole list on every card.
+  const live = useRef(chat)
+  useEffect(() => {
+    live.current = chat
+  })
 
   // Esc lets go of what is picked, and Delete asks about deleting it.
   useEffect(() => {
@@ -433,7 +381,7 @@ const BoardView = memo(function BoardView({
                 {column.order === 'lineup' && chat.lineup.limit !== 0 ? (
                   <span className={`state-said working-count${chat.lineup.working > 0 ? ' said-working' : ''}`} title="Conversations working across this computer. Background work does not count against the limit.">
                     <span className="state-dot" />
-                    {`${String(chat.lineup.working)} of ${String(chat.lineup.limit)} working`}
+                    <span>{`${String(chat.lineup.working)} of ${String(chat.lineup.limit)}`}<span className="working-word"> working</span></span>
                   </span>
                 ) : null}
                 {chat.listed ? <span className="count">{column.rows.length}</span> : null}
@@ -453,7 +401,13 @@ const BoardView = memo(function BoardView({
                       <Fragment key={session.id}>
                       {landing?.column === column.id && !tiled && landingId === session.id ? <div className="board-drop" /> : null}
                       <BoardCard
-                        chat={chat}
+                        live={live}
+                        open={chat.shown.kind === 'session' && chat.shown.id === session.id}
+                        starred={chat.settings.favorites.includes(session.id)}
+                        color={projectColor(homeOf(session), chat.settings)}
+                        host={chat.hosts.find((one) => one.id === hostOf(session.root))}
+                        employee={session.employeeId === undefined ? undefined : chat.employeesById.get(session.employeeId)}
+                        parent={originFor(chat, session)}
                         showProviders={chat.showProviders}
                         session={session}
                         now={now}
@@ -606,7 +560,13 @@ const BoardView = memo(function BoardView({
 
 function Card({
   showProviders,
-  chat,
+  live,
+  open,
+  starred,
+  color,
+  host,
+  employee,
+  parent,
   session,
   now,
   renaming,
@@ -620,7 +580,15 @@ function Card({
   onStopRenaming,
 }: {
   readonly showProviders: boolean
-  readonly chat: BoardChat
+  /** The board now, read when a card is pressed or a menu on it opens. */
+  readonly live: { readonly current: BoardChat }
+  readonly open: boolean
+  readonly starred: boolean
+  readonly color: number
+  readonly host: HostView | undefined
+  readonly employee: Employee | undefined
+  /** The conversation that asked for this one, while it is still there. */
+  readonly parent: ChatSession | undefined
   readonly session: ChatSession
   readonly now: number
   readonly renaming: boolean
@@ -637,8 +605,6 @@ function Card({
   readonly onRenamed: (id: string, name: string) => void
   readonly onStopRenaming: () => void
 }): React.JSX.Element {
-  const open = opened(chat, session)
-  const starred = chat.settings.favorites.includes(session.id)
   // The links written in it, counted on the card and listed where the button opens.
   const [links, setLinks] = useState<readonly Link[]>([])
   const [listing, setListing] = useState<DOMRect | undefined>()
@@ -653,7 +619,6 @@ function Card({
     }
   }, [session.id, session.at])
   // Out of reach, what was working or asking there still is, and the card says so in place of what it last said.
-  const host = chat.hosts.find((one) => one.id === hostOf(session.root))
   const away = host !== undefined && outOfReach(host.state) && (session.state === 'working' || session.state === 'asks')
   const stands = away ? { words: outOfReachLine(host.name), tone: 'said-away' } : cardSays(session)
   const background = session.tasks?.filter(running).length ?? 0
@@ -682,7 +647,7 @@ function Card({
         onPress(session, event.shiftKey ? 'run' : (MOD === 'Cmd' ? event.metaKey : event.ctrlKey) ? 'one' : 'open')
       }
       onKeyDown={(event) => {
-        if (event.key === 'Enter') chat.show(session)
+        if (event.key === 'Enter') live.current.show(session)
       }}
     >
       <div className="board-card-head">
@@ -702,7 +667,7 @@ function Card({
       </div>
       <div className="board-card-foot">
         <span>
-          <span className="tinted" style={tint(projectColor(homeOf(session), chat.settings))}>
+          <span className="tinted" style={tint(color)}>
             {projectName(homeOf(session))}
           </span>
           <HostTag root={homeOf(session)} />
@@ -728,7 +693,7 @@ function Card({
           </button>
         )}
       </div>
-      <From chat={chat} session={session} className="board-card-from" />
+      <From parent={parent === undefined ? undefined : { id: parent.id, title: parent.title }} session={session} className="board-card-from" onGo={(id) => live.current.goTo(id)} />
       {stands === undefined && background === 0 && queued === 0 ? null : (
         <div className="board-card-state">
           {stands === undefined ? null : (
@@ -762,7 +727,12 @@ function Card({
           onClose={() => setListing(undefined)}
         />
       )}
-      {goal === undefined ? null : (
+      {session.checklist !== undefined && session.checklist.items.length > 0 ? (
+        <div className={`board-card-goal${checklistDone(session.checklist) ? ' met' : ''}`} title={session.checklist.items.map((one, at) => `${one.state === 'passed' ? '✓' : String(at + 1)} ${one.title}`).join('\n')}>
+          <Icon name={checklistDone(session.checklist) ? 'done' : 'goal'} size={10} />
+          <span>{checklistLabel(session.checklist)}</span>
+        </div>
+      ) : goal === undefined ? null : (
         <div className={`board-card-goal${goalMet(session) ? ' met' : ''}`} title={goalMet(session) ? `Goal reached: ${goal}` : goal}>
           <Icon name={goalMet(session) ? 'done' : 'goal'} size={10} />
           <span>{goalMet(session) ? (goal === '' ? 'Goal reached' : `Goal reached: ${goal}`) : goal}</span>
@@ -790,16 +760,14 @@ function Card({
       {/* Drawn over the page but inside the card in React, so a row pressed must not also open the card. */}
       {kids === undefined ? null : (
         <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-          <StartedMenu chat={chat} id={session.id} anchor={kids} onClose={() => setKids(undefined)} />
+          <StartedMenu chat={live.current} id={session.id} anchor={kids} onClose={() => setKids(undefined)} />
         </span>
       )}
       {showProviders ? <ProviderIcon id={session.id} transport={session.transport} /> : null}
-      {session.question === true || session.manager === true ? null : <EmployeeCardAssign chat={chat} session={session} />}
+      {session.question === true || session.manager === true ? null : <EmployeeCardAssign live={live} employee={employee} session={session} />}
     </div>
   )
 }
-
-const opened = (chat: Pick<Chat, 'shown'>, session: ChatSession): boolean => chat.shown.kind === 'session' && chat.shown.id === session.id
 
 // Typing, and every line streaming into an open conversation, change `chat` without changing anything a card shows.
 const BoardCard = memo(
@@ -811,13 +779,13 @@ const BoardCard = memo(
     was.renaming === now.renaming &&
     was.picked === now.picked &&
     was.landing === now.landing &&
-    (was.chat.shown === now.chat.shown || opened(was.chat, was.session) === opened(now.chat, now.session)) &&
-    (was.chat.settings === now.chat.settings ||
-      (was.chat.settings.favorites.includes(was.session.id) === now.chat.settings.favorites.includes(now.session.id) &&
-        projectColor(homeOf(was.session), was.chat.settings) === projectColor(homeOf(now.session), now.chat.settings))) &&
-    was.chat.employees === now.chat.employees &&
-    was.chat.employeesById.get(was.session.employeeId ?? '') === now.chat.employeesById.get(now.session.employeeId ?? '') &&
-    was.chat.hosts === now.chat.hosts &&
+    was.open === now.open &&
+    was.starred === now.starred &&
+    was.color === now.color &&
+    was.host === now.host &&
+    was.employee === now.employee &&
+    was.parent?.id === now.parent?.id &&
+    was.parent?.title === now.parent?.title &&
     was.started === now.started,
 )
 
@@ -831,8 +799,24 @@ const BoardCard = memo(
 interface KeptTask {
   readonly root: string
   readonly text: string
-  readonly goal: string
+  /** What an earlier build kept: a goal, brought back as a one-item checklist. */
+  readonly goal?: string
+  readonly checklist?: TaskChecklist
   readonly employeeId?: Employee['id']
+}
+
+/** What Start will do about the checklist, said under the form. */
+const checklistHint = (goal: string, checklist: TaskChecklist, assistant: string): string => {
+  if (goal === '') return `No checklist: it stops when ${assistant} is done`
+  return checklist.items.filter((one) => one.title.trim() !== '').length === 1 ? `${assistant} keeps working until this holds, then the card shows Goal reached` : `${assistant} works through these in order, then the card shows Goal reached`
+}
+
+/** A checklist in one line, for the phone's cell. */
+const checklistSaid = (checklist: TaskChecklist): string => {
+  const count = checklist.items.filter((one) => one.title.trim() !== '').length
+  if (count === 0) return 'None'
+  if (checklist.from !== undefined) return `${checklist.from.name}, ${String(count)}`
+  return count === 1 ? (checklist.items.find((one) => one.title.trim() !== '')?.title.trim() ?? 'None') : `${String(count)} items`
 }
 
 const keptKey = (question: boolean): string => (question ? 'newQuestion' : 'newTask')
@@ -841,7 +825,7 @@ const keptKey = (question: boolean): string => (question ? 'newQuestion' : 'newT
 export function keptTask(question: boolean): KeptTask | undefined {
   try {
     const kept = JSON.parse(localStorage.getItem(keptKey(question)) ?? 'null') as KeptTask | null
-    return kept === null || (kept.text.trim() === '' && kept.goal.trim() === '') ? undefined : kept
+    return kept === null || (kept.text.trim() === '' && (kept.goal ?? '').trim() === '' && !(kept.checklist?.items ?? []).some((one) => one.title.trim() !== '')) ? undefined : kept
   } catch {
     return undefined
   }
@@ -866,12 +850,14 @@ export function NewTask({
   seedPaths = [],
   seedText = '',
   given,
-  onSwitch,
   onStarting,
   onEmployees,
+  onChecklists,
 }: {
   readonly chat: Chat
   readonly onClose: () => void
+  /** Opens Settings at Checklists, from the checklist picker. */
+  readonly onChecklists?: (() => void) | undefined
   /** A general question: no project, no goal, and no card. */
   readonly question?: boolean
   /** On the phone: opened to be filled from a recording, whose picker comes up at once. */
@@ -884,8 +870,6 @@ export function NewTask({
   readonly seedPaths?: readonly string[]
   /** What was said to the gecko for a voice task, for the words. */
   readonly seedText?: string
-  /** Turned from a task into a question or back, with the pictures carried over; what is written goes over through what the other form keeps. */
-  readonly onSwitch?: ((pictures: readonly SessionImage[]) => void) | undefined
   readonly onStarting: (starting: boolean) => void
   readonly onEmployees?: (() => void) | undefined
 }): React.JSX.Element {
@@ -895,9 +879,19 @@ export function NewTask({
     const remembered = chat.settings.newTaskRoot
     return given ?? kept?.root ?? (projects.includes(remembered) ? remembered : undefined) ?? chat.root ?? projects[0] ?? ''
   })
-  const pickRoot = (root: string): void => {
-    setRoot(root)
-    chat.change({ newTaskRoot: root })
+  const folderDefault = (folder: string): TaskChecklist => {
+    const found = question ? undefined : defaultChecklist(chat.settings.checklists ?? [], folder)
+    return found === undefined ? { items: [] } : copyChecklist(found)
+  }
+  const [checklist, setChecklist] = useState<TaskChecklist>(() => kept?.checklist ?? (kept?.goal !== undefined && kept.goal.trim() !== '' ? { items: [newItem(kept.goal.trim())] } : folderDefault(root)))
+  const goal = checklistGoal(checklist)
+  // A checklist of the folder left behind, or none at all, gives way to the new folder's default; typed items and shared ones stay.
+  const pickRoot = (next: string): void => {
+    const from = checklist.from === undefined ? undefined : (chat.settings.checklists ?? []).find((one) => one.id === checklist.from?.id)
+    const empty = !checklist.items.some((one) => one.title.trim() !== '')
+    if (next !== root && (empty || (from?.root !== undefined && from.root === root))) setChecklist(folderDefault(next))
+    setRoot(next)
+    chat.change({ newTaskRoot: next })
   }
   const provider = assistantFor(chat.settings, question ? '' : root)
   const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
@@ -957,14 +951,11 @@ export function NewTask({
     const said = seedText.trim()
     return said === '' ? was : was.trim() === '' ? said : `${was.trimEnd()}\n${said}`
   })
-  const [goal, setGoal] = useState(kept?.goal ?? '')
-  const [goalOpen, setGoalOpen] = useState(false)
-  const goalField = useRef<HTMLInputElement>(null)
   const [employeeId, setEmployeeId] = useState(kept?.employeeId ?? '')
   const chosenEmployee = chat.employeesById.get(employeeId)
   const unavailableEmployee = employeeId !== '' && (chosenEmployee === undefined || chosenEmployee.archived)
 
-  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, goal, employeeId })), [question, root, text, goal, employeeId])
+  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, checklist, employeeId })), [question, root, text, checklist, employeeId])
   // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
   useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
   const [pictures, setPictures] = useState<readonly SessionImage[]>(seed)
@@ -1085,7 +1076,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void (question ? chat.ask(said, sent) : chat.startTask(root, said, goal.trim(), sent, employeeId || undefined)).then(onClose, (error: Error) => {
+    void (question ? chat.ask(said, sent) : chat.startTask(root, said, checklist, sent, employeeId || undefined)).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1101,7 +1092,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void chat.planTask(root, text.trim(), goal.trim(), employeeId || undefined).then(onClose, (error: Error) => {
+    void chat.planTask(root, text.trim(), checklist, employeeId || undefined).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1109,7 +1100,7 @@ export function NewTask({
     })
   }
   const planWhy = pictures.length > 0 || recorded !== undefined ? 'Pictures are sent at once; Start it, or plan without them' : 'Put it in To do without sending. Open it and send when it is time'
-  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? 'Deleted a day after the last answer' : goal.trim() === '' ? `No goal: it stops when ${providerInfo.shortName} is done` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached`
+  const startHint = providerInfo.localOnly && !question && isRemote(root) ? `${providerInfo.name} supports local folders only` : chat.full && !question ? queueWhy(chat.lineup) : question ? 'Deleted a day after the last answer' : checklistHint(goal, checklist, providerInfo.shortName)
 
   if (ON_PHONE) {
     return (
@@ -1118,11 +1109,12 @@ export function NewTask({
         question={question}
         root={root}
         text={text}
-        goal={goal}
+        checklist={checklist}
         pictures={pictures}
         onRoot={pickRoot}
         onText={setText}
-        onGoal={setGoal}
+        onChecklist={setChecklist}
+        onChecklists={onChecklists}
         onPictures={take}
         onDrop={(at) => setPictures((held) => held.filter((_one, index) => index !== at))}
         onStart={start}
@@ -1175,30 +1167,7 @@ export function NewTask({
       }}
     >
       <header className="new-task-top">
-        {onSwitch === undefined ? (
-          <h2 className="new-task-head">{question ? 'Ask a question' : 'New task'}</h2>
-        ) : (
-          <div className="views new-task-kinds" role="radiogroup" aria-label="Kind">
-            {[false, true].map((kind) => (
-              <button
-                key={String(kind)}
-                type="button"
-                role="radio"
-                aria-checked={kind === question}
-                className={kind === question ? 'on' : ''}
-                disabled={starting}
-                onClick={() => {
-                  if (kind === question) return
-                  localStorage.setItem(keptKey(kind), JSON.stringify({ root, text, goal }))
-                  onSwitch(pictures)
-                }}
-              >
-                <Icon name={kind ? 'chat' : 'compose'} size={12} />
-                {kind ? 'Ask a question' : 'New task'}
-              </button>
-            ))}
-          </div>
-        )}
+        <h2 className="new-task-head">{question ? 'Ask a question' : 'New task'}</h2>
         <span className="new-task-sub">{question ? 'Not about a folder, and not on the board' : 'A card on the board, worked on in its folder'}</span>
       </header>
       <div className="new-task-body">
@@ -1261,23 +1230,7 @@ export function NewTask({
             </div>
           </div>
           {copying === undefined ? null : <p className={copying.failed ? 'error' : 'new-task-why'}>{copying.text}</p>}
-          {question ? null : goalOpen || goal !== '' ? (
-            <label className="new-task-label new-task-goal-field">
-              Goal
-              <input
-                ref={goalField}
-                className="new-task-goal"
-                value={goal}
-                onChange={(event) => setGoal(event.target.value)}
-                onBlur={() => { if (goal.trim() === '') setGoalOpen(false) }}
-                placeholder="When it is done, as a condition"
-              />
-            </label>
-          ) : (
-            <button type="button" className="shortcut-add-goal" onClick={() => { setGoalOpen(true); requestAnimationFrame(() => goalField.current?.focus()) }}>
-              <Icon name="plus" size={11} />Add a goal<span>it keeps working until this holds</span>
-            </button>
-          )}
+          {question ? null : <ChecklistField checklists={chat.settings.checklists ?? []} root={root} value={checklist} onChange={setChecklist} onManage={onChecklists} disabled={starting} />}
         </div>
         <aside className="new-task-side" aria-label="Settings">
           {question ? null : (
@@ -1326,11 +1279,12 @@ function PhoneNewTask({
   question,
   root,
   text,
-  goal,
+  checklist,
   pictures,
   onRoot,
   onText,
-  onGoal,
+  onChecklist,
+  onChecklists,
   onPictures,
   onDrop,
   onStart,
@@ -1349,7 +1303,7 @@ function PhoneNewTask({
   readonly question: boolean
   readonly root: string
   readonly text: string
-  readonly goal: string
+  readonly checklist: TaskChecklist
   readonly pictures: readonly SessionImage[]
   readonly record: boolean
   /** A recording's frames, which go with the pictures. */
@@ -1360,7 +1314,8 @@ function PhoneNewTask({
   readonly copying: { readonly text: string; readonly failed: boolean } | undefined
   readonly onRoot: (root: string) => void
   readonly onText: (text: string) => void
-  readonly onGoal: (goal: string) => void
+  readonly onChecklist: (checklist: TaskChecklist) => void
+  readonly onChecklists?: (() => void) | undefined
   readonly onPictures: (files: readonly File[]) => void
   readonly onDrop: (at: number) => void
   readonly onStart: () => void
@@ -1376,6 +1331,7 @@ function PhoneNewTask({
   const provider = assistantFor(chat.settings, question ? '' : root)
   const providerInfo = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
   const [choosing, setChoosing] = useState(false)
+  const [editingChecklist, setEditingChecklist] = useState(false)
   const [recording, setRecording] = useState(record)
   const [listening, setListening] = useState(false)
   const [writing, setWriting] = useState(false)
@@ -1469,14 +1425,21 @@ function PhoneNewTask({
                     <Icon name="right" size={14} />
                   </span>
                 </button>
-                <label className="phone-task-cell">
-                  Goal
-                  <input className="phone-task-goal" value={goal} placeholder="None" onChange={(event) => onGoal(event.target.value)} />
-                </label>
+                <button type="button" className="phone-task-cell" disabled={starting} onClick={() => setEditingChecklist(true)}>
+                  Checklist
+                  <span>
+                    <span className="phone-task-cell-text">{checklistSaid(checklist)}</span>
+                    <Icon name="right" size={14} />
+                  </span>
+                </button>
               </div>
-              <div className="phone-task-note">
-                {goal.trim() === '' ? `Without a goal, it stops when ${providerInfo.shortName} is done.` : `${providerInfo.shortName} keeps working until this holds, then the card shows Goal reached.`}
-              </div>
+              {editingChecklist ? (
+                <Sheet title="Checklist" onClose={() => setEditingChecklist(false)} cancel={false} className="phone-checklist-sheet">
+                  <ChecklistField checklists={chat.settings.checklists ?? []} root={root} value={checklist} onChange={onChecklist} onManage={onChecklists === undefined ? undefined : () => { setEditingChecklist(false); onChecklists() }} />
+                  <button type="button" className="primary phone-checklist-done" onClick={() => setEditingChecklist(false)}>Done</button>
+                </Sheet>
+              ) : null}
+              <div className="phone-task-note">{`${checklistHint(checklistGoal(checklist), checklist, providerInfo.shortName)}.`}</div>
               <div className="phone-task-group">
                 <button type="button" className="phone-task-cell" disabled={onPlan === undefined || starting} onClick={onPlan}>
                   Plan in To do

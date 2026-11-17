@@ -15,6 +15,14 @@ export interface ChannelValues {
   readonly [key: string]: ChannelValue
 }
 
+/** What a channel may do; a version 1 library asks for conversations and manager only. */
+export type ChannelCapability = 'conversations' | 'manager' | 'replies' | 'delivery' | 'control' | 'files' | 'shares'
+export const CHANNEL_CAPABILITIES: readonly ChannelCapability[] = ['conversations', 'manager', 'replies', 'delivery', 'control', 'files', 'shares']
+/** Legacy grant names retained for compatibility. */
+export const CHANNEL_GRANTS: readonly ChannelCapability[] = ['control', 'files', 'shares']
+export const V1_CAPABILITIES: readonly ChannelCapability[] = ['conversations', 'manager']
+export const channelCapability = (value: unknown): value is ChannelCapability => typeof value === 'string' && (CHANNEL_CAPABILITIES as readonly string[]).includes(value)
+
 export interface ChannelInfo {
   readonly id: ChannelId
   readonly name: string
@@ -22,17 +30,26 @@ export interface ChannelInfo {
   readonly description?: string
   readonly fields: readonly ChannelField[]
   readonly source?: string
+  /** What the channel asks for; absent for a version 1 library. */
+  readonly capabilities?: readonly ChannelCapability[]
 }
 
 export interface ChannelSetting {
   readonly info: ChannelInfo
   readonly enabled: boolean
-  /** Project folders the library may start conversations in. */
+  /** Legacy field; all GeckIt project folders are available. */
   readonly projects: readonly string[]
-  /** Whether the library may talk to Manager. */
+  /** Legacy field; Manager access is always enabled when declared. */
   readonly manager: boolean
   readonly config: ChannelValues
+  /** Legacy field; declared capabilities are always enabled. */
+  readonly grants?: readonly ChannelCapability[]
 }
+
+export const askedCapabilities = (info: Pick<ChannelInfo, 'capabilities'>): readonly ChannelCapability[] => info.capabilities ?? V1_CAPABILITIES
+
+/** What a channel gets: every capability it declared. */
+export const grantedCapabilities = (setting: Pick<ChannelSetting, 'info' | 'grants'>): readonly ChannelCapability[] => askedCapabilities(setting.info)
 
 export type ChannelState = 'off' | 'setup' | 'starting' | 'connected' | 'failed'
 
@@ -50,6 +67,10 @@ export interface ChannelView {
   readonly threads?: number
   /** Comes with GeckIt: turned off, never removed. */
   readonly builtIn?: true
+  readonly settings?: boolean
+  /** Declared legacy grant names; every declared capability is enabled. */
+  readonly asks?: readonly ChannelCapability[]
+  readonly grants?: readonly ChannelCapability[]
 }
 
 export interface ChannelFailure {
@@ -69,6 +90,8 @@ export interface ChannelChange {
   readonly projects?: readonly string[]
   readonly manager?: boolean
   readonly config?: ChannelValues
+  /** Legacy input, ignored; all declared capabilities are enabled. */
+  readonly grants?: readonly ChannelCapability[]
   /** A secret's new value, or null to forget it. */
   readonly secrets?: { readonly [key: string]: string | null }
 }

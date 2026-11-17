@@ -80,17 +80,17 @@ export function AssignSheet({ chat, session, onClose }: { readonly chat: AssignC
   return <EmployeeAssignMenu chat={chat} current={current} anchor={new DOMRect()} onPick={assign} onClose={onClose} />
 }
 
-export function EmployeeCardAssign({ chat, session }: { readonly chat: AssignChat; readonly session: Pick<ChatSession, 'id' | 'employeeId'> }): React.JSX.Element {
+/** On a board card: given its employee, and the board as it is now for the menu, rather than the whole board, which a card drawn again would hand over. */
+export function EmployeeCardAssign({ live, employee, session }: { readonly live: { readonly current: AssignChat }; readonly employee: Employee | undefined; readonly session: Pick<ChatSession, 'id' | 'employeeId'> }): React.JSX.Element {
   const [anchor, setAnchor] = useState<DOMRect>()
-  const { pending, error, assign } = useAssign(chat, session)
-  const employee = session.employeeId === undefined ? undefined : chat.employeesById.get(session.employeeId)
+  const { pending, error, assign } = useAssign(live.current, session)
   const identity = employee === undefined ? 'Assign employee' : `${employee.name}${employee.role === '' ? '' : ` · ${employee.role}`}${employee.archived ? ' · Archived' : ''}`
   return <span className="employee-card-slot" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onDragStart={(event) => event.preventDefault()}>
     <button type="button" draggable={false} className={`employee-card-avatar${employee === undefined ? ' blank' : ''}${anchor === undefined ? '' : ' open'}`} disabled={pending} aria-label={employee === undefined ? 'Assign employee' : `Employee: ${identity}. Change`} title={identity} aria-haspopup="menu" aria-expanded={anchor !== undefined} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}>
       {employee === undefined ? <Icon name="plus" size={10} /> : <EmployeeAvatar employee={employee} />}
     </button>
     {error ? <span className="employee-card-alert" role="alert">Could not change employee. Try again.</span> : null}
-    {anchor === undefined ? null : <EmployeeAssignMenu chat={chat} current={employee} anchor={anchor} onPick={assign} onClose={() => setAnchor(undefined)} />}
+    {anchor === undefined ? null : <EmployeeAssignMenu chat={live.current} current={employee} anchor={anchor} onPick={assign} onClose={() => setAnchor(undefined)} />}
   </span>
 }
 

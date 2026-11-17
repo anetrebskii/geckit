@@ -175,7 +175,7 @@ The broker comes with GeckIt and keeps secrets in each system's own credential s
 **Lifetime and management**
 
 - **FR-026**: This task secrets MUST be deleted when their task is moved to Done or deleted; One use secrets after their first successful use; timed secrets at expiry or at the first use after it.
-- **FR-027**: Alex MUST be able to list, inspect (without value) and remove secrets from the command line and in Settings, and see the history of uses.
+- **FR-027**: Alex MUST be able to list, inspect (without value) and remove secrets from the command line and in Settings, and see the history of uses. In Settings he MUST also be able to add a secret and change its places, note, lifetime or value, without seeing the current value; the value is sealed in the window to the broker's one-time key. A Website secret MAY carry the username or email it signs in as; it is not secret and is listed with the secret. When the agent did not give it, the person MAY type it on the link page; it travels in the open beside the sealed value.
 - **FR-028**: GeckIt's built-in guidance for its AI MUST teach requesting secrets by name and using them through the broker, and never asking for a secret in chat.
 
 **Installation**

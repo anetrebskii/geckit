@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { awaitingApproval } from '../../../shared/checklists'
 import { flushSync } from 'react-dom'
 
 import { taskTerminal } from '../../../shared/background-tasks'
@@ -60,6 +61,7 @@ export function cardSays(session: ChatSession): { readonly words: string; readon
   if ((session.state === 'idle' || session.state === 'unread') && children.some((task) => task.status === 'unknown')) return { words: 'Helper activity unconfirmed', tone: '' }
   if (session.state === 'working') return { words: `${assistant} is working`, tone: 'said-working' }
   if (session.state === 'asks') return { words: 'Asking you', tone: 'said-asks' }
+  if (awaitingApproval(session.checklist) !== undefined) return { words: 'Waiting for your approval', tone: 'said-asks' }
   if (session.waits === true) return { words: 'Waiting for a slot', tone: '' }
   if (waitsOnHelpers(session)) {
     const count = session.tasks?.filter(helping).length ?? 0
@@ -79,7 +81,7 @@ export function cardSays(session: ChatSession): { readonly words: string; readon
 export function needsYou(session: ChatSession): boolean {
   if (session.state === 'working' || session.waits === true || waitsOnHelpers(session)) return false
   if (session.runs !== undefined) return session.typing === true
-  return session.state === 'asks' || session.state === 'unread' || session.state === 'failed' || session.state === 'limit' || session.status === 'blocked'
+  return session.state === 'asks' || session.state === 'unread' || session.state === 'failed' || session.state === 'limit' || session.status === 'blocked' || awaitingApproval(session.checklist) !== undefined
 }
 
 /** Whether its turn is over and read but a command, a watch or a helper it started still runs in the background. */

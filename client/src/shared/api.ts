@@ -1,3 +1,4 @@
+import type { ShortcutDestination } from './shortcut-destinations'
 import { isRemote } from './hosts'
 import type { Elicitation } from './elicitation'
 import type { HostConfig } from './hosts'
@@ -6,6 +7,7 @@ import { llmProviderInfo } from './providers'
 import type { ProjectAssistant } from './manager'
 import type { Employee } from './employees'
 import type { ChannelSetting } from './channels'
+import type { Checklist, TaskChecklist } from './checklists'
 
 /**
  * The contract between the main process and the windows.
@@ -195,6 +197,8 @@ export interface RequestTask {
   readonly title: string
   readonly text: string
   readonly goal?: string
+  /** Its checklist: each item becomes the goal in turn once it starts. */
+  readonly checklist?: TaskChecklist
   /** The conversation it was started as, once it was. */
   readonly started?: string
   readonly note?: string
@@ -440,6 +444,10 @@ export interface ChatSession {
   readonly goal?: SessionGoal
   /** The goal that held; the card stays where it is and says so. */
   readonly goalMet?: string
+  /** The task's own checklist, each item set as the goal in turn. */
+  readonly checklist?: TaskChecklist
+  /** The person's item the assistant is working on, which is its goal though no goal is set. */
+  readonly personItem?: string
   /** When it was last moved into the column it stands in, which is the day Done shows it under. */
   readonly since?: number
   /** A command typed after ! that is still running in it, the first where there are more. */
@@ -619,6 +627,8 @@ export interface SessionMessage {
   readonly text: string
   /** A new Codex task's finish condition, attached before its first turn. */
   readonly goal?: string
+  /** A new task's checklist: GeckIt sets each item as the goal in turn. */
+  readonly checklist?: TaskChecklist
   readonly images?: readonly SessionImage[]
   /** The model the tool is handed. Nothing is Default: the tool is handed nothing. */
   readonly model?: string
@@ -889,7 +899,7 @@ export type ViewInput =
   | { readonly type: 'back' }
 
 /** One picture of the sign-in tab, a JPEG in base64, with the page it shows. */
-export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string }
+export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string }; readonly fields?: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] }
 
 /** Test browsers: Camoufox driven by GeckIt, each profile kept by name. */
 export interface TestBrowsersState {
@@ -1200,6 +1210,10 @@ export interface Settings {
   readonly chatGrouping: ChatGrouping
   /** The conversations as a list, or as a board of cards by what stands where. */
   readonly chatView: ChatView
+  /** The place the Chat window shows: tasks, manager, questions, a Workspace place, settings, or `host:<id>`. */
+  readonly chatPlace: string
+  /** The Chat window's sidebar shows its names, or only its icons by the person's choice. */
+  readonly navNames: boolean
   /** A conversation opened from the board comes up over it, or below it with the board shrunk to a strip above. */
   readonly conversationPlace: ConversationPlace
   /** How tall the strip of board above a conversation was dragged, in pixels. */
@@ -1264,10 +1278,13 @@ export interface Settings {
   readonly phoneKey: string
   /** Written by the main process only, over `shortcuts:*`, so a window's older copy never undoes a run. */
   readonly shortcuts: readonly Shortcut[]
+  /** Saved checklists a new task can start from, shared or tied to a folder. */
+  readonly checklists: readonly Checklist[]
   readonly calendarTimeZone?: string
   readonly calendarRecurrenceVersion?: 1
   readonly cronStartWindowVersion?: 1
   readonly managerShortcutsVersion?: 1
+  readonly shortcutDestinationsVersion?: 1
   /** What is written often, offered after ; in the message field. */
   readonly phrases: readonly string[]
   /** Other computers conversations run on, reached over SSH. Never a password: those are in the system's credential store. */
@@ -1276,13 +1293,16 @@ export interface Settings {
 
 /** A saved prompt sent to Manager or started as a new conversation, by hand or on a timetable. */
 export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'> {
+  readonly destination?: ShortcutDestination
   readonly target?: 'manager'
   readonly id: string
   readonly name: string
   readonly root: string
   readonly prompt: string
-  /** What being finished means, sent as `/goal` after the prompt. Nothing is no goal. */
+  /** What being finished means, from before shortcuts kept a checklist; read as a one-item checklist and replaced by one when saved. */
   readonly goal?: string
+  /** The results each run works through one goal at a time, a copy kept with the shortcut. Nothing is no goal. */
+  readonly checklist?: TaskChecklist
   readonly mode: SessionMode
   /** The model the conversation is handed. Nothing is Default. */
   readonly model?: string
@@ -1388,6 +1408,8 @@ export const DEFAULT_SETTINGS: Settings = {
   chatMode: 'auto',
   chatGrouping: 'time',
   chatView: 'board',
+  chatPlace: 'tasks',
+  navNames: true,
   conversationPlace: 'over',
   boardHeight: 240,
   boardColumns: [],
@@ -1421,6 +1443,7 @@ export const DEFAULT_SETTINGS: Settings = {
   phoneKey: '',
   sidebarWidth: 264,
   shortcuts: [],
+  checklists: [],
   phrases: [],
   hosts: [],
 }

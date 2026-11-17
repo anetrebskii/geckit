@@ -66,7 +66,7 @@ export function ManagerPage({ settings, change, view, onChat, children }: { read
     <ManagerInstructions view={view} />
     {children}
     <section className="team-section" aria-label="Setup">
-      <div className="employee-section-head"><span><h3>Setup</h3><p className="employee-note">Manager is always part of the team. Turn it on to give work in the app, Telegram or Manager shortcuts.</p></span></div>
+      <div className="employee-section-head"><span><h3>Setup</h3><p className="employee-note">Always on. Choose the assistant that runs it.</p></span></div>
       <ManagerSettings settings={settings} embedded />
     </section>
   </>

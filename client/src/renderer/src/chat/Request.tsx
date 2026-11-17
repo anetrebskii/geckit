@@ -293,10 +293,16 @@ function Details({
   return (
     <div className="request-body">
       <div className="request-message">{task.text}</div>
-      <div className={`request-goal${task.goal === undefined ? ' none' : ''}`}>
-        <Icon name="goal" size={11} />
-        <span>{task.goal ?? 'No goal. It stops after its first answer.'}</span>
-      </div>
+      {task.checklist !== undefined && task.checklist.items.length > 0 ? (
+        <ol className="request-checklist" aria-label={task.checklist.from === undefined ? 'Checklist' : `Checklist: ${task.checklist.from.name}`}>
+          {task.checklist.items.map((one) => <li key={one.id}>{one.title}</li>)}
+        </ol>
+      ) : (
+        <div className={`request-goal${task.goal === undefined ? ' none' : ''}`}>
+          <Icon name="goal" size={11} />
+          <span>{task.goal ?? 'No goal. It stops after its first answer.'}</span>
+        </div>
+      )}
       {noting ? (
         <label className="request-note">
           <Icon name="pencil" size={11} />
@@ -338,17 +344,18 @@ export function managerTrace(session: Pick<ChatSession, 'managerThread' | 'label
   ]
 }
 
-/** "From <parent title>": the conversation that asked for this one, while it is still there. */
+/** "From <parent title>": the conversation that asked for this one, while it is still there. Its card works it out, so a card drawn again does not hand over the whole list. */
 export function From({
-  chat,
+  parent,
   session,
   className,
+  onGo,
 }: {
-  readonly chat: Pick<Chat, 'sessions' | 'goTo'>
+  readonly parent: Pick<ChatSession, 'id' | 'title'> | undefined
   readonly session: ChatSession
   readonly className: string
+  readonly onGo: (id: string) => void
 }): React.JSX.Element | null {
-  const parent = originFor(chat, session)
   const manager = managerFrom(session)
   if (parent === undefined && manager !== undefined) return <div className={className} title={managerTrace(session).join('\n')}>{manager}</div>
   if (parent === undefined) return null
@@ -359,7 +366,7 @@ export function From({
         type="button"
         onClick={(event) => {
           event.stopPropagation()
-          chat.goTo(parent.id)
+          onGo(parent.id)
         }}
       >
         {parent.title}

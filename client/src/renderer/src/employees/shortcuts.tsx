@@ -6,8 +6,10 @@ import { projectColor } from '../../../shared/project-color'
 import { saveShortcut } from '../../../shared/shortcut-save'
 import { Icon } from '../ui/Icon'
 import { projectLabel, tint } from '../chat/project'
+import type { ShortcutRun } from '../../../shared/shortcut-runs'
+import { destinationSummary, ShortcutDelivery, useShortcutRuns } from '../chat/ShortcutDestinations'
 
-export type ShortcutRowChat = { readonly settings: Pick<Settings, 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'projectColors'>; readonly everyone: readonly ChatSession[] }
+export type ShortcutRowChat = { readonly settings: Pick<Settings, 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'projectColors' | 'shortcuts' | 'shortcutDestinationsVersion'>; readonly everyone: readonly ChatSession[] }
 
 export const shortcutDraft = ({ since: _since, lastRun: _lastRun, lastSession: _lastSession, ...draft }: Shortcut): ShortcutDraft => draft
 
@@ -25,8 +27,9 @@ export function shortcutWhen(one: Shortcut, settings: Pick<Settings, 'calendarTi
   return next === undefined ? `${rule} · Timetable ended` : `${rule} · Next ${describeTime(next, now, one.recurrence === undefined ? undefined : settings.calendarTimeZone)}`
 }
 
-export const EmployeeShortcut = memo(function EmployeeShortcut({ shortcut, chat, archived, now, onEdit, onGive, onOpen }: {
+export const EmployeeShortcut = memo(function EmployeeShortcut({ shortcut, chat, archived, now, onEdit, onGive, onOpen, lastRun }: {
   readonly shortcut: Shortcut
+  readonly lastRun?: ShortcutRun | undefined
   readonly chat: ShortcutRowChat
   readonly archived: boolean
   readonly now: number
@@ -51,6 +54,7 @@ export const EmployeeShortcut = memo(function EmployeeShortcut({ shortcut, chat,
     <strong>{shortcut.name}</strong>
     <span>
       <span>{shortcutWhen(shortcut, chat.settings, now, archived)}</span>
+      {shortcut.destination === undefined ? null : <span className="shortcut-destination-summary">{destinationSummary(shortcut.destination)}</span>}
       {shortcut.lastRun === undefined ? null : <span>{`Last run ${describeTime(shortcut.lastRun, now)}`}</span>}
       <span className="tinted" style={tint(projectColor(shortcut.root, chat.settings))}>{projectLabel(shortcut.root)}</span>
     </span>
@@ -59,6 +63,7 @@ export const EmployeeShortcut = memo(function EmployeeShortcut({ shortcut, chat,
   return <div className={`team-shortcut${timed && shortcut.on && !archived ? ' timed' : ''}`}>
     <span className="team-shortcut-icon"><Icon name={timed ? 'todo' : 'bolt'} size={13} /></span>
     {onEdit === undefined ? <span className="team-shortcut-words">{words}</span> : <button type="button" className="team-shortcut-words" title="Edit shortcut" onClick={() => onEdit(shortcut.id)}>{words}</button>}
+    <ShortcutDelivery run={lastRun} />
     {running && shortcut.lastSession !== undefined ? <button type="button" className="team-running" onClick={() => { if (shortcut.lastSession !== undefined) onOpen?.(shortcut.lastSession) }}>Running</button> : null}
     {onGive === undefined ? null : <button type="button" className="quiet team-give" onClick={(event) => onGive(event.currentTarget.getBoundingClientRect(), shortcut.id)}>Give to...<Icon name="down" size={10} /></button>}
     <button type="button" className="quiet team-run" disabled={busy || running || archived} title={shortcut.target === 'manager' ? 'Send this prompt to Manager' : 'Start a new task with this prompt'} onClick={run}><Icon name="send" size={10} />Run</button>
@@ -68,8 +73,9 @@ export const EmployeeShortcut = memo(function EmployeeShortcut({ shortcut, chat,
 
 export function EmployeeShortcutsRead({ shortcuts, chat, archived }: { readonly shortcuts: readonly Shortcut[]; readonly chat: ShortcutRowChat; readonly archived: boolean }): React.JSX.Element {
   const [now] = useState(() => Date.now())
+  const lastRuns = useShortcutRuns(chat.settings)
   return <section className="employee-tasks" aria-label="Shortcuts">
     <div className="employee-section-head"><h3>Shortcuts</h3><span className="employee-count">{shortcuts.length}</span></div>
-    <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={archived} now={now} />)}</div>
+    <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={archived} now={now} />)}</div>
   </section>
 }
