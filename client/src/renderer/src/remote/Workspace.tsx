@@ -3,6 +3,7 @@ import type { RemoteServer } from '../../../shared/remote/protocol'
 import type { connectRemote } from './client'
 import type { RemoteComputer } from './Computer'
 import { ConnectProgress } from './ConnectProgress'
+import { computerName } from './Computer'
 import type { ConnectSteps } from './client'
 
 export type WorkspaceConnection = Pick<ReturnType<typeof connectRemote>, 'call' | 'on'> & Partial<Pick<ReturnType<typeof connectRemote>, 'onReconnected'>>
@@ -33,6 +34,13 @@ export function Workspace({ connection, server, onClose, source, steps, quick = 
   // Opened on what was kept, it shows that at once rather than the steps of the link being made.
   if (mounted && !shown && (late || listed || quick)) setShown(true)
   const opening = !shown
+  // Opened on what was kept, nothing is drawn until the workspace mounts: past a moment, say that it is opening rather than leave the window blank.
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    if (!quick || mounted) return
+    const wait = setTimeout(() => setSlow(true), 800)
+    return () => clearTimeout(wait)
+  }, [quick, mounted])
   useEffect(() => {
     if (!mounted) return
     const wait = setTimeout(() => setLate(true), 60_000)
@@ -42,6 +50,7 @@ export function Workspace({ connection, server, onClose, source, steps, quick = 
   return <section className="remote-full-workspace" aria-label={`${server.name} workspace`}>
     {trouble === '' ? null : <p className="remote-feedback failed" role="alert">{trouble}</p>}
     {opening && trouble === '' && !quick ? <div className="remote-opening" role="status"><h2>Opening {source?.server.name ?? server.name}</h2><ConnectProgress name={source?.server.name ?? server.name} steps={steps} /></div> : null}
+    {opening && trouble === '' && quick && slow ? <div className="remote-opening quick" role="status"><span className="phone-spin" aria-hidden="true" /><span>Opening {computerName(source?.server.name ?? server.name)}…</span></div> : null}
     <iframe
       ref={frame}
       className={opening ? 'opening' : undefined}

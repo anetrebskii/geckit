@@ -110,14 +110,10 @@ export function Servers({ onClose, onWorkspace, scan, invitation = '', initialSe
   const labelled = (one: RemoteServer): RemoteServer => { const found = saved?.find((item) => item.server.id === one.id); return found === undefined ? one : { ...one, name: shownName(found) } }
   const busy = ['connecting', 'pending', 'reconnecting'].includes(view.state)
   const failed = FAILED.includes(view.state)
-  const reconnecting = (name: string): string => {
-    const step = view.steps?.at(-1)
-    return step === undefined || step.stage === 'ready' ? view.message : `Reconnecting: ${stageSaid(name)[step.stage]}…`
-  }
   const pillStep = (name: string): string => { const step = view.steps?.at(-1); return step === undefined || step.stage === 'ready' ? 'Trying again' : `${stageSaid(name)[step.stage]}…` }
   const feedback = (here: boolean): React.JSX.Element | null => here && (failed || (view.state === 'reconnecting' && (view.steps ?? []).length === 0)) ? <p className={`remote-feedback${failed ? ' failed' : ''}`} role="status">{view.message}</p> : null
   if (shownServer !== undefined && workspace !== undefined) return <main className="remote-clients">
-    {view.state !== 'reconnecting' && view.state !== 'connecting' ? null : ON_PHONE() ? <Dropped key={view.state} head={`${view.state === 'connecting' ? 'Connecting' : 'Reconnecting'} to ${computerName(labelled(shownServer).name)}`} step={pillStep(shownServer.name)} /> : <p className="remote-feedback" role="status">{view.state === 'connecting' ? `Connecting to ${computerName(labelled(shownServer).name)}…` : reconnecting(shownServer.name)}</p>}
+    {view.state !== 'reconnecting' && view.state !== 'connecting' ? null : <Dropped key={view.state} head={`${view.state === 'connecting' ? 'Connecting' : 'Reconnecting'} to ${computerName(labelled(shownServer).name)}`} step={pillStep(shownServer.name)} />}
     <Workspace key={round} quick={snapshot === undefined} connection={workspace} server={shownServer} steps={view.steps ?? []} source={{ server: labelled(shownServer), state: view.state, choices: (saved ?? []).map((one) => ({ server: labelled(one.server) })), onChoose: choose }} onClose={leave} />
     {signing === undefined || signing.computer !== shownServer.id ? null : <LiveView
       name={signing.profile}
@@ -280,9 +276,9 @@ export function Servers({ onClose, onWorkspace, scan, invitation = '', initialSe
 // Most drops mend in a few seconds, back from the background above all, and a pill that comes and goes in that time only startles.
 const QUIET = 5000
 
-/** The pill over the phone's workspace while the link is made again, once the drop has lasted long enough to be worth saying. */
+/** The pill over the workspace while the link is made again, once the drop has lasted long enough to be worth saying: at the foot on the phone, under the title bar on the desktop. */
 function Dropped({ head, step }: { readonly head: string; readonly step: string }): React.JSX.Element | null {
   const [shown, setShown] = useState(false)
   useEffect(() => { const wait = setTimeout(() => setShown(true), QUIET); return () => clearTimeout(wait) }, [])
-  return shown ? <div className="phone-offline" role="status"><span className="phone-spin" /><span><b>{head}</b><small>{step}</small></span></div> : null
+  return shown ? <div className={ON_PHONE() ? 'phone-offline' : 'remote-dropped'} role="status"><span className="phone-spin" /><span><b>{head}</b><small>{step}</small></span></div> : null
 }

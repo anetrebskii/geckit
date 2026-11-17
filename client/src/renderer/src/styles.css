@@ -17041,3 +17041,12 @@ html input.phone-field.computer-code {
 .phone-settings .phone-error {
   margin: 8px 0 0;
 }
+
+/* The link being made again, over the desktop workspace: a capsule under the title bar, clear of the window controls. */
+.remote-dropped { position: fixed; top: 52px; left: 50%; z-index: 60; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 7px 16px 7px 12px; color: var(--text); background: color-mix(in srgb, var(--bg-raised) 88%, transparent); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); backdrop-filter: blur(20px) saturate(1.6); transform: translateX(-50%); animation: remote-dropped-in .2s ease-out; }
+.remote-dropped > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.remote-dropped b { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.remote-dropped small { overflow: hidden; color: var(--text-dim); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes remote-dropped-in { from { opacity: 0; transform: translate(-50%, -6px); } }
+@media (prefers-reduced-motion: reduce) { .remote-dropped { animation: none; } }
+.remote-opening.quick { flex-direction: row; gap: 10px; color: var(--text-dim); font-size: 13px; }
