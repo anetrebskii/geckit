@@ -11,6 +11,7 @@ import { EMPLOYEE_AVATARS } from './avatars'
 import { useEmployees } from './useEmployees'
 import { newEmployeeDraft, savedEmployeeId } from './draft'
 import { EmployeeShortcut, shortcutDraft } from './shortcuts'
+import { useShortcutRuns } from '../chat/ShortcutDestinations'
 import { useManager } from '../chat/useManager'
 import { managerStand } from '../chat/manager-label'
 import { ManagerPage, managerFace } from './TeamManager'
@@ -22,15 +23,18 @@ type Selected = Employee['id'] | 'none' | 'manager'
 const draftOf = (employee: Employee): EmployeeDraft => ({ id: employee.id, revision: employee.revision, name: employee.name, role: employee.role, description: employee.description, avatar: employee.avatar })
 const sameFields = (one: EmployeeDraft, other: EmployeeDraft): boolean => one.name === other.name && one.role === other.role && one.description === other.description && one.avatar === other.avatar
 
-export function Team({ chat, first, onClose, onOpen, onShortcut }: {
+export function Team({ chat, first, onClose, onOpen, onShortcut, place = false }: {
   readonly chat: TeamChat
   readonly first?: Selected | undefined
   readonly onClose: () => void
   readonly onOpen: (id: ChatSession['id']) => void
   readonly onShortcut: (edit: Shortcut['id'] | ShortcutDraft) => void
+  /** Shown as a place of the Chat window: no way back, and Escape leaves it where it is. */
+  readonly place?: boolean
 }): React.JSX.Element {
   const { view, take, loading, loadError, reload } = useEmployees()
   const manager = useManager()
+  const lastRuns = useShortcutRuns(chat.settings)
   const tasksFor = useTasksByEmployee(chat.everyone)
   const stand = managerStand(manager)
   const [selected, setSelected] = useState<Selected | undefined>(first)
@@ -66,6 +70,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
     if (dirty) setDiscarding(() => action)
     else action()
   }
+  const placed = useRef(place)
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
@@ -74,7 +79,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
       event.preventDefault()
       if (guard.current.dirty) setDiscarding(() => close.current)
       else if (guard.current.editing) { setDraft(undefined); setOriginal(undefined); setAvatars(false) }
-      else close.current()
+      else if (!placed.current) close.current()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -157,7 +162,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
     if (shownId === 'manager' && draft === undefined) return <ManagerPage settings={chat.settings} change={chat.change} view={manager} onChat={() => { onClose(); openManagerChat() }}>
       <section className="team-section" aria-label="Shortcuts"><div className="employee-section-head"><h3>Shortcuts</h3><button type="button" className="quiet" onClick={() => onShortcut({ name: '', root: chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, target: 'manager' })}><Icon name="plus" size={11} />New shortcut</button></div>
         <p className="employee-note">Run recurring Manager requests from Shortcuts.</p>
-        <div className="team-box">{chat.settings.shortcuts.filter((one) => one.target === 'manager').map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={false} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>
+        <div className="team-box">{chat.settings.shortcuts.filter((one) => one.target === 'manager').map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={false} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>
       </section>
     </ManagerPage>
     if (shownId === 'none' && draft === undefined) return <>
@@ -167,7 +172,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
       </header>
       <section className="team-section" aria-label="Shortcuts">
         <div className="employee-section-head"><span><h3>Shortcuts <span className="employee-count">{orphans.length}</span></h3></span></div>
-        {orphans.length === 0 ? <p className="employee-empty">Every shortcut has an employee.</p> : <div className="team-box">{orphans.map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={false} now={now} onEdit={onShortcut} onGive={view.employees.some((employee) => !employee.archived) ? (anchor, id) => setGiving({ anchor, id }) : undefined} onOpen={openTask} />)}</div>}
+        {orphans.length === 0 ? <p className="employee-empty">Every shortcut has an employee.</p> : <div className="team-box">{orphans.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={false} now={now} onEdit={onShortcut} onGive={view.employees.some((employee) => !employee.archived) ? (anchor, id) => setGiving({ anchor, id }) : undefined} onOpen={openTask} />)}</div>}
       </section>
     </>
     if (form === undefined) return <p className="employee-note team-choose">Choose an employee</p>
@@ -196,7 +201,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
           <span><h3>Shortcuts <span className="employee-count">{shortcuts.length}</span></h3><p className="employee-note">What {current.name} does by hand or on a schedule. Each run is a new task assigned to them.</p></span>
           <button type="button" className="quiet employee-new" disabled={current.archived} onClick={() => onShortcut({ name: '', root: shortcuts[0]?.root ?? chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, employeeId: current.id })}><Icon name="plus" size={11} />New shortcut</button>
         </div>
-        {shortcuts.length === 0 ? <p className="employee-empty">No shortcuts yet. Add what this employee does by hand or on a schedule.</p> : <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} chat={chat} archived={current.archived} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>}
+        {shortcuts.length === 0 ? <p className="employee-empty">No shortcuts yet. Add what this employee does by hand or on a schedule.</p> : <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={current.archived} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>}
       </section>}
       {tasks === undefined || current === undefined ? null : <EmployeeTasks key={`tasks-${current.id}`} tasks={tasks} settings={chat.settings} onOpen={openTask} />}
       <section className="team-section" aria-label="About">
@@ -214,16 +219,16 @@ export function Team({ chat, first, onClose, onOpen, onShortcut }: {
 
   return <section className="team-page" aria-label="Team" aria-busy={saving}>
     <header className="team-bar">
-      <button type="button" className="icon-button" aria-label="Back to tasks" title="Back to tasks (Esc)" onClick={() => request(onClose)}><Icon name="left" size={13} /></button>
+      {place ? null : <button type="button" className="icon-button" aria-label="Back to tasks" title="Back to tasks (Esc)" onClick={() => request(onClose)}><Icon name="left" size={13} /></button>}
       <h2>Team</h2>
       <span className="spacer" />
-      {empty ? null : <button type="button" className="quiet employee-new" disabled={saving} onClick={() => request(make)}><Icon name="plus" size={11} />New employee</button>}
+      {empty ? null : <button type="button" className="quiet employee-new" disabled={saving} onClick={() => request(make)}><Icon name="plus" size={12} />New employee</button>}
     </header>
     {loadError ? <p className="employee-alert team-alert" role="alert">Could not load employees. <button type="button" className="quiet" onClick={reload}>Retry</button></p> : null}
     {view.error === undefined ? null : <p className="employee-alert team-alert" role="alert">{view.error.trim() || 'Employee saved. Assistant instructions could not be updated.'} <button type="button" className="quiet" disabled={saving} onClick={retry}>Retry</button></p>}
     <div className="team-split">
       <aside className="employee-roster">
-        <label className="employee-find"><Icon name="search" size={11} /><input type="search" aria-label="Search employees" placeholder="Search employees" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+        <label className="employee-find"><Icon name="search" size={11} /><input type="search" aria-label="Search employees" placeholder="Search employees" value={search} onChange={(event) => setSearch(event.target.value)} />{search === '' ? null : <button type="button" className="find-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" size={8} /></button>}</label>
         <div className="employee-settings-list">
           {!'manager'.includes(search.trim().toLowerCase()) ? null : <><button type="button" className={`employee-settings-row${shownId === 'manager' ? ' on' : ''}`} aria-current={shownId === 'manager'} disabled={saving} onClick={() => request(() => choose('manager'))}>
             <EmployeeAvatar employee={managerFace(chat.settings)} size="medium" />

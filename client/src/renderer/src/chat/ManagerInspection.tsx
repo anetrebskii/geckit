@@ -9,7 +9,7 @@ import { Icon } from '../ui/Icon'
 import { EmployeeAvatar } from '../employees/Employees'
 import { managerFace } from '../employees/TeamManager'
 import { ManagerChat } from './ManagerChat'
-import { EdgeBack } from './PhoneKit'
+import { EdgeBack, MenuButton } from './PhoneKit'
 import { MANAGER_CHAT_EVENT } from './manager-chat-open'
 import { managerStand } from './manager-label'
 import { managerLabel, useManager } from './useManager'
@@ -40,7 +40,7 @@ export function ManagerInspection({ view, settings, onClose, onSettings, onOpen 
     close.current?.focus()
     const key = (event: KeyboardEvent): void => {
       if (!(event.target instanceof Node) || !body.current?.contains(event.target)) return
-      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); onClose(); return }
+      if (event.key === 'Escape') { if (document.querySelector('.floating.menu') !== null) return; event.preventDefault(); event.stopImmediatePropagation(); onClose(); return }
       if (event.key !== 'Tab') return
       const controls = body.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], summary, [tabindex="0"]')
       const first = controls?.[0]
@@ -52,20 +52,25 @@ export function ManagerInspection({ view, settings, onClose, onSettings, onOpen 
     return () => { window.removeEventListener('keydown', key, true); if (before instanceof HTMLElement) before.focus() }
   }, [onClose])
   return createPortal(<div className="dialog-scrim" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={body} className="dialog manager-inspection" role="dialog" aria-modal="true" aria-labelledby="manager-inspection-title">
-    <header className="manager-inspection-header"><EmployeeAvatar employee={managerFace(settings)} /><h2 id="manager-inspection-title">Manager</h2><Stand view={view} /><button type="button" className="icon-button" aria-label="Manager settings" title="Manager settings" onClick={onSettings}><Icon name="settings" /></button><button ref={close} type="button" className="icon-button" aria-label="Close Manager" onClick={onClose}><Icon name="close" /></button></header>
-    <ManagerChat view={view} settings={settings} onSettings={onSettings} onOpen={onOpen} />
+    <ManagerChat view={view} settings={settings} onSettings={onSettings} onOpen={onOpen}
+      head={<div className="manager-identity"><EmployeeAvatar employee={managerFace(settings)} /><h2 id="manager-inspection-title">Manager</h2><Stand view={view} /></div>}
+      tail={<><span className="manager-toolbar-gap" aria-hidden="true" /><button type="button" className="icon-button" aria-label="Manager settings" title="Manager settings" onClick={onSettings}><Icon name="settings" /></button><button ref={close} type="button" className="icon-button" aria-label="Close Manager" title="Close" onClick={onClose}><Icon name="close" /></button></>} />
   </div></div>, document.body)
 }
 
-export function ManagerPhone({ settings, onBack, onSettings, onOpen, back = 'Back' }: { readonly settings: Settings; readonly onBack: () => void; readonly onSettings?: () => void; readonly onOpen?: ((id: string) => void) | undefined; readonly back?: string }): React.JSX.Element {
+export function ManagerPhone({ settings, onBack, onSettings, onOpen, back = 'Back' }: { readonly settings: Settings; readonly onBack?: () => void; readonly onSettings?: () => void; readonly onOpen?: ((id: string) => void) | undefined; readonly back?: string }): React.JSX.Element {
   const page = useRef<HTMLElement>(null)
   useBack(onBack, page)
   const view = useManager()
   const [connected, setConnected] = useState(() => phoneCalls()?.connected() ?? true)
   useEffect(() => phoneCalls()?.onConnection(setConnected), [])
   return <section ref={page} className="manager-phone phone-page" aria-label="Manager chat">
-    <EdgeBack onBack={onBack} />
-    <header className="manager-inspection-header"><button type="button" className="quiet" onClick={onBack}><Icon name="left" size={14} />{back}</button><h2>Manager</h2>{view === undefined ? null : <Stand view={view} />}{onSettings === undefined ? null : <button type="button" className="icon-button" aria-label="Manager settings" onClick={onSettings}><Icon name="settings" /></button>}</header>
+    {onBack === undefined ? null : <EdgeBack onBack={onBack} />}
+    <header className="phone-nav manager-phone-nav">
+      {onBack === undefined ? <MenuButton /> : <button type="button" className="phone-back" onClick={onBack}><Icon name="left" size={22} />{back}</button>}
+      <div className="phone-nav-title"><b>Manager</b>{view === undefined ? null : <Stand view={view} />}</div>
+      <div className="phone-nav-end">{onSettings === undefined ? null : <button type="button" className="phone-icon" aria-label="Manager settings" onClick={onSettings}><Icon name="settings" size={22} /></button>}</div>
+    </header>
     {view === undefined ? <div className="manager-inspection-empty" role="status"><Icon name="spinner" size={20} /><p>{connected ? 'Loading the Manager session...' : 'Computer disconnected. Reconnect to send.'}</p></div> : <ManagerChat view={view} settings={settings} connected={connected} onSettings={onSettings} onOpen={onOpen} />}
   </section>
 }

@@ -48,6 +48,22 @@ const KEYS: readonly { readonly key: string; readonly label: string }[] = [
   { key: 'right', label: '→' },
 ]
 
+const NAMED_KEYS: Readonly<Record<string, string>> = {
+  Backspace: 'delete',
+  Delete: 'forwardDelete',
+  Enter: 'return',
+  Tab: 'tab',
+  Escape: 'escape',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  Home: 'home',
+  End: 'end',
+  PageUp: 'pageUp',
+  PageDown: 'pageDown',
+}
+
 // A Windows host has its own keys, the Windows key standing in Command's place.
 const MODIFIERS: readonly { readonly modifier: ScreenModifier; readonly label: string }[] =
   window.geckit.platform === 'win32'
@@ -227,8 +243,20 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
       } else if (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph') press('return')
       else if (event.inputType === 'deleteContentBackward') press('delete')
     }
+    // Keys that type nothing, from the phone's keyboard or one joined to it; an empty field gives no input event for Backspace on iOS.
+    const keyed = (event: KeyboardEvent): void => {
+      const key = NAMED_KEYS[event.key]
+      if (key === undefined || event.isComposing) return
+      event.preventDefault()
+      event.stopPropagation()
+      press(key)
+    }
     input.addEventListener('beforeinput', typed)
-    return () => input.removeEventListener('beforeinput', typed)
+    input.addEventListener('keydown', keyed)
+    return () => {
+      input.removeEventListener('beforeinput', typed)
+      input.removeEventListener('keydown', keyed)
+    }
   })
 
   const mid = (): { x: number; y: number; span: number } => {
@@ -336,36 +364,34 @@ export function Screen({ onClose }: { readonly onClose: () => void }): React.JSX
   return createPortal(
     <div className={`phone-screen${chrome ? '' : ' bare'}`}>
       <div className={`phone-screen-bar${chrome ? '' : ' hidden'}`}>
-        <span className="phone-screen-title">
-          <span className="phone-screen-name">{pairedName() ?? 'Host'}</span>
-          {live ? <span className="phone-screen-live">Live</span> : null}
-        </span>
-        <div className="phone-seg phone-screen-seg" role="tablist" style={{ '--at': mode === 'look' ? 0 : 1 } as React.CSSProperties}>
-          <span className="phone-seg-thumb" />
-          {(['look', 'control'] as const).map((one) => (
-            <button
-              key={one}
-              type="button"
-              role="tab"
-              aria-selected={mode === one}
-              className={mode === one ? 'on' : undefined}
-              onClick={() => {
-                setRefused(undefined)
-                setHint(true)
-                setMode(one)
-                if (one === 'look') field.current?.blur()
-              }}
-            >
-              {one === 'look' ? 'Look' : 'Control'}
-            </button>
-          ))}
-        </div>
-        <span className="spacer" />
-        <button type="button" className="phone-screen-done icon" aria-label="Hide the bars" onClick={() => setChrome(false)}>
-          <Icon name="collapse" size={18} />
-        </button>
         <button type="button" className="phone-screen-done" onClick={onClose}>
           Done
+        </button>
+        <div className="phone-screen-middle">
+          <div className="phone-seg phone-screen-seg" role="tablist" aria-label={`${pairedName() ?? 'Host'} screen`} style={{ '--at': mode === 'look' ? 0 : 1 } as React.CSSProperties}>
+            <span className="phone-seg-thumb" />
+            {(['look', 'control'] as const).map((one) => (
+              <button
+                key={one}
+                type="button"
+                role="tab"
+                aria-selected={mode === one}
+                className={mode === one ? 'on' : undefined}
+                onClick={() => {
+                  setRefused(undefined)
+                  setHint(true)
+                  setMode(one)
+                  if (one === 'look') field.current?.blur()
+                }}
+              >
+                {one === 'look' ? 'Look' : 'Control'}
+              </button>
+            ))}
+          </div>
+          <span className={`phone-screen-name${live ? ' live' : ''}`}>{pairedName() ?? 'Host'}</span>
+        </div>
+        <button type="button" className="phone-screen-done icon" aria-label="Hide the bars" onClick={() => setChrome(false)}>
+          <Icon name="collapse" size={18} />
         </button>
       </div>
       <div

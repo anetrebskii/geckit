@@ -17,15 +17,15 @@ export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal): Pr
     await postSignal(pairing, 'offers', id, { sdp: offer, at: Date.now() })
     let description = await answer(pairing, id)
     while (description === undefined) {
-      if (signal.aborted || Date.now() > until) throw new Error('The server did not answer.')
+      if (signal.aborted || Date.now() > until) throw new Error('the server did not answer. Check that GeckIt is running there and the code is new.')
       await new Promise((resolve) => setTimeout(resolve, 1000))
       description = await answer(pairing, id)
     }
     await peer.setRemoteDescription({ type: 'answer', sdp: description.sdp })
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('The server did not answer.')), Math.max(0, until - Date.now()))
+      const timer = setTimeout(() => reject(new Error('the server answered, but no direct or relayed connection could be opened between the two networks.')), Math.max(0, until - Date.now()))
       channel.addEventListener('open', () => { clearTimeout(timer); resolve() }, { once: true })
-      channel.addEventListener('close', () => { clearTimeout(timer); reject(new Error('Connection closed.')) }, { once: true })
+      channel.addEventListener('close', () => { clearTimeout(timer); reject(new Error('the connection closed while opening.')) }, { once: true })
       if (signal.aborted) reject(new Error('Cancelled.'))
     })
     const closed: (() => void)[] = []

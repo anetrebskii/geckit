@@ -5,7 +5,7 @@ For Manager, use its authenticated `geckit` JSON argument protocol and current c
 List all shortcuts with `employees shortcuts --json`, or restrict by employee ID or `none`. Read the matching saved record before editing. These are distinct from OS CRON jobs.
 
 ```text
-employees shortcut add <employee-id|none> --name <name> --project <registered-project> --prompt <self-contained-task> --target task --goal <completion-condition> --cron "0 9 * * 1-5" --provider <enabled-provider>
+employees shortcut add <employee-id|none> --name <name> --project <registered-project> --prompt <self-contained-task> --target task --checklist <saved-checklist> --cron "0 9 * * 1-5" --provider <enabled-provider>
 employees shortcut add none --name <name> --project <registered-project> --prompt <coordination-request> --target manager --every "day 9:00"
 employees shortcut edit <shortcut-id> --cron "0 10 * * 1-5"
 employees shortcut pause <shortcut-id>
@@ -13,7 +13,7 @@ employees shortcut resume <shortcut-id>
 employees shortcut run <shortcut-id>
 ```
 
-The examples' times and cadence are illustrative, not defaults. Select `task` for worker execution or `manager` for a coordination request. Manager uses its configured assistant and approvals. Its shortcut prompt is a Manager request, not instructions to run implementation itself.
+A worker shortcut takes one of `--goal <condition>`, `--checklist <id-or-name>` or `--items <JSON array>`; the shortcut keeps its own copy of the checklist and each run works through it one item at a time, so later edits to the saved checklist need the shortcut edited again. The examples' times and cadence are illustrative, not defaults. Select `task` for worker execution or `manager` for a coordination request. Manager uses its configured assistant and approvals. Its shortcut prompt is a Manager request, not instructions to run implementation itself.
 
 `--every` supports `hour`, `hour 15`, `day 9:00`, `weekdays 9:00` and `week monday 9:00`. Edit accepts `--every none` to remove a timetable. Use either `--every` or `--cron`. Preserve enabled state unless asked to pause or resume.
 

@@ -4,15 +4,16 @@ import type { ProductAuthority } from '../shared/product-cli'
 import type { PreparedConversationDraft, SessionMessage } from '../shared/api'
 import { providerOf } from '../shared/api'
 import { getSettings } from '../main/store'
+import { taskPlan } from '../shared/checklists'
 import { requestedProvider } from '../cli/start'
 import { flagsFrom, required, expectedValues, jsonInput, onlyFields } from './product-input'
 
 export const SESSION_READS = ['list', 'show', 'search', 'hidden', 'status', 'plans', 'links', 'waiting', 'task-output', 'draft']
 export const SESSION_COMMANDS = {
   list: ['--project'], show: ['--id', '--last'], search: ['--text', '--project'], hidden: [], status: [], plans: [],
-  start: ['--project', '--provider', '--mode', '--text', '--goal', '--model', '--employee'],
-  prepare: ['--project', '--provider', '--mode', '--text', '--goal', '--model', '--employee'],
-  schedule: ['--project', '--provider', '--mode', '--text', '--goal', '--model', '--employee'],
+  start: ['--project', '--provider', '--mode', '--text', '--goal', '--checklist', '--items', '--model', '--employee'],
+  prepare: ['--project', '--provider', '--mode', '--text', '--goal', '--checklist', '--items', '--model', '--employee'],
+  schedule: ['--project', '--provider', '--mode', '--text', '--goal', '--checklist', '--items', '--model', '--employee'],
   send: ['--id', '--text'], stop: ['--id'], retry: ['--id'], steer: ['--id', '--text'], proceed: ['--id'],
   rename: ['--id', '--title'], mark: ['--id', '--status'], hide: ['--id'], delete: ['--id'], bring: ['--id'], read: ['--id'], release: ['--id'],
   assign: ['--id', '--employee'], mode: ['--id', '--mode'], transport: ['--id', '--transport'], keep: ['--id', '--on'],
@@ -53,7 +54,8 @@ export async function productSessions(api: CoreMethods, args: readonly string[],
   if (command === 'start' || command === 'prepare' || command === 'schedule') {
     const root = required(flags, '--project')
     const provider = enabled(flags.get('--provider') ?? getSettings().projectAssistants.find((one) => one.root === root)?.provider ?? getSettings().chatProvider)
-    const message: SessionMessage = { root, provider, mode: mode(flags.get('--mode') ?? getSettings().chatMode), text: required(flags, '--text'), ...(flags.has('--goal') ? { goal: required(flags, '--goal') } : {}), ...(flags.has('--model') ? { model: required(flags, '--model') } : {}), ...(flags.has('--employee') ? { employeeId: required(flags, '--employee') } : {}) }
+    const plan = taskPlan(getSettings().checklists ?? [], root, { goal: flags.get('--goal'), checklist: flags.get('--checklist'), items: flags.get('--items') })
+    const message: SessionMessage = { root, provider, mode: mode(flags.get('--mode') ?? getSettings().chatMode), text: required(flags, '--text'), ...(plan.goal === undefined ? {} : { goal: plan.goal }), ...(plan.checklist === undefined ? {} : { checklist: plan.checklist }), ...(flags.has('--model') ? { model: required(flags, '--model') } : {}), ...(flags.has('--employee') ? { employeeId: required(flags, '--employee') } : {}) }
     if (message.model !== undefined && !(await api['chat:models'](root, provider))?.some((one) => one.value === message.model && one.disabled !== true)) throw new Error('Selected model is unavailable; no replacement was selected.')
     if (!getSettings().projects.includes(root) || !getSettings().chatProviders.includes(provider)) throw new Error('Project or provider changed before dispatch.')
     return json({ id: command === 'start' ? await api['chat:send'](message) : command === 'prepare' ? api['chat:prepare'](message) : api['chat:schedule'](message) })

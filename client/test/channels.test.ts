@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,16 +10,18 @@ vi.mock('../src/core/platform', () => ({ dataDirectory: () => process.env['GECKI
 import { Channels } from '../src/main/channels/channels'
 import { flushPluginLogs } from '../src/main/sessions/plugin-logs'
 import type { ChannelsDeps } from '../src/main/channels/channels'
-import type { ChannelContext, ChannelEvent } from '../src/main/channels/channel-api'
+import type { ChannelContext, ChannelEvent, ChannelMigration } from '../src/main/channels/channel-api'
 import { channelManifest, loadChannel } from '../src/main/channels/libraries'
 import type { CoreEvent } from '../src/core/events'
 import type { ChatSession, Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import type { ManagerHistoryBoundary, ManagerView } from '../src/shared/manager'
 import type { ChannelView } from '../src/shared/channels'
-import { TelegramAttachments } from '../src/main/telegram-attachments'
+import { CHANNEL_CAPABILITIES, grantedCapabilities } from '../src/shared/channels'
+import { ChannelAttachments } from '../src/main/channel-attachments'
 import type { ChannelFileSender } from '../src/main/channels/channel-files'
-import { SLACK_MODULE } from '../src/main/channels/slack'
+import { SLACK_INFO, SLACK_MODULE } from '../src/main/channels/slack'
+import { DISCORD_INFO } from '../src/main/channels/discord'
 import { after, createSlack } from '../src/main/channels/slack'
 import type { SlackTransport } from '../src/main/channels/slack'
 
@@ -34,7 +37,7 @@ const manifest = { apiVersion: 1, kind: 'channel', entry: 'index.mjs', channel: 
 const library = `export function create(context) {
   const seen = globalThis.channelTest ??= { contexts: [], stopped: 0 }
   seen.contexts.push(context)
-  return { start: async () => { context.status('connected', 'Listening') }, stop: async () => { seen.stopped += 1 } }
+  return { request: async (value, from) => ({ value, from }), start: async () => { context.status('connected', 'Listening') }, stop: async () => { seen.stopped += 1 } }
 }`
 
 const echo = (channels: Channels): ChannelView | undefined => channels.view().channels.find((one) => one.id === 'channel:echo')
@@ -44,7 +47,7 @@ const seen = (): Seen => (globalThis as unknown as { channelTest: Seen }).channe
 
 interface FakeThread { readonly id: string; readonly channel: string; labels: { [key: string]: string }; from?: string; title?: string }
 
-async function setup(attachments?: TelegramAttachments): Promise<{ channels: Channels; deps: ChannelsDeps; settings: () => Settings; emit: (event: CoreEvent) => void; managerSent: string[]; answered: string[]; sessionsSent: unknown[]; threads: Map<string, FakeThread>; respond: (text: string, thread: string) => void; closed: Map<string, string | undefined>; labelled: Map<string, unknown> }> {
+async function setup(attachments?: ChannelAttachments, wide = false): Promise<{ channels: Channels; deps: ChannelsDeps; settings: () => Settings; emit: (event: CoreEvent) => void; managerSent: string[]; answered: string[]; sessionsSent: unknown[]; threads: Map<string, FakeThread>; respond: (text: string, thread: string) => void; closed: Map<string, string | undefined>; labelled: Map<string, unknown> }> {
   const home = await mkdtemp(join(tmpdir(), 'geckit-channels-'))
   folders.push(home)
   process.env['GECKIT_CHANNEL_TEST_HOME'] = home
@@ -52,6 +55,12 @@ async function setup(attachments?: TelegramAttachments): Promise<{ channels: Cha
   await mkdir(path, { recursive: true })
   await writeFile(join(path, 'geckit-plugin.json'), JSON.stringify(manifest))
   await writeFile(join(path, 'index.mjs'), library)
+  if (wide) {
+    const widePath = join(home, 'channel-libraries', 'channel-wide')
+    await mkdir(widePath, { recursive: true })
+    await writeFile(join(widePath, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 2, kind: 'channel', entry: 'index.mjs', channel: { id: 'channel:wide', name: 'Wide', icon: 'chat' }, capabilities: ['conversations', 'manager', 'control'], config: [] }))
+    await writeFile(join(widePath, 'index.mjs'), library)
+  }
   let settings: Settings = { ...DEFAULT_SETTINGS, projects: ['/work/app', '/work/private'], chatProviders: ['claude'] }
   const listeners = new Set<(event: CoreEvent) => void>()
   const managerSent: string[] = []
@@ -98,7 +107,7 @@ async function setup(attachments?: TelegramAttachments): Promise<{ channels: Cha
       close: (channel, reason) => { closed.set(channel, reason) },
       onResponse: (listener) => { responses.add(listener); return () => responses.delete(listener) },
       inspect: async (id) => ({ id, items: [] }),
-      answer: async (id, choice) => { answered.push(`manager:${id}:${choice}`) },
+      answer: async (id, choice) => { answered.push(`manager:${id}:${choice}`); return { answer: { state: 'answered' } as never } },
       answerCard: async () => false,
     },
     managerView: () => managerView,
@@ -123,7 +132,7 @@ it('reads a channel manifest and refuses a provider manifest', async () => {
 
 it('registers an installed library off and asks for its required secret before starting it', async () => {
   const { channels } = await setup()
-  expect(channels.view().channels).toMatchObject([{ id: 'channel:slack', state: 'off', builtIn: true }, { id: 'channel:discord', state: 'off', builtIn: true }, { id: 'channel:echo', state: 'off' }])
+  expect(channels.view().channels).toMatchObject([{ id: 'channel:telegram', builtIn: true }, { id: 'channel:slack', state: 'off', builtIn: true }, { id: 'channel:discord', state: 'off', builtIn: true }, { id: 'channel:echo', state: 'off' }])
   await channels.configure('channel:echo', { enabled: true })
   expect(echo(channels)).toMatchObject({ state: 'setup', says: 'Fill in Token.' })
   expect((globalThis as { channelTest?: unknown }).channelTest).toBeUndefined()
@@ -133,36 +142,30 @@ it('registers an installed library off and asks for its required secret before s
   await channels.dispose()
 })
 
-it('starts conversations only in allowed folders and reaches only its own', async () => {
+it('uses every GeckIt folder despite legacy per-channel restrictions and reaches only its own', async () => {
   const { channels, sessionsSent } = await setup()
   await channels.configure('channel:echo', { enabled: true, projects: ['/work/app'], secrets: { token: 't' } })
   const context = seen().contexts[0]
   if (context === undefined) throw new Error('not started')
-  await expect(context.conversations.start({ root: '/work/private', text: 'hi' })).rejects.toThrow('may not start conversations in that folder')
+  await expect(context.conversations.start({ root: '/outside', text: 'hi' })).rejects.toThrow('Add that folder to GeckIt')
   await expect(context.conversations.start({ root: '/work/app', text: 'hi', provider: 'codex' })).rejects.toThrow('not enabled')
-  const id = await context.conversations.start({ root: '/work/app', text: 'hi' })
+  expect(context.projects().map((one) => one.root)).toEqual(['/work/app', '/work/private'])
+  const id = await context.conversations.start({ root: '/work/private', text: 'hi' })
   expect(context.conversations.list().map((one) => one.id)).toEqual([id])
   await context.conversations.send(id, { text: 'more' })
-  expect(sessionsSent.at(-1)).toMatchObject({ session: id, root: '/work/app', text: 'more' })
+  expect(sessionsSent.at(-1)).toMatchObject({ session: id, root: '/work/private', text: 'more' })
   await expect(context.conversations.send('not-mine', { text: 'x' })).rejects.toThrow('did not start that conversation')
   await expect(context.conversations.items('not-mine')).rejects.toThrow('did not start that conversation')
   expect(context.conversations.get('not-mine')).toBeUndefined()
   await channels.dispose()
 })
 
-it('gives each place its own Manager thread only when the channel is allowed to', async () => {
+it('gives each place its own Manager thread without a separate permission switch', async () => {
   const { channels, managerSent, answered, threads, closed } = await setup()
-  await channels.configure('channel:echo', { enabled: true, secrets: { token: 't' } })
-  expect(closed.get('channel:echo')).toBe('Echo may no longer talk to Manager. Allow it in Settings, Channels to reply in this thread.')
-  const first = seen().contexts[0]
-  expect(first?.conversations.manager({ key: 'chat-7' })).toBeUndefined()
-  await expect(first?.conversations.send('manager-1', { text: 'x' })).rejects.toThrow('did not start that conversation')
-  await channels.configure('channel:echo', { manager: true })
+  await channels.configure('channel:echo', { enabled: true, secrets: { token: 't' }, manager: false })
   expect(closed.get('channel:echo')).toBeUndefined()
-  expect(seen().stopped).toBe(1)
-  const context = seen().contexts[1]
-  if (context === undefined) throw new Error('not restarted')
-  expect(() => first?.conversations.manager()).toThrow('This channel was stopped')
+  const context = seen().contexts[0]
+  if (context === undefined) throw new Error('not started')
   const thread = context.conversations.manager({ key: 'chat-7', title: 'Release', labels: { chat: '7', starter: 'Alex' } })
   expect(thread).toBe('channel:echo:chat-7')
   expect(context.conversations.manager({ key: 'chat-8' })).toBe('channel:echo:chat-8')
@@ -267,6 +270,8 @@ it('comes with Discord built in: not removable, checked in Set up only with its 
 })
 
 it('comes with Slack built in, which can be turned off but not removed', async () => {
+  expect(SLACK_INFO.fields.map((field) => field.key)).toEqual(['botToken', 'appToken'])
+  expect(DISCORD_INFO.fields.map((field) => field.key)).toEqual(['botToken', 'allow'])
   const { channels } = await setup()
   await expect(channels.remove('channel:slack')).rejects.toThrow('turned off, not removed')
   expect(channels.view().channels.find((one) => one.id === 'channel:slack')).toMatchObject({ builtIn: true, state: 'off' })
@@ -326,7 +331,7 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
     if (method === 'chat.update') updated.push(body)
     if (method === 'chat.delete') deleted.push({ channel: body.channel, ts: body.ts ?? '' })
     if (method === 'reactions.add' || method === 'reactions.remove') reactions.push([method, body as unknown as { channel: string; timestamp: string; name: string }])
-    const reply = method === 'auth.test' ? { ok: true, user_id: 'B1', team_id: 'T1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { team_id: 'T1', ...people[body.user ?? ''], profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
+    const reply = method === 'auth.test' ? { ok: true, user_id: 'B1', team_id: 'T1' } : method === 'conversations.replies' ? { ok: true, messages: history.filter((one) => body.oldest === undefined || !after(body.oldest, one.ts)) } : method === 'apps.connections.open' ? { ok: true, url: 'wss://example' } : method === 'users.info' ? { ok: true, user: { team_id: 'T1', ...(body.user === 'U9' ? { team_id: 'T2' } : {}), ...people[body.user ?? ''], profile: { display_name: body.user === 'U1' ? 'Maria Ivanova' : 'Ben' } } } : method === 'chat.getPermalink' ? { ok: true, permalink: 'https://slack.example/p1' } : method === 'chat.postMessage' ? { ok: true, ts: `9.${String(posted.length)}` } : { ok: true }
     return { json: async () => reply }
   }) as unknown as typeof globalThis.fetch
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
@@ -335,22 +340,24 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
   return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, reactions, sent, answered, opened, watchers, store }
 }
 
-it('Slack: with nobody listed, answers every full member of its workspace and no guest, outsider or bot', async () => {
+it('Slack: answers all workspace users including guests, but no outsider, deleted user or bot', async () => {
   const run = slackHarness(true, [], [], { U3: { is_restricted: true }, U4: { is_ultra_restricted: true }, U5: { team_id: 'T2' }, U6: { is_bot: true }, U7: { deleted: true } })
   await run.channel.start()
   run.event({ type: 'app_mention', user: 'U2', channel: 'C1', ts: '3.0', text: '<@B1> hey' })
   await vi.waitFor(() => expect(run.sent.map(([id]) => id)).toEqual(['channel:slack:C1:3.0']))
   for (const [index, user] of ['U3', 'U4', 'U5', 'U6', 'U7'].entries()) run.event({ type: 'app_mention', user, channel: 'C1', ts: `${String(4 + index)}.0`, text: '<@B1> hey' })
-  await vi.waitFor(() => expect(run.posted.filter((one) => one.text.includes('GeckIt lets me work for'))).toHaveLength(5))
-  expect(run.sent).toHaveLength(1)
+  await vi.waitFor(() => expect(run.posted.filter((one) => one.text.includes('GeckIt lets me work for'))).toHaveLength(3))
+  expect(run.sent).toHaveLength(3)
+  await run.channel.stop()
 })
 
-it('Slack: with people listed, answers only them', async () => {
+it('Slack: ignores an old user allowlist and answers other workspace users', async () => {
   const run = slackHarness(true, [], ['U1'])
   await run.channel.start()
   run.event({ type: 'app_mention', user: 'U2', channel: 'C1', ts: '3.0', text: '<@B1> hey' })
-  await vi.waitFor(() => expect(run.posted.at(-1)?.text).toContain('GeckIt lets me work for'))
-  expect(run.sent).toEqual([])
+  await vi.waitFor(() => expect(run.sent).toHaveLength(1))
+  expect(run.sent[0]?.[0]).toBe('channel:slack:C1:3.0')
+  await run.channel.stop()
 })
 
 it('Slack: one message says what Manager does while it prepares an answer, edited in place and deleted when the answer comes', async () => {
@@ -532,13 +539,13 @@ it('Slack reset cuts earlier history, deletes the old place and preserves new se
 it('binds built-in retained inputs and file outputs to the live Manager thread and invalidates every stale sender on channel disable', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'channel-shared-attachments-'))
   folders.push(directory)
-  const attachments = new TelegramAttachments(directory)
+  const attachments = new ChannelAttachments(directory)
   const contexts: ChannelContext[] = []
   const create = vi.spyOn(SLACK_MODULE, 'create').mockImplementation((context) => { contexts.push(context); return { start: async () => undefined, stop: async () => undefined } })
   const { channels, deps } = await setup(attachments)
   try {
     const submitted = vi.spyOn(deps.manager, 'send')
-    await channels.configure('channel:slack', { enabled: true, manager: true, config: { allow: ['U1'] }, secrets: { botToken: 'test-bot', appToken: 'test-app' } })
+    await channels.configure('channel:slack', { enabled: true, manager: true, secrets: { botToken: 'test-bot', appToken: 'test-app' } })
     const context = contexts[0]
     if (context?.files === undefined) throw new Error('Missing built-in files capability')
     const thread = context.conversations.manager({ key: 'C1:100.000001' })
@@ -561,4 +568,141 @@ it('binds built-in retained inputs and file outputs to the live Manager thread a
     await expect(bound(Buffer.from('artifact'), 'out.txt', 'text/plain', '', 'document', { session: 'manager', workers: [] })).rejects.toThrow('stopped')
     expect(sender).toHaveBeenCalledTimes(1)
   } finally { await channels.dispose(); create.mockRestore() }
+})
+
+it('gives a version 1 library conversations and Manager only, as before', async () => {
+  const { channels } = await setup()
+  try {
+    await channels.configure('channel:echo', { enabled: true, manager: true, secrets: { token: 't' } })
+    const context = seen().contexts[0]
+    expect([...context?.capabilities ?? []]).toEqual(['conversations', 'manager'])
+    expect(context?.control).toBeUndefined()
+    expect(context?.files).toBeUndefined()
+    expect(echo(channels)?.asks).toBeUndefined()
+  } finally { await channels.dispose() }
+})
+
+it('always enables all declared capabilities regardless of legacy grants', () => {
+  expect(grantedCapabilities({ info: { ...SLACK_INFO, capabilities: CHANNEL_CAPABILITIES }, grants: [] })).toEqual(CHANNEL_CAPABILITIES)
+  expect(grantedCapabilities({ info: { ...SLACK_INFO, capabilities: ['manager'] }, grants: ['control', 'files', 'shares'] })).toEqual(['manager'])
+})
+
+it('enables declared abilities for external libraries despite legacy disabled grants and denies undeclared abilities', async () => {
+  const { channels, deps, settings } = await setup(undefined, true)
+  try {
+    deps.save({ channels: settings().channels.map((one) => ({ ...one, manager: false, grants: [] })) })
+    await channels.configure('channel:wide', { enabled: true })
+    const context = seen().contexts.at(-1)
+    expect(channels.view().channels.find((one) => one.id === 'channel:wide')).toMatchObject({ asks: ['control'], grants: ['control'] })
+    expect(context?.control).toBeDefined()
+    expect(context?.files).toBeUndefined()
+    expect(() => context?.conversations.delivery?.('one')).toThrow('Wide may not use delivery: its library did not ask for it.')
+    const stopped = seen().stopped
+    deps.save({ channels: settings().channels.map((one) => ({ ...one, manager: false, grants: [] })) })
+    await channels.reconcile()
+    await channels.configure('channel:wide', { manager: false, grants: [] })
+    expect(seen().stopped).toBe(stopped)
+    expect(seen().contexts.at(-1)).toBe(context)
+    const thread = context?.conversations.manager({ key: 'mine', owner: true, pairing: 'bot:1:2' })
+    expect(thread).toBe('channel:wide:mine')
+    expect(channels.owner('channel:wide:mine')).toBe(true)
+    await channels.configure('channel:wide', { grants: ['files'] })
+    expect(context?.files).toBeUndefined()
+    deps.manager.enabled = () => false
+    expect(context?.conversations.manager({ key: 'off' })).toBeUndefined()
+  } finally { await channels.dispose() }
+})
+
+it('runs a built-in channel migration once with the setting it added, and the rename it asks for', async () => {
+  const { channels, deps, settings } = await setup()
+  await channels.dispose()
+  const renamed: unknown[] = []
+  const notes: unknown[] = []
+  const migrate = vi.fn((migration: ChannelMigration) => {
+    if (migration.created) migration.configure({ enabled: true, manager: true })
+    migration.renameManagerChannel('old', 'channel:moved', (key) => key.startsWith('team:'))
+    migration.renameNoteKey('oldKey', 'newKey')
+  })
+  const moved = { info: { id: 'channel:moved' as const, name: 'Moved', icon: 'chat', fields: [], capabilities: ['conversations' as const, 'manager' as const] }, path: 'built-in', module: { migrate, create: () => ({ start: async () => undefined, stop: async () => undefined }) } }
+  const again = new Channels({ ...deps, builtIns: [moved], manager: { ...deps.manager, renameChannel: (from, to, shared) => { renamed.push([from, to, shared('team:1'), shared('42')]); return true } }, renameNoteKey: (from, to) => notes.push([from, to]) })
+  try {
+    await again.start()
+    expect(migrate.mock.calls[0]?.[0].created).toBe(true)
+    expect(settings().channels.find((one) => one.info.id === 'channel:moved')).toMatchObject({ enabled: true, manager: true })
+    expect(renamed).toEqual([['old', 'channel:moved', true, false]])
+    expect(notes).toEqual([['oldKey', 'newKey']])
+    expect(again.view().channels.find((one) => one.id === 'channel:moved')).toMatchObject({ builtIn: true, state: 'connected' })
+  } finally { await again.dispose() }
+  const third = new Channels({ ...deps, builtIns: [moved] })
+  try {
+    await third.start()
+    expect(migrate.mock.calls[1]?.[0].created).toBe(false)
+  } finally { await third.dispose() }
+})
+
+it('moves a file an earlier version sealed into the channel’s own sealed storage, and waits for the desktop on one it sealed', async () => {
+  const { deps } = await setup()
+  const prefix = Buffer.from('GECKITVAULT1\0')
+  const vault = { available: () => true, encrypt: (text: string) => Buffer.concat([prefix, Buffer.from(text).reverse()]), decrypt: (bytes: Buffer) => Buffer.from(bytes.subarray(prefix.length)).reverse().toString() }
+  const contexts: ChannelContext[] = []
+  const kept = { info: { id: 'channel:kept' as const, name: 'Kept', icon: 'chat', fields: [], capabilities: ['conversations' as const] }, path: 'built-in', module: {
+    migrate: (migration: ChannelMigration) => { if (migration.created) migration.configure({ enabled: true }); migration.adoptSealed('kept-legacy.sealed') },
+    create: (context: ChannelContext) => { contexts.push(context); return { start: async () => undefined, stop: async () => undefined } },
+  } }
+  const legacy = join(deps.directory, 'kept-legacy.sealed')
+  await writeFile(legacy, vault.encrypt('{"token":"kept"}'))
+  const first = new Channels({ ...deps, vault, builtIns: [kept] })
+  try {
+    await first.start()
+    expect(contexts.at(-1)?.sealed.read()).toBe('{"token":"kept"}')
+    expect(existsSync(legacy)).toBe(false)
+    expect(first.legacySealed()).toEqual([])
+  } finally { await first.dispose() }
+  await rm(join(deps.directory, 'channels', 'channel-kept.sealed'))
+  await writeFile(legacy, 'desktop ciphertext')
+  const second = new Channels({ ...deps, vault, builtIns: [kept] })
+  try {
+    await second.start()
+    expect(second.legacySealed()).toEqual(['kept-legacy.sealed'])
+    expect(contexts.at(-1)?.sealed.read()).toBeUndefined()
+    await writeFile(legacy, vault.encrypt('{"token":"moved"}'))
+    const before = contexts.length
+    await second.adoptLegacy()
+    expect(second.legacySealed()).toEqual([])
+    expect(contexts.length).toBeGreaterThan(before)
+    expect(contexts.at(-1)?.sealed.read()).toBe('{"token":"moved"}')
+  } finally { await second.dispose() }
+})
+
+it('loads settings, migration, view presentation and requests from an installed library', async () => {
+  const f = await setup()
+  await f.channels.dispose()
+  const path = join(process.env['GECKIT_CHANNEL_TEST_HOME']!, 'channel-libraries', 'channel-echo', 'index.mjs')
+  await writeFile(path, `${library}
+export function migrate(context) { context.configure({ manager: true }) }
+export async function settings(context, request) {
+  if (request.action === 'enable') await context.configure({ enabled: true, secrets: { token: 'fixture' } })
+  return { title: context.setting().info.name, text: [context.config().allow?.join(',') ?? 'empty'], state: request.state ?? null, actions: [{ label: 'Enable', action: 'enable' }] }
+}
+export function present(value, from) { return from === 'phone' ? { safe: true } : value }
+`)
+  const hub = new Channels(f.deps)
+  await hub.start()
+  try {
+    expect(f.settings().channels.find((one) => one.info.id === 'channel:echo')?.manager).toBe(true)
+    expect(echo(hub)?.settings).toBe(true)
+    expect(await hub.screen('channel:echo', { state: { page: 2 } })).toMatchObject({ title: 'Echo', state: { page: 2 } })
+    await hub.screen('channel:echo', { action: 'enable' })
+    expect(echo(hub)?.state).toBe('connected')
+    expect(await hub.request('channel:echo', { hello: 'library' }, 'phone')).toEqual({ value: { hello: 'library' }, from: 'phone' })
+    const viewed = vi.fn()
+    const reporting = new Channels({ ...f.deps, viewed })
+    await hub.dispose()
+    await reporting.start()
+    try {
+      seen().contexts.at(-1)?.view?.({ secret: 'only desktop' })
+      expect(viewed).toHaveBeenLastCalledWith({ id: 'channel:echo', value: { secret: 'only desktop' }, phone: { safe: true } })
+      expect(reporting.views('phone')['channel:echo']).toEqual({ safe: true })
+    } finally { await reporting.dispose() }
+  } finally { await hub.dispose() }
 })

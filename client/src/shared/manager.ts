@@ -1,5 +1,4 @@
 import type { ManagerIntakeConfig, ManagerIntakeView, VoiceMemosConnection } from './manager-intake'
-import type { TelegramAccount } from './telegram'
 import type { ChatSession, ManagerLabels, SessionItem, SessionItems, SessionMessage, SessionProvider, Settings } from './api'
 
 export const MANAGER_CHAT_GUIDANCE = 'Open Manager chat to send a request.'
@@ -10,7 +9,7 @@ export type ManagerRequestReceipt = Pick<ManagerSendRequest, 'id'> & Required<Pi
   readonly state: 'queued' | 'sending' | 'sent'
 }
 export type ManagerQueuedRequest = ManagerRequestReceipt & Pick<Extract<SessionItem, { kind: 'mine' }>, 'text' | 'at'> & {
-  readonly source: 'desktop' | 'phone' | 'telegram' | 'operator'
+  readonly source: 'desktop' | 'phone' | 'channel' | 'operator'
 }
 export type ManagerAnswerRequest = Pick<ManagerRequestReceipt, 'session' | 'id'> & { readonly choice: string }
 export type ManagerAnswerResult = ManagerView & { readonly answer: ManagerDecisionOutcome }
@@ -83,6 +82,8 @@ export interface ManagerThreadOpen {
   readonly labels?: ManagerLabels
   readonly from?: string
   readonly link?: string
+  /** Many people write here: answers are kept and delivered once, and the queue is limited. */
+  readonly shared?: boolean
 }
 
 export function managerLabels(labels: unknown): { readonly labels: ManagerLabels; readonly cut: boolean } {
@@ -127,6 +128,7 @@ export interface ManagerApi {
   receipt(id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined>
   answer(request: ManagerAnswerRequest): Promise<ManagerAnswerResult>
   answerCard(session: ChatSession['id'], card: SessionItem['id'], answer: string): Promise<boolean>
+  unfollow(thread: ManagerThread['id'], worker: ChatSession['id']): Promise<ManagerView>
   onItems(said: (items: SessionItems) => void): () => void
   configure(change: Partial<ManagerConfig>): Promise<ManagerView>
   pause(): Promise<ManagerView>
@@ -168,7 +170,7 @@ export interface ProjectAssistant {
 
 export const managerProjects = (settings: Pick<Settings, 'projects' | 'profiles'>): readonly string[] => [...new Set([...settings.projects, ...settings.profiles.flatMap((profile) => profile.projects)])]
 
-export interface ManagerTelegramSource {
+export interface ManagerRequestSource {
   readonly id: string
   readonly bot: number
   readonly chatId: number
@@ -179,15 +181,16 @@ export interface ManagerTelegramSource {
 }
 
 export type ManagerReplyOrigin = {
-  readonly telegramDelivery?: string
-  readonly request?: ManagerTelegramSource
+  readonly delivery?: string
+  readonly request?: ManagerRequestSource
   readonly thread?: ManagerThread['id']
   readonly session: ChatSession['id']
   readonly workers: readonly ChatSession['id'][]
 }
 
-export type ManagerTelegramReply = ManagerReplyOrigin & {
-  readonly chatId: TelegramAccount['chatId']
-  readonly messageId: number
+/** An answer a person replied to, as the channel gives it back: where it came from and the words quoted. */
+export type ManagerQuotedReply = ManagerReplyOrigin & {
   readonly text: Extract<SessionItem, { kind: 'theirs' }>['text']
+  /** The channel's own id for the message replied to, for Manager to name it. */
+  readonly message?: string
 }

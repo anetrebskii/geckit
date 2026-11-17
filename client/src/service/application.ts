@@ -18,12 +18,14 @@ export type ServiceEvents = CoreEvents & { 'core:trash': (id: string, path: stri
 export type MigratedHostSecret = Pick<HostConfig, 'id'> & Required<Pick<HostDraft, 'password'>>
 export interface SecretMigration {
   readonly hosts: readonly MigratedHostSecret[]
-  readonly telegram?: string
+  /** Files a channel sealed with the desktop's storage, by name, as the desktop read them. */
+  readonly sealed?: { readonly [name: string]: string }
 }
 export interface MigrationState {
   readonly available: boolean
   readonly hosts: readonly HostConfig['id'][]
-  readonly telegram: boolean
+  /** Files channels still need the desktop to read, by name in the data folder. */
+  readonly sealed: readonly string[]
   readonly detail?: string
 }
 
@@ -78,15 +80,15 @@ function hostSecrets(path: string): Map<string, string> {
   return result
 }
 
-export function migrationState(directory: string, security: ServiceSecurity): MigrationState {
+export function migrationState(directory: string, security: ServiceSecurity, legacy: readonly string[] = []): MigrationState {
   let hosts: MigrationState['hosts'] = []
-  let telegram = false
+  let sealed: string[] = []
   let detail: string | undefined
   try { hosts = [...hostSecrets(join(directory, 'hosts', 'secrets.json'))].filter(([, sealed]) => !isVaultEnvelope(Buffer.from(sealed, 'base64'))).map(([id]) => id) }
   catch { detail = 'Saved host secrets could not be read. Existing files were preserved.' }
-  try { const path = join(directory, 'manager-telegram.sealed'); telegram = existsSync(path) && !isVaultEnvelope(readFileSync(path)) }
-  catch { detail = 'Saved Telegram settings could not be read. Existing files were preserved.' }
-  return { available: security.vault.available(), hosts, telegram, ...(detail === undefined ? {} : { detail }) }
+  try { sealed = legacy.filter((name) => { const path = join(directory, name); return existsSync(path) && !isVaultEnvelope(readFileSync(path)) }) }
+  catch { detail = 'Saved channel settings could not be read. Existing files were preserved.' }
+  return { available: security.vault.available(), hosts, sealed, ...(detail === undefined ? {} : { detail }) }
 }
 
 function replaceSealed(path: string, bytes: Buffer, verify: (bytes: Buffer) => void): void {
@@ -100,7 +102,7 @@ function replaceSealed(path: string, bytes: Buffer, verify: (bytes: Buffer) => v
   } finally { rmSync(next, { force: true }) }
 }
 
-export function migrateSecrets(directory: string, security: ServiceSecurity, request: SecretMigration): MigrationState {
+export function migrateSecrets(directory: string, security: ServiceSecurity, request: SecretMigration, legacy: readonly string[] = []): MigrationState {
   if (!security.vault.available()) throw new Error('Unlock secure storage before migrating saved secrets.')
   const hostPath = join(directory, 'hosts', 'secrets.json')
   const kept = hostSecrets(hostPath)
@@ -125,16 +127,13 @@ export function migrateSecrets(directory: string, security: ServiceSecurity, req
     })
     security.reload()
   }
-  const telegramPath = join(directory, 'manager-telegram.sealed')
-  if (request.telegram !== undefined && existsSync(telegramPath) && !isVaultEnvelope(readFileSync(telegramPath))) {
-    let parsed: unknown
-    try { parsed = JSON.parse(request.telegram) } catch { throw new Error('Saved Telegram secret could not be read.') }
-    if (parsed === null || typeof parsed !== 'object' || !('token' in parsed) || typeof parsed.token !== 'string') throw new Error('Saved Telegram secret could not be read.')
-    const text = request.telegram
-    const sealed = security.vault.encrypt(text)
-    replaceSealed(telegramPath, sealed, (bytes) => { if (security.vault.decrypt(bytes) !== text) throw new Error('Saved Telegram secret verification failed.') })
+  for (const name of legacy) {
+    const text = request.sealed?.[name]
+    const path = join(directory, name)
+    if (text === undefined || text === '' || !existsSync(path) || isVaultEnvelope(readFileSync(path))) continue
+    replaceSealed(path, security.vault.encrypt(text), (bytes) => { if (security.vault.decrypt(bytes) !== text) throw new Error('Saved channel secret verification failed.') })
   }
-  return migrationState(directory, security)
+  return migrationState(directory, security, legacy)
 }
 
 export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess, computers?: RemoteComputers) {
@@ -164,12 +163,13 @@ export function serviceApplication(runtime: CoreRuntime, directory: string, secu
       if (runtime.sessions.working().length > 0) throw new Error('GeckIt is still working. Wait for active tasks to finish before updating.')
       return { ready: true }
     },
-    'desktop:hello': () => ({ protocol: 1, version, methods: [...Object.keys(core), ...Object.keys(desktop)], migration: migrationState(directory, security) }),
+    'desktop:hello': () => ({ protocol: 1, version, methods: [...Object.keys(core), ...Object.keys(desktop)], migration: migrationState(directory, security, runtime.channels.legacySealed()) }),
     'desktop:completeNative': (id: string, error?: string) => native.complete(id, error),
     'desktop:migrateSecrets': async (request: SecretMigration) => {
-      const before = migrationState(directory, security)
-      const result = migrateSecrets(directory, security, request)
-      if (before.telegram && !result.telegram && runtime.manager.enabled()) { runtime.telegram.stop(); await runtime.telegram.start() }
+      const legacy = runtime.channels.legacySealed()
+      const before = migrationState(directory, security, legacy)
+      const result = migrateSecrets(directory, security, request, legacy)
+      if (before.sealed.length > result.sealed.length) await runtime.channels.adoptLegacy()
       return result
     },
   }

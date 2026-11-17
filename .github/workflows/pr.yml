@@ -62,6 +62,18 @@ jobs:
           cache: npm
           cache-dependency-path: '**/package-lock.json'
       - run: npm ci
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: broker/go.mod
+          cache-dependency-path: broker/go.sum
+      - name: Build the secrets broker
+        run: |
+          if [ "${{ matrix.platform }}" = mac ]; then
+            scripts/broker.sh mac arm64
+            scripts/broker.sh mac x64
+          else
+            scripts/broker.sh ${{ matrix.platform }} x64
+          fi
       - name: Install both Mac service addons
         if: matrix.platform == 'mac'
         run: node scripts/prepare-mac-service-addons.cjs

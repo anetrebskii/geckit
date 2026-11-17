@@ -15,13 +15,16 @@ if (phone) document.documentElement.classList.add('phone')
 document.documentElement.dataset.theme = query.get('theme') === 'light' ? 'light' : 'dark'
 const recurrence: CalendarRecurrence = { start: '2026-10-13', time: '09:00', interval: 2, unit: 'week', weekdays: [2, 4], monthly: 'day', end: { kind: 'after', count: 13 } }
 const fixtureRecurrence: CalendarRecurrence = query.has('ended') ? { ...recurrence, start: '2026-09-01', interval: 1, unit: 'day', end: { kind: 'after', count: 3 } } : recurrence
-const saved: Shortcut = { id: 'review', name: 'Morning review', root: '/work/geckit', prompt: 'Review the pull requests waiting for me.', mode: 'auto', provider: 'claude', on: !query.has('paused'), since: Date.now(), ...(query.has('cron') ? { cron: '0 */2 * * *', ...(query.has('window') ? { startWindowMinutes: Number(query.get('window') || 60) } : {}) } : { recurrence: fixtureRecurrence }) }
+const saved: Shortcut = { id: 'review', name: 'Morning review', root: '/work/geckit', prompt: 'Review the pull requests waiting for me.', mode: 'auto', provider: 'claude', ...(query.has('goal') ? { goal: 'Every waiting pull request has a reply' } : {}), on: !query.has('paused'), since: Date.now(), ...(query.has('cron') ? { cron: '0 */2 * * *', ...(query.has('window') ? { startWindowMinutes: Number(query.get('window') || 60) } : {}) } : { recurrence: fixtureRecurrence }) }
 let fail = query.has('fail')
 let failOnce = query.has('failonce')
 let notify: ((one: Shortcut) => void) | undefined
 let saveCalls = 0
 let countSaveCalls: ((count: number) => void) | undefined
 const shortcuts: Geckit['shortcuts'] = {
+  onRun: () => () => undefined,
+  destinations: async () => [],
+  runs: async () => [],
   save: async (draft) => {
     countSaveCalls?.(++saveCalls)
     await new Promise((resolve) => setTimeout(resolve, 350))
@@ -47,7 +50,7 @@ function Preview(): React.JSX.Element {
   const [calls, setCalls] = useState(saveCalls)
   useEffect(() => { notify = setOne; return () => { notify = undefined } }, [])
   useEffect(() => { countSaveCalls = setCalls; return () => { countSaveCalls = undefined } }, [])
-  const chat: ShortcutChat = { settings: { ...DEFAULT_SETTINGS, projects: ['/work/geckit'], calendarTimeZone: query.get('zone') ?? 'Europe/Samara', ...(query.has('legacy') ? {} : { calendarRecurrenceVersion: 1 }), ...(query.has('legacywindow') ? {} : { cronStartWindowVersion: 1 }), shortcuts: [one] }, root: '/work/geckit', everyone: [], employees: [], goTo: () => undefined }
+  const chat: ShortcutChat = { settings: { ...DEFAULT_SETTINGS, projects: ['/work/geckit'], calendarTimeZone: query.get('zone') ?? 'Europe/Samara', ...(query.has('legacy') ? {} : { calendarRecurrenceVersion: 1 }), ...(query.has('legacywindow') ? {} : { cronStartWindowVersion: 1 }), shortcuts: [one], checklists: [{ id: 'review', name: 'Review flow', items: [{ id: 'a', title: 'Each pull request read', check: 'none' }, { id: 'b', title: 'Replies approved', check: 'person' }] }] }, root: '/work/geckit', everyone: [], employees: [], goTo: () => undefined }
   return <main className={`recurrence-preview${phone ? ' phone' : ''}`}>
     <header className="recurrence-preview-tools"><span>GeckIt</span><button type="button" onClick={() => setEditing(one)}>Edit shortcut</button><button type="button" onClick={() => setEditing(phone ? undefined : 'list')}>Shortcuts</button><label><input type="checkbox" checked={failed} onChange={(event) => { fail = event.target.checked; setFailed(fail) }} />Fail Save</label><span>{`Save calls: ${String(calls)}`}</span></header>
     {phone ? <PhoneShortcuts chat={chat} back="Settings" onBack={() => undefined} onEdit={setEditing} /> : <section className="recurrence-preview-context"><aside><h3>GeckIt</h3><p>To do</p><p>In progress</p><p>Done</p><p>Shortcuts</p></aside><article><h1>Morning review</h1><p>Saved prompt in geckit</p><div className="phone-group"><strong>{one.name}</strong><p>{one.prompt}</p><p>{one.recurrence === undefined ? one.cron ?? 'By hand' : describeRecurrence(one.recurrence)}</p></div></article></section>}

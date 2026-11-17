@@ -18,7 +18,7 @@ const doc = (id) => getFirestore().doc(`secretRequests/${id}`)
 function cardOf(body) {
   const card = body.card ?? {}
   const places = Array.isArray(card.places) && card.places.length <= 20 && card.places.every((one) => text(one, 200) !== undefined) ? card.places : undefined
-  const out = { name: text(card.name, 48), kind: KINDS.includes(card.kind) ? card.kind : undefined, places, note: text(card.note ?? '', 200), field: text(card.field ?? '', 200), computer: text(card.computer, 80), task: text(card.task ?? '', 80), brokerKey: text(card.brokerKey, 200) }
+  const out = { name: text(card.name, 48), kind: KINDS.includes(card.kind) ? card.kind : undefined, places, note: text(card.note ?? '', 200), user: text(card.user ?? '', 200), field: text(card.field ?? '', 200), computer: text(card.computer, 80), task: text(card.task ?? '', 80), brokerKey: text(card.brokerKey, 200) }
   return Object.values(out).every((one) => one !== undefined) && /^[a-z0-9][a-z0-9-]{1,47}$/.test(out.name) && B64.test(out.brokerKey) ? out : undefined
 }
 
@@ -48,7 +48,8 @@ export const secret = onRequest({ region: 'europe-west1', maxInstances: 10 }, as
       }
       case 'save': {
         const sealed = body.ciphertext ?? {}
-        if (!B64.test(sealed.epk ?? '') || !B64.test(sealed.iv ?? '') || !B64.test(sealed.data ?? '') || !LIFETIMES.includes(body.lifetime)) { response.status(400).json({ error: 'bad value' }); return }
+        const user = text(body.user ?? '', 200)
+        if (!B64.test(sealed.epk ?? '') || !B64.test(sealed.iv ?? '') || !B64.test(sealed.data ?? '') || !LIFETIMES.includes(body.lifetime) || user === undefined) { response.status(400).json({ error: 'bad value' }); return }
         const answer = await getFirestore().runTransaction(async (work) => {
           const held = (await work.get(doc(id))).data()
           if (held === undefined || held.linkKey !== hash(String(body.linkKey ?? ''))) return [404, 'not-valid']
@@ -56,7 +57,7 @@ export const secret = onRequest({ region: 'europe-west1', maxInstances: 10 }, as
           work.update(doc(id), { tries: held.tries + 1 })
           if (held.state !== 'sent') return [409, 'already-used']
           if (held.expiresAt.toMillis() < now) return [410, 'expired']
-          work.update(doc(id), { state: 'saved', ciphertext: { epk: sealed.epk, iv: sealed.iv, data: sealed.data }, lifetime: body.lifetime, device: text(String(request.get('user-agent') ?? ''), 300) ?? '', savedAt: Timestamp.fromMillis(now) })
+          work.update(doc(id), { state: 'saved', ciphertext: { epk: sealed.epk, iv: sealed.iv, data: sealed.data }, lifetime: body.lifetime, user: held.card.kind === 'website' && (held.card.user ?? '') === '' ? user : '', device: text(String(request.get('user-agent') ?? ''), 300) ?? '', savedAt: Timestamp.fromMillis(now) })
           return [200, held.card.computer]
         })
         if (answer[0] !== 200) { response.status(answer[0]).json({ error: answer[1] }); return }
@@ -70,7 +71,7 @@ export const secret = onRequest({ region: 'europe-west1', maxInstances: 10 }, as
           if (held.state === 'sent') return { status: 200, json: { state: held.expiresAt.toMillis() < now ? 'expired' : 'sent' } }
           if (held.state !== 'saved') return { status: 200, json: { state: held.state } }
           work.update(doc(id), { state: 'collected', ciphertext: null })
-          return { status: 200, json: { state: 'saved', ciphertext: held.ciphertext, lifetime: held.lifetime, device: held.device } }
+          return { status: 200, json: { state: 'saved', ciphertext: held.ciphertext, lifetime: held.lifetime, user: held.user ?? '', device: held.device } }
         })
         response.status(answer.status).json(answer.json)
         return

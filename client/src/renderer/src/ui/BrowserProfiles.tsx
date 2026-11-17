@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { BrowserBridgeState, TestBrowsersState } from '../../../shared/api'
-import { LiveView } from '../chat/LiveView'
+import { LiveView, tint } from '../chat/LiveView'
 import type { LiveViewApi } from '../chat/LiveView'
 import { Icon } from './Icon'
 import { Menu } from './Menu'
@@ -11,6 +11,7 @@ interface BrowserProfilesProps {
   readonly testing: BrowserBridgeState['testing'] | undefined
   readonly refresh: () => Promise<void>
   readonly enabled: boolean
+  readonly loading?: boolean
 }
 type ProfileRowProps = Pick<Profile, 'name' | 'note' | 'open'> & Pick<BrowserProfilesProps, 'refresh' | 'enabled'> & {
   readonly signIn: (name: Profile['name'], opener: HTMLButtonElement | null) => void
@@ -26,7 +27,6 @@ const liveApi: LiveViewApi = {
   input: (name, input) => window.geckit.browser.viewInput(name, input),
   end: (name) => window.geckit.browser.viewEnd(name),
 }
-const tint = (name: string): string => `var(--project-${[...name].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 8})`
 
 const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled, signIn, focusOpen, onFocused, onDeleted, onRenamed }: ProfileRowProps): React.JSX.Element {
   const [asking, setAsking] = useState(false)
@@ -96,14 +96,14 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
   }
   const remote = window.geckitRemoteComputer !== undefined
   const choices: readonly Choice[] = [
+    ...(remote ? [] : [{ value: 'show', label: 'Show in GeckIt', icon: 'display', ...(enabled ? {} : { disabled: true }) }]),
     { value: 'edit', label: 'Edit', icon: 'pencil' },
-    ...(remote ? [] : [{ value: 'sign-in', label: 'Sign in', icon: 'display', ...(enabled ? {} : { disabled: true }) }]),
     { value: 'delete', label: 'Delete', icon: 'trash', danger: true },
   ]
   const pick = (value: string): void => {
     setMore(undefined)
     setProblem('')
-    if (value === 'sign-in') signIn(name, moreButton.current)
+    if (value === 'show') signIn(name, moreButton.current)
     else if (value === 'edit') { setDraftName(name); setDraftNote(note ?? ''); setEditing(true) }
     else setAsking(true)
   }
@@ -145,7 +145,7 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
   </li>
 })
 
-export function BrowserProfiles({ testing, refresh, enabled }: BrowserProfilesProps): React.JSX.Element | null {
+export function BrowserProfiles({ testing, refresh, enabled, loading = false }: BrowserProfilesProps): React.JSX.Element | null {
   const [making, setMaking] = useState(false)
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -166,6 +166,25 @@ export function BrowserProfiles({ testing, refresh, enabled }: BrowserProfilesPr
   const onDeleted = useCallback((): void => newButton.current?.focus(), [])
   const onRenamed = useCallback((profile: Profile['name']): void => setCreated(profile), [])
   const signIn = useCallback((profile: Profile['name'], opener: HTMLButtonElement | null): void => { signInOpener.current = opener; setSigning(profile) }, [])
+  if (testing === undefined && loading) return <section className="browser-profiles" aria-labelledby="browser-profiles-title" aria-busy="true">
+    <header className="browser-profiles-header">
+      <div className="browser-profiles-heading">
+        <h4 id="browser-profiles-title">Browser profiles</h4>
+        <p>Separate Camoufox profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer.</p>
+      </div>
+      <button type="button" className="quiet browser-profiles-new" disabled><Icon name="plus" size={14} />New profile</button>
+    </header>
+    <div className="browser-profiles-group">
+      <span className="browser-profiles-loading" role="status">Loading browser profiles</span>
+      <ul className="browser-profiles-list" aria-hidden="true">{[0, 1, 2].map((one) => <li key={one} className="browser-profile browser-profile-skeleton">
+        <div className="browser-profile-main">
+          <span className="browser-profile-badge browser-bone" />
+          <div className="browser-profile-lines"><span className="browser-bone line" /><span className="browser-bone line short" /></div>
+          <span className="browser-bone button" />
+        </div>
+      </li>)}</ul>
+    </div>
+  </section>
   if (testing === undefined || !testing.supported) return null
   const trimmed = name.trim()
   const duplicate = testing.profiles.some((one) => one.name === trimmed)
@@ -201,8 +220,8 @@ export function BrowserProfiles({ testing, refresh, enabled }: BrowserProfilesPr
       </div>
       <button ref={newButton} type="button" className="quiet browser-profiles-new" disabled={making} onClick={() => { setProblem(''); setMaking(true) }}><Icon name="plus" size={14} />New profile</button>
     </header>
-    {enabled ? null : <p className="browser-profiles-notice">Turn on Chrome through GeckIt below to open a browser or sign in.</p>}
-    {download?.error !== undefined ? <p className="browser-profiles-notice">Camoufox could not be installed: {download.error.replace(/\.$/, '')}. Try Open or Sign in again.</p>
+    {enabled ? null : <p className="browser-profiles-notice">Turn on Chrome through GeckIt below to open a browser.</p>}
+    {download?.error !== undefined ? <p className="browser-profiles-notice">Camoufox could not be installed: {download.error.replace(/\.$/, '')}. Try Open browser again.</p>
       : download !== undefined ? <div className="browser-profiles-notice"><p>{download.phase === 'installing' ? 'Installing Camoufox without bundled fonts...' : <>Downloading Camoufox, {Math.round(download.received / 1e6)} of {Math.round(download.total / 1e6)} MB.</>}</p><div className="progress"><span style={{ width: `${download.total === 0 ? 0 : Math.round((download.received / download.total) * 100)}%` }} /></div></div>
       : testing.version === undefined ? <p className="browser-profiles-notice">Camoufox downloads on first use, about 150-180 MB. This font-free build uses the fonts installed on this computer.</p> : null}
     {testing.migrated ? <p className="browser-profiles-notice">Previous Chrome profiles need a new sign-in in Camoufox. Their original Chrome data is preserved.</p> : null}

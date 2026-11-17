@@ -15,3 +15,10 @@ Only native API boundary is replaced: model discovery returns a fixed catalog; s
 ```sh
 npx tsc --noEmit -p test/browser/shortcut-employees/tsconfig.json
 ```
+
+
+Destination controls use the actual `ShortcutDestinations` component. Add `destination=ready|loading|empty|error|legacy|unavailable|failed|uncertain` to select the native boundary state. Ready includes duplicate Discord channel names, a long name, Slack and unsupported Telegram. Legacy omits the host capability; unavailable keeps the removed saved identity. Failed/uncertain are synthetic completed run journal entries. The Mark fixture delivered button emits a synthetic native run event without reload or external writes; its result URL must not be mistaken for a real receipt.
+
+Add `surface=team` for the actual desktop Team detail, or `phone=1&surface=team` for PhoneTeam. Theme links return to the Shortcuts surface, so keep `surface=team` in the URL when reviewing Team in both themes. The Fail save control, or `window.shortcutFixture.failSave` on the direct phone page, rejects the native save boundary while preserving the real form handlers. The phone iframe has a separate window and fixture state.
+
+Recorded acceptance evidence and light/dark desktop/phone screenshots: [verification report](../../../../docs/reports/shortcut-destinations.md). No fixture path sends a result to a connected channel or starts a real task.

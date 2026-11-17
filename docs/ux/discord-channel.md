@@ -11,163 +11,26 @@ People who work in Discord could not reach GeckIt's Manager from there. Telegram
 
 ## The path
 
-The result the person came for: write to the bot in Discord and get Manager's answer in the same thread.
+Open Settings, Channels, Discord, Set up. The module-owned screen uses the same public settings contract as every installed channel library; the renderer has no Discord-specific component.
 
-Ready means all of these are true, and Set up says which are not:
+Only two values are configured: Bot token and People who may write (Discord user IDs). Check and save token verifies the token with Discord before sealing it. A rejected token never replaces a working saved token. Check saved setup refreshes the bot identity, Message Content Intent, server list and user identities. Links open the Developer Portal, bot settings and server invitation. Save channel settings saves the allowed users. Escape closes Set up and returns focus to its opener.
 
-1. The token is checked, not only saved: Discord answered with the bot's name. A pasted token is checked first and saved only when Discord accepts it, so a refused one never replaces a working token; a saved one that stops working shows the refused state until a new one is pasted.
-2. Message Content Intent is on for the bot. Without it Discord sends the bot only mentions and direct messages, so follow-ups in its threads would be lost.
-3. The bot is in at least one server, or direct messages are on.
-4. At least one person is allowed, and each allowed ID is a real Discord user.
-5. The channel may talk to Manager.
+The bot always answers in every visible channel and direct message, and always checks messages and files for tokens and keys. Manager access, declared capabilities and all GeckIt project folders are automatic. No folder, channel, direct-message or secret-check controls are shown. Legacy restrictions are ignored. The operational On switch still starts or stops the connection; the global Manager switch still applies.
 
-The form is four steps on one rail, inside the Discord row's Set up. A wizard of pages was rejected: the steps are short and a person changing a working setup must see everything at once. Plain fields were rejected too: steps 2 and 3 depend on the token, and a list of fields would not say why a server list is empty.
+## States and transitions
 
-| Step | Main question | Next action | Waits for |
-| --- | --- | --- | --- |
-| 1 Connect the bot | Which bot? | Paste the token, Connect | nothing |
-| 2 Choose where it answers | Which servers and channels? | Add to server, or pick channels | a checked token |
-| 3 Choose who may write | Who may use it? | Add a Discord user ID | nothing; names show once the token is checked |
-| 4 Choose what it may reach | May it talk to Manager? | Tick May talk to Manager | nothing |
-
-The footer's main button is "Save and turn on" when Discord is off and everything above is ready, otherwise "Save". Saving never turns it on by itself.
-
-```mermaid
-sequenceDiagram
-  participant P as Person
-  participant S as GeckIt Settings
-  participant G as GeckIt service
-  participant D as Discord
-  P->>S: paste token, Connect
-  S->>G: save token sealed, inspect
-  G->>D: users/@me, applications/@me, guilds, channels, users
-  D-->>G: bot, intent flags, servers, people
-  G-->>S: what the bot sees
-  P->>S: Add to server
-  S->>D: opens the invite page in the browser
-  P->>S: Check again, pick channels, add people, Save and turn on
-  G->>D: gateway: identify with message intents
-```
-
-## What is added
-
-| Surface | What appears |
-| --- | --- |
-| Settings, Channels, list | A Discord row after Slack, with the Discord icon, its state line, "On" and "Set up". No Remove: it is built in. |
-| Settings, Channels, intro | "Telegram, Slack and Discord come with GeckIt; add others from GitHub." |
-| Discord row, Set up | The four steps, then Cancel and Save or Save and turn on. |
-| Discord | The bot's thread per mention, its answers, one status message per stretch of work, questions with buttons. |
-| `client/src/main/channels/discord.ts` | The channel; `client/src/renderer/src/ui/DiscordSetup.tsx` is the setup. |
-
-## States
-
-### The row
-
-| State | When | Line | What to do |
-| --- | --- | --- | --- |
-| Not set up | no token saved | "Not set up" | Set up |
-| Off | token saved, off | "Off" and the thread count | turn On |
-| Unfinished | on, a required setting empty | "Finish setting up: People who may write." | Set up |
-| Connecting | starting | "Connecting…" | wait |
-| Reconnecting | the connection dropped | "Reconnecting to Discord…" | wait; it resumes by itself |
-| Connected | Discord said Ready | "Connected as GeckIt Bot · 2 threads" | nothing |
-| Stopped | Discord refused for good | "Stopped: " and the first sentence of the reason, in the danger colour; Set up opens with the whole reason and its fix above step 1 | fix what it says, turn On again |
-
-### Step 1
-
-| State | When | Shows | What to do |
-| --- | --- | --- | --- |
-| Empty | no token | the lead, "Open Developer Portal", the token field and Connect | paste the token |
-| Checking a new token | after Connect | "Checking…" on the button | wait |
-| Refused | Discord answered 401 | "Discord did not accept this token. Reset it in the Developer Portal and paste the new one." A pasted token is not saved; a saved one that worked stays until a new one is accepted. | paste a new one |
-| Checking the saved token | Set up opened with a saved token | "Checking the saved token…" with Replace token | wait |
-| Unreachable | the check failed | "Could not check with Discord: " the reason, and Try again | Try again |
-| Checked | Discord named the bot | the bot's picture or initial, its name, "Token checked", Replace token | nothing |
-| Intent off | checked, Message Content Intent off | a warning: "Message Content Intent is off, so the bot cannot read follow-ups in its threads. Turn it on under Bot, Privileged Gateway Intents." with Open Bot settings and Check again | turn it on, Check again |
-
-The step mark is a tick only when the token is checked and the intent is on.
-
-### Step 2
-
-| State | When | Shows | What to do |
-| --- | --- | --- | --- |
-| Waiting | token not checked | "Connect the bot first." greyed | step 1 |
-| No server | the bot is in none | "The bot is not in a server yet. Add it to one you manage; Discord asks which." with Add to server and Check again | Add to server, then Check again |
-| Every channel | default | the servers, "Every channel it can see" chosen | nothing |
-| Chosen channels | "Only the channels I choose" | each server's text, announcement and forum channels as ticks | tick at least one |
-| A server it cannot read | Discord refused its channel list | "Cannot list its channels" beside the server | give the bot View Channels |
-
-Answer direct messages is a tick under the servers, on at first.
-
-### Step 3
-
-| State | When | Shows |
+| From | Event | Result visible to the person |
 | --- | --- | --- |
-| Nobody | no IDs | "Nobody yet. The bot answers only the people listed here." |
-| Found | Discord knows the ID | picture or initial, name, @handle, a remove button |
-| A bot | the ID is a bot | "A bot. Bots are never answered." |
-| Unknown | Discord has no such user | the ID and "Discord has no user with this ID" in the danger colour |
-| Not checked | no checked token | the ID and "Not checked yet" |
-| Not an ID | typed text is not 15 to 22 digits | "That is not a Discord user ID. It is a long number, such as 301234567890123456." |
+| Closed | Set up | Connection screen loads; token and allowed-user fields are shown |
+| Ready | Check and save token | Working; token is verified, saved on success and cleared from the input |
+| Working | Discord refuses token or request fails | Error message; existing token remains, input stays for retry |
+| Ready | Check saved setup | Bot identity, intent, servers and allowed user identities refresh |
+| Ready | Save channel settings | Allowed-user list is saved and remains visible |
+| Ready | Forget token, then Confirm | Token is removed; connection requires a token again |
+| Confirming | Cancel or Escape | Forget is cancelled |
+| Open | Escape | Set up closes; focus returns to Set up |
 
-A pasted mention such as `<@301234567890123456>` is read as its ID.
-
-### Step 4
-
-May talk to Manager, and under More the folders and the token check. With it off: "Without it the bot only says Manager is not available."
-
-## Transitions
-
-```mermaid
-stateDiagram-v2
-  direction LR
-  state "Not set up" as none
-  state "Checking" as checking
-  state "Refused" as refused
-  state "Checked" as checked
-  state "Off, ready" as ready
-  state "Connected" as connected
-  state "Reconnecting" as reconnecting
-  state "Stopped" as stopped
-  [*] --> none
-  none --> checking: Connect
-  checking --> refused: 401
-  checking --> checked: bot named
-  refused --> checking: new token
-  checked --> ready: Save
-  checked --> connected: Save and turn on
-  ready --> connected: On
-  connected --> reconnecting: connection dropped
-  reconnecting --> connected: resumed
-  connected --> stopped: fatal close
-  stopped --> connected: fixed, On
-  connected --> ready: Off
-  classDef send fill:#e5e7eb
-  classDef auto fill:#dbeafe
-  classDef hands fill:#fee2e2
-  classDef done fill:#dcfce7
-  class none,ready send
-  class checking,reconnecting auto
-  class refused,stopped hands
-  class checked,connected done
-```
-
-| From | Event | To | What the person sees |
-| --- | --- | --- | --- |
-| Not set up | pressed Connect with a token | Checking | "Checking…" on the button |
-| Checking | Discord answered 401 | Refused | the refused message; the field empties for a new token |
-| Checking | Discord named the bot | Checked | the bot's name; steps 2 and 3 fill in |
-| Checking | network or Discord error | Not set up | "Could not check with Discord: " and Try again |
-| Checked | pressed Replace token | Not set up | the token field, with Cancel back to Checked |
-| Checked | pressed Save | Off, ready | Set up closes, the row says "Off" |
-| Checked | pressed Save and turn on | Connected | Set up closes, the row says "Connecting…" then "Connected as …" |
-| Off, ready | ticked On | Connected | "Connecting…", then "Connected as …" |
-| Connected | the gateway closed with a code Discord allows to resume, by itself | Reconnecting | "Reconnecting to Discord…" |
-| Reconnecting | Discord said Resumed, by itself | Connected | "Connected as …"; missed messages arrive once |
-| Connected | the gateway closed with 4004, 4010 to 4014, by itself | Stopped | "Stopped: " and the fix |
-| Stopped | the person fixed it and ticked On again | Connected | as above |
-| Connected | unticked On | Off, ready | "Off" |
-| any open Set up | Escape or Cancel | the row | Set up closes, nothing saved, focus back on Set up |
+A saved token is distinct from a connected gateway. Ready requires a valid token, Message Content Intent and at least one allowed person. Connecting, Connected, Reconnecting and Stopped are reported by the channel. Failure text includes the native reason and remains retryable after correction.
 
 ## In Discord
 
@@ -205,12 +68,10 @@ stateDiagram-v2
 ## Edge cases
 
 - Saved token revoked in the Developer Portal: Set up shows the refused state and asks for a new one; the row shows Stopped after the next connect.
-- Bot removed from every server: step 2 shows No server; direct messages still work if on.
+- Bot removed from every server: step 2 shows No server; direct messages remain available.
 - The bot cannot create threads in a channel: it answers the mention there with "I could not start a thread for this: " Discord's reason, and which permissions to give.
-- Chosen channels exclude the place of a mention: "This bot does not answer in this channel. Choose it in GeckIt, Settings, Channels, Discord."
-- Direct messages off: "Direct messages are off for this bot. Mention it in a server channel instead."
 - A token pasted into a message: refused, and Manager never sees it.
-- Manager off or not allowed: "Manager is not available to Discord. Allow it in GeckIt, Settings, Channels, Discord."
+- Manager off: "Manager is not available to Discord. Allow it in GeckIt, Settings, Channels, Discord."
 - History cleared or the thread deleted in GeckIt: open questions there lose their buttons and say "This question was cleared in GeckIt."; older Discord messages are not sent again.
 - Restart of GeckIt: known threads, open questions and the last message seen are kept, so nothing is answered twice.
 
@@ -226,7 +87,7 @@ stateDiagram-v2
 
 | Question | Verdict | Why |
 | --- | --- | --- |
-| Built in, or a channel library from GitHub | Built in | Slack is built in; Discord needs the same sealed secret, allow list and Manager threads, and a setup flow libraries cannot draw. |
+| Built in, or a channel library from GitHub | Built in | Slack is built in; Discord needs the same sealed secret, allow list and Manager threads, and the same public settings hook as installed libraries. |
 | One Manager thread per Discord channel, or per thread | Per thread and per direct message | the same as Slack threads; a busy channel would mix unrelated work. |
 | Buttons or typed answers | Both | buttons are native and bound to the message; typed values keep working where buttons cannot be shown. |
 | Check the token before saving | Checked first, saved sealed only when accepted | saving first and forgetting a refused token would wipe a working token when a replacement is mistyped. The pasted token goes to the service once, with the check, the same way Save sends it, is used for that one check and is never stored or sent back to the window. |
@@ -234,3 +95,5 @@ stateDiagram-v2
 ## Requirements
 
 Covers Alex's request of 2026-11-07: Discord as a place to talk to Manager and worker sessions with Telegram and Slack parity, and the addendum asking for a designed setup with onboarding, server and channel choice, allowed people and visible connection states. Not covered: live Discord, which needs Alex's own bot and server.
+
+The correction of 2026-11-15 supersedes the former four-step permissions form and optional channel/direct-message restrictions. Only token and allowed users remain configurable.

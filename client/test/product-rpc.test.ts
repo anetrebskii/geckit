@@ -9,7 +9,7 @@ const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { vi.unstubAllEnvs(); for (const dispose of cleanup.splice(0).reverse()) await dispose() })
 
 it('reports an uncertain result after a real authenticated RPC drops a dispatched mutation, without replay', async () => {
-  for (const name of ['CODEX_THREAD_ID', 'GECKIT_MANAGER_SESSION', 'CLAUDECODE', 'CLAUDE_SESSION_ID']) vi.stubEnv(name, undefined)
+  for (const name of ['CODEX_THREAD_ID', 'GECKIT_MANAGER_SESSION', 'CLAUDECODE', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID']) vi.stubEnv(name, undefined)
   const folder = await mkdtemp(join(tmpdir(), 'gk-product-rpc-'))
   cleanup.push(() => rm(folder, { recursive: true, force: true }))
   await writeFile(join(folder, 'operator-token'), 'isolated-token')
@@ -25,7 +25,7 @@ it('reports an uncertain result after a real authenticated RPC drops a dispatche
 })
 
 it('preserves a definitive application refusal over the same real RPC boundary', async () => {
-  for (const name of ['CODEX_THREAD_ID', 'GECKIT_MANAGER_SESSION', 'CLAUDECODE', 'CLAUDE_SESSION_ID']) vi.stubEnv(name, undefined)
+  for (const name of ['CODEX_THREAD_ID', 'GECKIT_MANAGER_SESSION', 'CLAUDECODE', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID']) vi.stubEnv(name, undefined)
   const folder = await mkdtemp(join(tmpdir(), 'gk-product-rpc-'))
   cleanup.push(() => rm(folder, { recursive: true, force: true }))
   await writeFile(join(folder, 'operator-token'), 'isolated-token')

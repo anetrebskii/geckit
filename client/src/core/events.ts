@@ -2,13 +2,15 @@ import type { ChatSession, ClaudeAccount, GitState, Lineup, PlaceUsage, PlanUsag
 import type { Employees } from '../main/employees'
 import type { HostCheck, HostPrompt, HostView } from '../shared/hosts'
 import type { ManagerView } from '../shared/manager'
-import type { TelegramView } from '../shared/telegram'
+import type { ChannelId, ChannelJson } from '../shared/channels'
 import type { ChannelsView } from '../shared/channels'
 import type { Shares } from '../main/shares'
+import type { ShortcutRun } from '../shared/shortcut-runs'
 import type { RpcEvent } from './rpc'
 import type { SessionListStatus } from '../shared/session-list'
 
 export interface CoreEvents {
+  'shortcuts:runChanged': (run: ShortcutRun) => void
   'chat:sessions': (sessions: readonly ChatSession[]) => void
   'chat:listStatus': (status: readonly SessionListStatus[]) => void
   'chat:items': (items: SessionItems) => void
@@ -27,7 +29,8 @@ export interface CoreEvents {
   'hosts:checks': (checks: readonly HostCheck[]) => void
   'manager:view': (view: ManagerView) => void
   'manager:items': (items: SessionItems) => void
-  'telegram:view': (view: TelegramView) => void
+  /** What a channel shows on its own Settings screen. */
+  'channels:shown': (view: { readonly id: ChannelId; readonly value: ChannelJson; readonly phone?: ChannelJson }) => void
   'channels:changed': (view: ChannelsView) => void
   'peer:shares': (shares: ReturnType<Shares['rooms']>) => void
   'speech:model': (model: SpeechModel) => void

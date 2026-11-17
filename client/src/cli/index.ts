@@ -192,7 +192,7 @@ const HELP = `geckit service - control a running headless service (run service h
       When it was created and moved between columns, then what the person and assistant said, without what the tools printed.
       The id is the one sessions prints; the first few characters are enough. --last keeps only the last n things said.
 
-  geckit start --project <name> [--title <title>] [--goal <condition>] [--provider <provider>] <text>
+  geckit start --project <name> [--title <title>] [--goal <condition>|--checklist <id-or-name>|--items <JSON array>] [--provider <provider>] <text>
   geckit start --conversations <file> [--json]
       Asks GeckIt to start conversations, one or a batch of up to 20, and waits for the answer.
       The file, or - for stdin, is an array of { "project", "title", "text", "goal", "provider" }.
@@ -210,6 +210,12 @@ const HELP = `geckit service - control a running headless service (run service h
 
   geckit settings schema|show
   geckit settings edit --patch <JSON-object> [--expected <JSON-object>]
+  geckit checklists list [--project <root-or-name>]
+  geckit checklists show|remove --id <id-or-name>
+  geckit checklists add --name <name> --items <JSON array> [--project <root-or-name>] [--default]
+  geckit checklists edit --id <id-or-name> [--name <name>] [--items <JSON array>] [--project <root-or-name>|--shared] [--default|--no-default]
+      Saved checklists: results a task must reach, in order, shared or for one folder. Items are titles or {title, description, check: none|command|review|person, command, final}.
+      --checklist on start picks one by id or name, the folder's own first; --items gives a task its own; with neither and no --goal, the folder's default applies.
       Read or patch supported preferences without product confirmation. Schema lists fields and boundaries.
       Arrays replace; maps merge entries. Read back after a write or uncertain response.
 
@@ -228,11 +234,12 @@ const HELP = `geckit service - control a running headless service (run service h
   geckit employees manager [--json]
   geckit employees manager edit [--instructions <text>|--instructions-file <file>] [--avatar <1-12>]
   geckit employees shortcut add <employee-id|none> [--target manager|task] --name <name> --project <name> (--prompt <text>|--prompt-file <file>)
-      [--goal <text>] [--every <when>|--cron "<expr>"] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan]
+      [--destination <JSON|none>] [--goal <text>] [--every <when>|--cron "<expr>"] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan]
   geckit employees shortcut edit <shortcut-id> [the same options as add; --every none makes it by hand only]
   geckit employees shortcut pause|resume|remove|run <shortcut-id>
   geckit employees shortcut give <shortcut-id> <employee-id|none>
       Change the team. <when> is "hour", "hour 15", "day 9:00", "weekdays 9:00" or "week monday 9:00".
+      --destination accepts {"channel":"channel:discord","destination":"stable-channel-id","label":"#general"}; none removes it. Discover IDs with shortcuts destinations; inspect delivery with shortcuts runs.
       --start-window-minutes picks one random start within N minutes after each CRON time (1-1440); none restores exact timing.
       --project names a folder as geckit start does. An employee or shortcut may be named by its id or its exact name.
       Archiving pauses an employee's timetables until it is restored; nothing missed meanwhile is run.
@@ -403,6 +410,7 @@ export async function run(args: readonly string[]): Promise<string> {
     if (productCommand(args)) return (await product(args, data())).said
     if (what === 'service') return (await service(rest, data())).said
     if (what === 'settings') return (await readSettings(rest, data())).said
+    if (what === 'checklists') return (await readSettings(args, data())).said
     if (what === 'employees') return (await readEmployees(rest, data())).said
     if (what === 'browser') return (await browser(rest)).said
     if (what === 'secrets') return (await secrets(rest)).said
@@ -460,8 +468,8 @@ if (process.argv[1] !== undefined && existsSync(process.argv[1]) && realpathSync
     const answer = await service(rest, data())
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
-  } else if (what === 'settings') {
-    const answer = await readSettings(rest, data())
+  } else if (what === 'settings' || what === 'checklists') {
+    const answer = await readSettings(what === 'settings' ? rest : args, data())
     process.stdout.write(`${answer.said}\n`)
     process.exitCode = answer.ok ? 0 : 1
   } else if (what === 'employees') {

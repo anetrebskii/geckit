@@ -17,8 +17,9 @@ export class BrokerRefusal extends Error {
 }
 
 export interface BrokerOps {
-  prepare(request: { requestId: string; name: string; kind: SecretKind; places: readonly string[]; field?: string; note?: string; taskId: string }): Promise<{ brokerKey: string }>
-  accept(request: { requestId: string; ciphertext: Sealed; lifetime: SecretLifetime }): Promise<{ name: string; expiresAt?: number }>
+  prepare(request: { requestId: string; name: string; kind: SecretKind; places: readonly string[]; field?: string; note?: string; user?: string; taskId: string }): Promise<{ brokerKey: string }>
+  accept(request: { requestId: string; ciphertext: Sealed; lifetime: SecretLifetime; user?: string }): Promise<{ name: string; expiresAt?: number }>
+  update(request: { name: string; places: readonly string[]; note: string; user: string; lifetime: SecretLifetime }): Promise<{ name: string; expiresAt?: number }>
   list(): Promise<{ secrets: SecretMetadata[] }>
   history(request: { name?: string; limit?: number }): Promise<{ records: SecretUse[] }>
   revoke(request: { name: string } | { all: true }): Promise<{ removed: number }>
@@ -82,6 +83,7 @@ export function brokerOps(endpoint: () => BrokerEndpoint): BrokerOps & { run(req
   return {
     prepare: (request) => call('prepare', request),
     accept: (request) => call('accept', request),
+    update: (request) => call('update', request),
     list: () => call('list'),
     history: (request) => call('history', request),
     revoke: (request) => call('revoke', request),
