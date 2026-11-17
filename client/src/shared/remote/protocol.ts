@@ -20,7 +20,7 @@ export type RemoteItem = Pick<SessionItem, 'id' | 'kind'> & { readonly text: str
 export interface RemoteHistory { readonly session: string; readonly items: readonly RemoteItem[]; readonly before: number; readonly revision: number }
 export type RemoteRequest =
   | { readonly type: 'hello'; readonly protocol: number; readonly publicKey: string; readonly name: string; readonly nonce: string; readonly proof: string }
-  | { readonly type: 'snapshot'; readonly id: number }
+  | { readonly type: 'snapshot'; readonly id: number; readonly lean?: true }
   | { readonly type: 'history'; readonly id: number; readonly session: string; readonly before: number }
   | { readonly type: 'core-call'; readonly id: number; readonly call: RemoteCall }
 export type RemoteResponse =
@@ -55,7 +55,7 @@ export function requestOf(text: string): RemoteRequest {
   if (value === null || typeof value !== 'object' || !('type' in value)) throw new Error('Invalid remote request.')
   if (value.type === 'hello' && 'protocol' in value && typeof value.protocol === 'number' && 'publicKey' in value && typeof value.publicKey === 'string' && value.publicKey.length < 512 && 'name' in value && typeof value.name === 'string' && value.name.length <= 80 && 'nonce' in value && typeof value.nonce === 'string' && value.nonce.length <= 128 && 'proof' in value && typeof value.proof === 'string' && value.proof.length <= 256) return { type: 'hello', protocol: value.protocol, publicKey: value.publicKey, name: value.name, nonce: value.nonce, proof: value.proof }
   if (!('id' in value) || !Number.isSafeInteger(value.id) || typeof value.id !== 'number') throw new Error('Invalid request ID.')
-  if (value.type === 'snapshot') return { type: 'snapshot', id: value.id }
+  if (value.type === 'snapshot') return { type: 'snapshot', id: value.id, ...('lean' in value && value.lean === true ? { lean: true as const } : {}) }
   if (value.type === 'core-call' && 'call' in value && value.call !== null && typeof value.call === 'object' && 'method' in value.call && typeof value.call.method === 'string' && 'args' in value.call && Array.isArray(value.call.args)) return { type: 'core-call', id: value.id, call: value.call as RemoteCall }
   if (value.type === 'history' && 'session' in value && typeof value.session === 'string' && value.session.length < 2048 && 'before' in value && typeof value.before === 'number' && Number.isSafeInteger(value.before) && value.before >= 0) return { type: 'history', id: value.id, session: value.session, before: value.before }
   throw new Error('Remote operation denied.')

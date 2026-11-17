@@ -1208,7 +1208,7 @@ describe('Telegram status message', () => {
     await paired(value)
     const before = sent(value.api).length
     const worker = { id: 'plugin:claude-tmux:1', title: 'Ответы менеджера', state: 'working', stands: 'Working - running npx vitest run test/telegram.test.ts', provider: 'plugin:claude-tmux' } as unknown as ChatSession
-    const thread = { id: 'telegram:81', title: 'Alexander', labels: {}, state: 'idle', at: 0, owns: [worker.id], follows: [], language: 'ru' } as ManagerThread
+    const thread = { id: 'telegram:81', title: 'Alexander', labels: {}, state: 'idle', at: 0, owns: [worker.id], follows: [], language: 'ru' } as unknown as ManagerThread
     const view = { state: 'idle', config: {}, workers: [worker], activity: [], providers: [], decisions: [], queued: 0, threads: [thread] } as unknown as ManagerView
     value.telegram.progress(threadActivity(view, 'telegram:81'))
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))

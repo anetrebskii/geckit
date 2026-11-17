@@ -160,6 +160,30 @@ const last = <T>(all: readonly T[]): T | undefined => all.at(-1)
 const of = (all: readonly (readonly ChatSession[])[], id: string): ChatSession | undefined =>
   last(all)?.find((one) => one.id === id)
 
+describe('the list a client is answered with', () => {
+  it('reads the disk once, then answers from what it holds and reads again behind the answer only after 30 s', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] })
+    try {
+      let reads = 0
+      let title = 'First title'
+      const built = build({ disk: { list: async () => { reads++; return [{ id: 'kept', title, at: 1, stands: '', driven: false }] }, read: async () => undefined, has: async () => true } })
+      try {
+        expect((await built.sessions.kept([ROOT])).map((one) => one.title)).toEqual(['First title'])
+        expect(reads).toBe(1)
+        title = 'Renamed on disk'
+        expect((await built.sessions.kept([ROOT])).map((one) => one.title)).toEqual(['First title'])
+        expect(reads).toBe(1)
+        vi.setSystemTime(Date.now() + 31_000)
+        expect((await built.sessions.kept([ROOT])).map((one) => one.title)).toEqual(['First title'])
+        await vi.runAllTimersAsync()
+        expect(reads).toBe(2)
+        expect(of(built.rows, 'kept')?.title).toBe('Renamed on disk')
+        expect((await built.sessions.kept([ROOT])).map((one) => one.title)).toEqual(['Renamed on disk'])
+      } finally { built.sessions.dispose() }
+    } finally { vi.useRealTimers() }
+  })
+})
+
 describe('work links on session cards', () => {
   const task = 'https://acme.atlassian.net/browse/OPS-12'
   const mr = 'https://code.example.org/team/app/-/merge_requests/42'

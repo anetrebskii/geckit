@@ -7,7 +7,7 @@ import type { RemoteHistory, RemoteItem, RemoteServer, RemoteSession, RemoteSnap
 import type { SessionItem } from '../../shared/api'
 import type { ManagerThread, ManagerView } from '../../shared/manager'
 const threadsOf = (manager: ManagerView): readonly Pick<ManagerThread, 'session' | 'title' | 'state'>[] => manager.threads ?? (manager.session === undefined ? [] : [{ session: manager.session.id, title: 'Manager', state: manager.session.state === 'working' ? 'working' : 'idle' }])
-export type ObservationRuntime = Pick<CoreRuntime, 'subscribe'> & { readonly sessions: Pick<CoreRuntime['sessions'], 'list' | 'items'>; readonly manager: Pick<CoreRuntime['manager'], 'view' | 'inspect'> }
+export type ObservationRuntime = Pick<CoreRuntime, 'subscribe'> & Partial<Pick<CoreRuntime, 'managerView'>> & { readonly sessions: Pick<CoreRuntime['sessions'], 'list' | 'items'>; readonly manager: Pick<CoreRuntime['manager'], 'view' | 'inspect'> }
 export function observation(runtime: ObservationRuntime, server: RemoteServer) {
   const epoch = randomUUID()
   let seq = 0
@@ -23,11 +23,13 @@ export function observation(runtime: ObservationRuntime, server: RemoteServer) {
     epoch,
     sequence: () => seq,
     changed: (listener: (seq: number) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-    snapshot: async (scope: readonly string[], includeManager = false): Promise<RemoteSnapshot> => {
+    /** A lean snapshot leaves the conversations out, for a client that reads them through its client view. */
+    snapshot: async (scope: readonly string[], includeManager = false, lean = false): Promise<RemoteSnapshot> => {
       const through = seq
       const projects = managerProjects(getSettings()).filter((root) => scope.includes(root))
-      const all = await sessions(projects)
-      const manager = await runtime.manager.view()
+      const all = lean ? [] : await sessions(projects)
+      // The view the service keeps is current; working it out again took seconds on a long Manager history.
+      const manager = runtime.managerView?.() ?? await runtime.manager.view()
       const hasManager = includeManager && managerProjects(getSettings()).every((root) => scope.includes(root))
       return { server, epoch, seq: through, projects: projects.map((path) => ({ id: remoteRef(server.id, 'project', path), path })), sessions: all.map(summary), manager: { state: manager.state, queued: hasManager ? manager.queued : 0, threads: hasManager ? threadsOf(manager).flatMap((one) => one.session === undefined ? [] : [{ id: remoteRef(server.id, 'manager', one.session), title: one.title, state: one.state }]) : [] } }
     },

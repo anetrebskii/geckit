@@ -1,4 +1,4 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { connect, createServer } from 'node:net'
@@ -26,7 +26,33 @@ function ownerStopped(identity: string): boolean {
 /** Starting a contender is harmless; only the service may recover files after taking ownership. */
 export function canStartService(directory: string): boolean {
   const owner = ownerIdentity(directory)
-  return owner === undefined || (process.platform === 'win32' && ownerStopped(owner))
+  return owner === undefined || ownerStopped(owner)
+}
+
+export function serviceCrashed(directory: string): boolean {
+  const owner = ownerIdentity(directory)
+  return owner !== undefined && ownerStopped(owner)
+}
+
+/** Renaming is atomic, so of two launchers recovering the same crash only one removes its files. */
+function takeOver(directory: string, previous: string): void {
+  const path = join(directory, 'service-owner.json')
+  const moved = `${path}.${randomUUID()}`
+  try { renameSync(path, moved) }
+  catch (error) {
+    if (hasCode(error, 'ENOENT')) throw new Error('GeckIt service ownership changed during startup. Its files were preserved.', { cause: error })
+    throw error
+  }
+  if (readFileSync(moved, 'utf8') !== previous) {
+    try { linkSync(moved, path) } finally { unlinkSync(moved) }
+    throw new Error('GeckIt service ownership changed during startup. Its files were preserved.')
+  }
+  unlinkSync(moved)
+  if (endpointOnDisk()) {
+    rmSync(askedEndpoint(directory), { force: true })
+    rmSync(rpcEndpoint(directory), { force: true })
+  }
+  rmSync(join(directory, 'operator-token'), { force: true })
 }
 
 function unusedEndpoint(endpoint: string): Promise<boolean> {
@@ -58,13 +84,11 @@ export async function ownDataDirectory(directory: string): Promise<() => Promise
   const identity = JSON.stringify({ pid: process.pid, token: randomUUID() })
   let file: number | undefined
   try {
-    if (process.platform === 'win32') {
-      const previous = ownerIdentity(directory)
-      if (previous !== undefined && !ownerStopped(previous)) throw new Error('GeckIt is already running for this data directory, or its previous owner could not be verified. Its files were preserved.')
-      if (!await unusedEndpoint(askedEndpoint(directory)) || !await unusedEndpoint(rpcEndpoint(directory))) throw new Error('A GeckIt socket already exists for this data directory. Its files were preserved.')
-      if (ownerIdentity(directory) !== previous) throw new Error('GeckIt service ownership changed during startup. Its files were preserved.')
-      if (previous !== undefined) unlinkSync(path)
-    }
+    const previous = ownerIdentity(directory)
+    if (previous !== undefined && !ownerStopped(previous)) throw new Error('GeckIt is already running for this data directory, or its previous owner could not be verified. Its files were preserved.')
+    if (!await unusedEndpoint(askedEndpoint(directory)) || !await unusedEndpoint(rpcEndpoint(directory))) throw new Error('A GeckIt socket already exists for this data directory. Its files were preserved.')
+    if (ownerIdentity(directory) !== previous) throw new Error('GeckIt service ownership changed during startup. Its files were preserved.')
+    if (previous !== undefined) takeOver(directory, previous)
     try { file = openSync(path, 'wx', 0o600) }
     catch (error) {
       if (hasCode(error, 'EEXIST')) throw new Error('GeckIt is already running for this data directory. If its process crashed, verify it has stopped before removing service-owner.json and geckit.sock.', { cause: error })

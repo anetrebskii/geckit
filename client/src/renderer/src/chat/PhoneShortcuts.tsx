@@ -206,7 +206,7 @@ export function ShortcutSheet({ chat, given, onClose }: { readonly chat: Shortcu
     <>
       <FullSheet title={given.id === undefined ? 'New shortcut' : given.name} action={saving ? 'Saving...' : 'Save'} ready={ready} onAction={save} onClose={onClose}>
         <div className="phone-task-label">Name</div>
-        <input className="phone-task-goal" autoFocus aria-label="Name" value={draft.name} placeholder={name === '' ? 'Morning check' : name} onChange={(event) => change({ name: event.target.value })} />
+        <input className="phone-task-goal" autoFocus={given.id === undefined} aria-label="Name" value={draft.name} placeholder={name === '' ? 'Morning check' : name} onChange={(event) => change({ name: event.target.value })} />
         <div className="phone-task-label">Prompt</div>
         <textarea className="phone-task-text" value={draft.prompt} placeholder="What to ask each time" onChange={(event) => change({ prompt: event.target.value })} />
         {manager ? null : <ChecklistField checklists={chat.settings.checklists ?? []} root={draft.root} value={draft.checklist ?? { items: [] }} onChange={(checklist) => change({ checklist })} />}

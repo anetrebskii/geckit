@@ -130,3 +130,10 @@ Open, needing the apps, a device or Alex:
 
 - T001 to T003, T021, T028, T036: baseline and quickstart runs in the running desktop app, against a real remote server and on an iPhone.
 - T043: the `docs/features.md` entry is proposed to Alex and waits for his answer.
+
+Live check, 2026-11-17, build of 1b6859d6 in isolated instances (own data folders, fake home, own debugging ports; Alex's apps untouched), a real 15 MB conversation with 49 pictures copied in:
+
+- Local desktop: the conversation opens at its end (60 items), Find reports 19 matches over the whole conversation and Enter walks back to the first one, loading earlier parts; Show earlier gives 200 more; a run of 26 steps opens with all 26.
+- Remote desktop (a second instance paired with `geckit pair`, over the real signal and WebRTC link): the same results, pictures arrive by reference and load scaled at the drawn width, a rename on the server reaches the remote board live.
+- Phone (the mobile web build at 393 x 852 connected through Servers): board, conversation at its end, Find, earlier, steps and pictures through the server; a rename on the server reaches the phone live.
+- Not checked: an iPhone, push through the server (needs APNs), a phone paired the old way (read-only card; covered by tests only), throttled-network numbers against a baseline (T001 to T003), dark theme.

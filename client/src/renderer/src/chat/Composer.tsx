@@ -6,12 +6,8 @@ import type { ChatSession, ClaudeModel, QueuedMessage, ReasoningEffort, SessionI
 import { isCodexProvider, llmProviderInfo, selectableProviders } from '../../../shared/providers'
 import { commandAt, commandsFor } from '../../../shared/commands'
 import { mentionAt, pathsFor } from '../../../shared/paths'
-import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
-import type { Unheard } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { usePairAgain } from './PairAgain'
-import { BARS, time, toHear, useRecorder } from '../recorder'
-import { downloading, useSpeechModel } from '../speech'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
@@ -23,6 +19,7 @@ import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
 import { HostDot } from './HostParts'
 import { Mcp } from './Mcp'
+import { DictatingStrip, fitField, KeptRecording, SendControls, useDictation } from './MessageControls'
 import { computerName, needsComputer } from './PhoneHosts'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
@@ -160,56 +157,20 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
   // The phrase a long press or a right click is on, asked about before it goes.
   const [unphrasing, setUnphrasing] = useState<{ readonly phrase: string; readonly at: DOMRect } | undefined>()
   const phraseHeld = useRef<{ timer: number; held: boolean }>({ timer: 0, held: false })
-  const [listening, setListening] = useState<string | undefined>()
-  const [spoken, flipSpoken] = useDictationLanguage(chat.settings.nativeLanguage, chat.settings.secondLanguage)
-  const [unheard, setUnheard] = useState<string | undefined>()
-  // The host writes down what was said once the mic stops, which takes a few seconds.
-  const [writing, setWriting] = useState(false)
-  const level = useLevel(listening !== undefined)
-  // A recording said here that the host failed to write down, kept on the phone to try again.
-  const [kept, setKept] = useState<Unheard | undefined>()
-  const place = chat.session?.id ?? chat.root ?? ''
   const [looking, setLooking] = useState<string | undefined>()
-  // Dictation on the computer: heard by whisper here, and put after what was typed.
-  const [hearing, setHearing] = useState(false)
-  const [micError, setMicError] = useState('')
-  const model = useSpeechModel()
-  const hear = async (audio: Blob): Promise<void> => {
-    setHearing(true)
-    try {
-      const answer = await window.geckit.transcribe(await toHear(audio))
-      const text = answer.text?.trim() ?? ''
-      if (!answer.ok || text === '') {
-        setMicError(answer.error ?? 'Nothing was heard')
-        return
-      }
-      const typed = chat.draft.trimEnd()
-      const next = typed === '' ? text : `${typed} ${text}`
-      chat.setDraft(next)
+  const dictation = useDictation({
+    settings: chat.settings,
+    draft: chat.draft,
+    setDraft: chat.setDraft,
+    field,
+    place: chat.session?.id ?? chat.root ?? '',
+    session: chat.session?.id,
+    onHeard: (next) => {
       putCaret.current = next.length
       setCaret(next.length)
-    } catch (error) {
-      setMicError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setHearing(false)
-      field.current?.focus()
-    }
-  }
-  const recorder = useRecorder(chat.settings.microphoneDeviceId, (audio) => void hear(audio))
-  const { cancel: dropRecording } = recorder
-  // The microphone's own error, until it is closed.
-  const [closedError, setClosedError] = useState('')
-  const problem = micError !== '' ? micError : recorder.error !== closedError ? recorder.error : ''
-  useEffect(() => () => dropRecording(), [dropRecording, chat.session?.id])
-  const record = (): void => {
-    if (recorder.recording) {
-      recorder.stop()
-      return
-    }
-    setMicError('')
-    recorder.start()
-    field.current?.focus()
-  }
+    },
+  })
+  const { recorder, hearing, listening, writing } = dictation
   const [mcpOpening, setMcpOpening] = useState(0)
   const submit = (): void => {
     if (COMPACT.test(chat.draft)) {
@@ -308,15 +269,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
   useLayoutEffect(() => {
     const area = field.current
     if (area === null) return
-    area.style.height = ''
-    if (chat.draft !== '') {
-      area.style.height = '0px'
-      // Over the board the conversation is put away between openings, and a field
-      // that is not on the screen measures nothing. Left to itself it stands one
-      // line high, which is what it is measured to anyway.
-      const wanted = area.scrollHeight
-      area.style.height = wanted === 0 ? '' : `${String(Math.min(wanted, 260))}px`
-    }
+    fitField(area, chat.draft)
     if (putCaret.current !== undefined) {
       area.setSelectionRange(putCaret.current, putCaret.current)
       putCaret.current = undefined
@@ -390,50 +343,6 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
 
   const { addFiles } = chat
 
-  // What is said goes after what was typed, and replaces itself as iOS hears it better.
-  const lookKept = (): void => void readUnheard().then((one) => setKept(one?.place === place ? one : undefined))
-  useEffect(lookKept, [place])
-  const failed = (error: unknown): void => {
-    setUnheard(error instanceof Error ? error.message : String(error))
-    lookKept()
-  }
-  const listen = (goOn = false): void => {
-    const ears = dictate()
-    if (ears === undefined) return
-    if (listening !== undefined) {
-      setListening(undefined)
-      setWriting(!ears.live)
-      ears
-        .stop()
-        .then(() => setKept(undefined))
-        .catch(failed)
-        .finally(() => setWriting(false))
-      return
-    }
-    const typed = chat.draft.trimEnd()
-    setUnheard(undefined)
-    setListening(spoken)
-    tap('light')
-    ears
-      .start(spoken, (text) => chat.setDraft(typed === '' ? text : `${typed} ${text}`), () => setListening(undefined), place, goOn)
-      .catch((error: unknown) => {
-        setListening(undefined)
-        setUnheard(error instanceof Error ? error.message : String(error))
-      })
-  }
-  useEffect(() => () => dictate()?.cancel(), [chat.session?.id])
-  const tryAgain = (): void => {
-    const typed = chat.draft.trimEnd()
-    setUnheard(undefined)
-    setWriting(true)
-    hearAgain()
-      .then((text) => {
-        setKept(undefined)
-        if (text !== '') chat.setDraft(typed === '' ? text : `${typed} ${text}`)
-      })
-      .catch(failed)
-      .finally(() => setWriting(false))
-  }
   const goal = chat.session?.goal
   const taskList = shownChecklist(chat.session?.checklist, goal?.condition, chat.session?.goalMet)
   const approval = ON_PHONE || !checklistShown ? awaitingApproval(chat.session?.checklist) : undefined
@@ -926,22 +835,18 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
               ? 'Add a folder first'
               : approval !== undefined && !recorder.recording && !hearing && listening === undefined && !writing
                 ? 'Or write what to change'
-              : ON_PHONE
-                ? listening !== undefined
-                  ? `Listening in ${listening}`
-                  : writing
-                    ? 'Writing down what you said'
-                    : (unheard ?? (chat.working ? 'Queue a message, or ! and a command' : 'Message, or ! and a command'))
-                : recorder.recording
-                  ? 'Listening'
-                  : hearing
-                    ? 'Writing down what you said'
-                    : chat.working
-                  ? `Send more: it waits until ${assistant} finishes. ! runs a command now`
-                  : `Ask ${llmProviderInfo(chat.provider).name}. @ picks a file, ! runs a command`
+                : dictation.placeholder(
+                    ON_PHONE
+                      ? chat.working
+                        ? 'Queue a message, or ! and a command'
+                        : 'Message, or ! and a command'
+                      : chat.working
+                        ? `Send more: it waits until ${assistant} finishes. ! runs a command now`
+                        : `Ask ${llmProviderInfo(chat.provider).name}. @ picks a file, ! runs a command`,
+                  )
           }
           disabled={chat.root === undefined}
-          readOnly={listening !== undefined || writing || recorder.recording || hearing}
+          readOnly={dictation.capturing}
           onChange={(event) => {
             recall.current = undefined
             chat.setDraft(event.target.value)
@@ -957,13 +862,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
           }}
           onKeyDown={(event) => {
             if (ON_PHONE && event.key === 'Enter') return
-            if (recorder.recording && (event.key === 'Enter' || event.key === 'Escape')) {
-              event.preventDefault()
-              event.stopPropagation()
-              if (event.key === 'Enter') recorder.stop()
-              else recorder.cancel()
-              return
-            }
+            if (dictation.keyDown(event)) return
             if (found !== undefined && offer !== undefined) {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault()
@@ -1011,46 +910,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
             submit()
           }}
         />
-        {ON_PHONE || (!recorder.recording && !hearing && problem === '') ? null : (
-          <div className={problem !== '' && !recorder.recording && !hearing ? 'dictating failed' : 'dictating'}>
-            {recorder.recording ? (
-              <>
-                <span className="dictating-dot" />
-                <span className="bars">
-                  {Array.from({ length: BARS }, (_one, index) => (
-                    <span key={index} style={{ height: 4 + (recorder.levels[index] ?? 0) * 14 }} />
-                  ))}
-                </span>
-                <span className="dictating-time">{time(recorder.elapsed)}</span>
-                <span>Recording. Enter puts it in the field, Esc drops it</span>
-              </>
-            ) : hearing ? (
-              <>
-                <Icon name="spinner" size={12} className="spinning" />
-                <span>{model?.state === 'downloading' ? `${downloading(model)}. It is written down once that is done` : 'Writing down what you said'}</span>
-              </>
-            ) : (
-              <span>{problem}</span>
-            )}
-            <div className="spacer" />
-            {hearing ? null : (
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={recorder.recording ? 'Drop the recording' : 'Close'}
-                title={recorder.recording ? 'Drop the recording (Esc)' : 'Close'}
-                onClick={() => {
-                  if (recorder.recording) recorder.cancel()
-                  setMicError('')
-                  setClosedError(recorder.error)
-                  field.current?.focus()
-                }}
-              >
-                <Icon name="close" size={12} />
-              </button>
-            )}
-          </div>
-        )}
+        <DictatingStrip dictation={dictation} />
         <div className="composer-bar">
 
           {!chat.showProviders ? null : (
@@ -1144,28 +1004,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
               Runs in {projectLabel(chat.root)}. {assistant} sees what it prints with your next message
             </span>
           ) : null}
-          {ON_PHONE && kept !== undefined && listening === undefined && !writing ? (
-            <Picker
-              label="Not written down"
-              title="What you said"
-              explained
-              note={kept.why}
-              choices={[
-                { value: 'again', label: 'Try again', says: 'The host writes down the same recording once more' },
-                ...(dictate()?.live === false ? [{ value: 'on', label: 'Go on recording', says: 'What you say next is added to it, and both are written down together' }] : []),
-                { value: 'drop', label: 'Drop the recording', says: 'What was said is lost', danger: true },
-              ]}
-              onPick={(value) => {
-                if (value === 'again') tryAgain()
-                else if (value === 'on') listen(true)
-                else {
-                  setKept(undefined)
-                  setUnheard(undefined)
-                  void dropUnheard()
-                }
-              }}
-            />
-          ) : null}
+          <KeptRecording dictation={dictation} />
           <div className="spacer" />
           {shownAway === undefined ? null : (
             <span className={`host-waiting ${host?.state ?? ''}`}>
@@ -1187,77 +1026,21 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
               <Icon name="branch" size={15} />
             </button>
           )}
-          {ON_PHONE || shownAway !== undefined ? null : (
-            <button
-              type="button"
-              className={recorder.recording ? 'icon-button dictate-mic on' : 'icon-button dictate-mic'}
-              disabled={chat.root === undefined || hearing}
-              onClick={record}
-              title={recorder.recording ? 'Put it in the field (Enter)' : 'Dictate'}
-              aria-label={recorder.recording ? 'Stop dictating' : 'Dictate'}
-            >
-              <Icon name={recorder.recording ? 'check' : 'mic'} size={15} />
-            </button>
-          )}
-          {chat.checkingIp || shownAway !== undefined ? null : chat.working && listening === undefined && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? (
-            <button
-              type="button"
-              className="send"
-              disabled={cannot}
-              onClick={submit}
-              title={`Queue it: it goes when ${assistant} finishes${ON_PHONE ? '' : ' (Enter)'}`}
-              aria-label="Queue"
-            >
-              <Icon name="send" size={14} />
-            </button>
-          ) : null}
-          {/* The phone has room for one round button in the field: typed text makes it Queue, and while Claude works an empty field makes it Stop. */}
-          {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
-          {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
-          {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
-          {chat.checkingIp || shownAway !== undefined ? null : ON_PHONE && dictate()?.live === true && listening === undefined && chat.draft.trim() === '' ? (
-            <button type="button" className={chat.pictures.length > 0 || chat.working ? 'spoken beside' : 'spoken'} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
-              {languageCode(spoken)}
-            </button>
-          ) : null}
-          {chat.checkingIp || shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && listening === undefined && chat.draft.trim() === '' && (chat.pictures.length > 0 || chat.working) ? (
-            <button type="button" className="send mic beside" disabled={cannot || writing} onClick={() => listen()} aria-label={`Dictate in ${spoken}`}>
-              <Icon name="mic" size={16} />
-            </button>
-          ) : null}
-          {chat.checkingIp ? (
-            <button type="button" className="quiet sending" onClick={chat.stop} title="Cancel sending" aria-label="Cancel sending">
-              <Icon name="spinner" className="spinning" size={14} />
-              <span>Sending...</span>
-              <Icon name="close" size={12} />
-            </button>
-          ) : shownAway !== undefined ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (chat.draft.trim() === '' && chat.pictures.length === 0 && !chat.working)) ? (
-            <button
-              type="button"
-              className={listening !== undefined ? 'send listening' : 'send'}
-              style={{ '--level': level } as React.CSSProperties}
-              disabled={cannot || writing}
-              onClick={() => listen()}
-              aria-label={listening !== undefined ? 'Stop dictating' : `Dictate in ${spoken}`}
-            >
-              <Icon name={writing ? 'spinner' : listening !== undefined ? 'stop' : 'mic'} size={listening !== undefined ? 12 : 16} />
-            </button>
-          ) : chat.working && ON_PHONE && (chat.draft.trim() !== '' || chat.pictures.length > 0) ? null : chat.working ? (
-            <button type="button" className="send stop" onClick={chat.stop} title={chat.settings.chatView === 'board' ? `Stop (${MOD}+.)` : `Stop (Esc, ${MOD}+.)`} aria-label="Stop">
-              <Icon name="stop" size={12} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="send"
-              disabled={chat.checkingIp || cannot || (chat.draft.trim() === '' && chat.pictures.length === 0)}
-              onClick={submit}
-              title={ON_PHONE ? queues ? 'Queue' : 'Send' : queues ? 'Queue (Enter)' : 'Send (Enter)'}
-              aria-label={queues ? 'Queue' : 'Send'}
-            >
-              <Icon name="send" size={14} />
-            </button>
-          )}
+          <SendControls
+            dictation={dictation}
+            typed={chat.draft.trim() !== ''}
+            pictures={chat.pictures.length}
+            working={chat.working}
+            cannot={cannot}
+            checkingIp={chat.checkingIp}
+            hidden={shownAway !== undefined}
+            micDisabled={chat.root === undefined}
+            queue={`Queue it: it goes when ${assistant} finishes`}
+            queues={queues}
+            onSend={submit}
+            onStop={chat.stop}
+            stopTitle={chat.settings.chatView === 'board' ? `Stop (${MOD}+.)` : `Stop (Esc, ${MOD}+.)`}
+          />
         </div>
         {/* The chip row has no room for the hint, so on the phone it has a line of its own over the field. */}
         {held && host !== undefined ? (

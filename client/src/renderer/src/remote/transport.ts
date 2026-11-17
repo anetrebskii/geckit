@@ -3,7 +3,9 @@ import { transportBinding } from '../../../shared/remote/identity'
 import { remoteChannel } from '../../../shared/remote/channel'
 import { answer, iceFor, postSignal } from '../../../shared/remote/signaling'
 import type { RemoteChannel, RemoteSignal } from '../../../shared/remote/protocol'
-export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal): Promise<RemoteChannel> {
+import type { ConnectStage } from './client'
+export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal, stage: (at: ConnectStage) => void = () => undefined): Promise<RemoteChannel> {
+  stage('service')
   const peer = new RTCPeerConnection({ iceServers: await iceFor(pairing) })
   const channel = peer.createDataChannel('geckit', { ordered: true })
   const close = (): void => peer.close()
@@ -15,12 +17,14 @@ export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal): Pr
     const id = crypto.randomUUID()
     const offer = peer.localDescription?.sdp ?? ''
     await postSignal(pairing, 'offers', id, { sdp: offer, at: Date.now() })
+    stage('answer')
     let description = await answer(pairing, id)
     while (description === undefined) {
       if (signal.aborted || Date.now() > until) throw new Error('the server did not answer. Check that GeckIt is running there and the code is new.')
       await new Promise((resolve) => setTimeout(resolve, 1000))
       description = await answer(pairing, id)
     }
+    stage('joining')
     await peer.setRemoteDescription({ type: 'answer', sdp: description.sdp })
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('the server answered, but no direct or relayed connection could be opened between the two networks.')), Math.max(0, until - Date.now()))

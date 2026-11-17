@@ -18,7 +18,7 @@ import { Dot } from './Tasks'
 import { Menu } from '../ui/Menu'
 import { useManager } from './useManager'
 import type { Chat } from './useChat'
-import { useComputers } from '../remote/Computer'
+import { computerChoices, computerName, useComputers } from '../remote/Computer'
 import { WORK_PLACES, WORKSPACE_PLACES, monogram, waitingCount, waitingSaid } from './places'
 import type { Place, PlaceItem } from './places'
 import './places.css'
@@ -70,17 +70,19 @@ export function AppNav({
   const folded = rail && !over
   const { source, computers, choose } = useComputers(reading, onComputer)
   const shown = source?.server.id ?? ':local'
-  const computer = (id: string, name: string, icon: string): React.JSX.Element => {
-    const on = id === shown
-    const said = on && source !== undefined ? `${name}, ${linkSaid(source.state)}` : on ? `${name}, shown` : name
-    return (
-      <button key={id} type="button" className={`nav-item no-drag${on ? ' on' : ''}`} aria-current={on ? 'true' : undefined} aria-label={said} title={said} onClick={() => choose(id)}>
-        {folded && id !== ':local' ? <span className="nav-monogram" aria-hidden="true">{monogram(name)}</span> : <Icon name={icon} />}
-        <span className="nav-name">{name}</span>
-        {on && source !== undefined ? <span className={`nav-host-dot${source.state === 'connected' ? ' up' : ''}`} aria-hidden="true" /> : null}
-      </button>
-    )
-  }
+  const [switching, setSwitching] = useState<DOMRect>()
+  const name = source === undefined ? 'This computer' : computerName(source.server.name)
+  const away = source !== undefined && source.state !== 'connected'
+  const said = `Computer: ${name}${source === undefined ? '' : `, ${linkSaid(source.state)}`}`
+  // Which computer this window shows is a switch above the places it scopes, not one of them: one row, its menu, no selection of its own.
+  const switcher = (
+    <button type="button" className="nav-item nav-computer no-drag" aria-label={said} title={said} aria-haspopup="menu" aria-expanded={switching !== undefined} onClick={(event) => setSwitching(event.currentTarget.getBoundingClientRect())}>
+      {folded && source !== undefined ? <span className="nav-monogram" aria-hidden="true">{monogram(name)}</span> : <Icon name="display" />}
+      <span className="nav-name">{name}</span>
+      {away ? <span className="nav-host-dot" aria-hidden="true" /> : null}
+      {folded ? null : <Icon name="updown" size={12} className="nav-computer-more" />}
+    </button>
+  )
   const waiting = chat.sessions.filter((one) => one.state === 'asks' && one.question !== true).length
   const toggle = (
     <button type="button" className="icon-button nav-toggle no-drag" aria-label={folded ? 'Show names' : 'Hide names'} aria-expanded={!folded} title={`${folded ? 'Show names' : 'Hide names'} (${TOGGLE_KEYS})`} onClick={onToggle}>
@@ -104,24 +106,13 @@ export function AppNav({
     <nav className={`app-nav${folded ? ' rail' : ''}${over ? ' over' : ''}`} aria-label="GeckIt">
       <div className="nav-top drag">{toggle}</div>
       <div className="nav-items">
+        {switcher}
         {WORK_PLACES.map(item)}
         <div className="nav-group" role="presentation">Workspace</div>
         {WORKSPACE_PLACES.map(item)}
         <span className="nav-space" />
-        <div className="nav-group" role="presentation">Computers</div>
-        {computer(':local', 'This computer', 'display')}
-        {computers.map((one) => computer(one.server.id, one.server.name, 'server'))}
-        <button type="button" className="nav-item nav-add no-drag" {...(folded ? { 'aria-label': 'Connect computer', title: 'Connect computer' } : {})} onClick={() => choose(':add')}>
-          <Icon name="plus" />
-          <span className="nav-name">Connect computer</span>
-        </button>
-        {computers.length === 0 ? null : (
-          <button type="button" className="nav-item nav-add no-drag" {...(folded ? { 'aria-label': 'Manage computers', title: 'Manage computers' } : {})} onClick={() => choose(':manage')}>
-            <Icon name="pencil" />
-            <span className="nav-name">Manage computers</span>
-          </button>
-        )}
       </div>
+      {switching === undefined ? null : <Menu anchor={switching} autoFocus title="Computer" chosen={shown} choices={computerChoices(computers, true)} onPick={choose} onClose={() => setSwitching(undefined)} />}
       <div className="nav-foot">
         {chat.settings.showGecko ? null : (
           <button type="button" className="nav-item no-drag" {...(folded ? { 'aria-label': 'Show the gecko', title: 'Show the gecko' } : {})} onClick={() => chat.change({ showGecko: true })}>

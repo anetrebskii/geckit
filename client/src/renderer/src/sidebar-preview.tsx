@@ -50,8 +50,8 @@ const read = <Value,>(key: string): Value | undefined => { try { const kept = se
 const keep = (): void => { if (restart) { try { sessionStorage.setItem('preview-settings', JSON.stringify(settings)); sessionStorage.setItem('preview-hosts', JSON.stringify(hosts)) } catch { /* the reload starts fresh */ } } }
 if (restart) { settings = read<Settings>('preview-settings') ?? settings; hosts = read<HostView[]>('preview-hosts') ?? hosts }
 const manager: ManagerView = { appChat: true, queued: 0, config: { ...DEFAULT_MANAGER_CONFIG, enabled: !query.has('managerOff') }, state: query.has('managerOff') ? 'off' : 'idle', workers: [], decisions: [], activity: [], providers: [{ provider: 'claude', available: true }], ...(query.has('managerOff') ? {} : { session: session('manager', 'Manager', 'idle', { manager: true }), threads: [
-  { id: MANAGER_MAIN_THREAD, title: 'GeckIt', labels: {}, state: 'idle', at: at - 120_000, owns: [] },
-  { id: 'telegram:42', place: 'Telegram', title: 'Release checklist', from: 'Alex', labels: {}, state: 'working', manager: 'working', at: at - 60_000, owns: ['claude:working'] },
+  { id: MANAGER_MAIN_THREAD, title: 'GeckIt', labels: {}, provider: 'claude', model: '', state: 'idle', at: at - 120_000, owns: [] },
+  { id: 'telegram:42', place: 'Telegram', title: 'Release checklist', from: 'Alex', labels: {}, provider: 'claude', model: '', state: 'working', manager: 'working', at: at - 60_000, owns: ['claude:working'] },
 ] }) }
 let channels: ChannelsView = { failures: [], channels: [
   { id: 'channel:telegram', name: 'Telegram', icon: 'telegram', state: 'connected', says: '@geckit_alex_bot', secrets: ['token'], conversations: 2, builtIn: true },

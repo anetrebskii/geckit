@@ -26,6 +26,8 @@ export interface Choice {
   readonly icon?: string
   /** Shown and not choosable: what it says is why. */
   readonly disabled?: boolean
+  /** Starts a group of its own, set off from the choices before it by a line. */
+  readonly divided?: boolean
   /** Opened beside it on hover rather than chosen itself. On the phone they are listed in its place. */
   readonly choices?: readonly Choice[]
 }
@@ -137,7 +139,7 @@ export function Menu({
               key={choice.value}
               type="button"
               role="menuitem"
-              className={`sheet-option${choice.danger === true ? ' danger' : ''}`}
+              className={`sheet-option${choice.danger === true ? ' danger' : ''}${choice.divided === true ? ' divided' : ''}`}
               disabled={choice.disabled === true}
               onClick={() => {
                 onPick(choice.value)
@@ -181,7 +183,7 @@ export function Menu({
             type="button"
             role="menuitem"
             aria-haspopup={choice.choices === undefined ? undefined : 'menu'}
-            className={`menu-item${choice.value === chosen ? ' on' : ''}${open?.value === choice.value ? ' open' : ''}${choice.danger === true ? ' danger' : ''}`}
+            className={`menu-item${choice.value === chosen ? ' on' : ''}${open?.value === choice.value ? ' open' : ''}${choice.danger === true ? ' danger' : ''}${choice.divided === true ? ' divided' : ''}`}
             disabled={choice.disabled === true}
             // A submenu opens and closes at once, rather than left to React for later, so it keeps up with the pointer.
             onMouseEnter={(event) => {

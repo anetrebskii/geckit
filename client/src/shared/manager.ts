@@ -4,7 +4,10 @@ import type { ChatSession, ManagerLabels, SessionItem, SessionItems, SessionMess
 export const MANAGER_CHAT_GUIDANCE = 'Open Manager chat to send a request.'
 export const MANAGER_CHAT_UPDATE = 'Manager chat needs a service update. Finish active work, then restart GeckIt.'
 
-export type ManagerSendRequest = Pick<Extract<SessionItem, { kind: 'mine' }>, 'id' | 'text'> & Pick<SessionMessage, 'session'>
+export type ManagerSendRequest = Pick<Extract<SessionItem, { kind: 'mine' }>, 'id' | 'text'> & Pick<SessionMessage, 'session'> & {
+  /** Starts a new conversation with this message, on the model chosen for it or the one Manager settings name. */
+  readonly create?: Partial<Pick<ManagerThread, 'model'>>
+}
 export type ManagerRequestReceipt = Pick<ManagerSendRequest, 'id'> & Required<Pick<SessionMessage, 'session'>> & {
   readonly state: 'queued' | 'sending' | 'sent'
 }
@@ -52,6 +55,9 @@ export interface ManagerThread {
   /** The channel's name, such as "Telegram" or "Slack"; none for GeckIt. */
   readonly place?: string
   readonly title: string
+  /** The assistant and model this conversation was given when it was made. An empty model is the assistant's default. */
+  readonly provider: SessionProvider
+  readonly model: string
   readonly labels: ManagerLabels
   /** Who wrote last, as the channel names them. */
   readonly from?: string
@@ -119,11 +125,16 @@ export type ManagerHistoryRequest = Pick<ManagerThread, 'id' | 'session' | 'hist
 export type ManagerHistoryBoundary = Pick<ManagerThread, 'id' | 'at'> & Pick<ManagerHistoryRequest, 'action'> & { readonly revision: string }
 export type ManagerHistoryChange = ManagerHistoryRequest & ManagerHistoryBoundary & { readonly sessions: readonly ChatSession['id'][] }
 
+export interface ManagerPiece extends SessionItems { readonly left: number }
+
 export interface ManagerApi {
   history(request: ManagerHistoryRequest): Promise<ManagerView>
   voiceMemos(action?: 'privacy'): Promise<VoiceMemosConnection>
   view(): Promise<ManagerView>
   inspect(id: ChatSession['id']): Promise<SessionItems>
+  /** The end of the Manager session and how much is before it; absent where only the whole of it can be read. */
+  turns?(id: ChatSession['id']): Promise<ManagerPiece>
+  before?(id: ChatSession['id'], before: SessionItem['id']): Promise<ManagerPiece>
   send(request: ManagerSendRequest): Promise<ManagerRequestReceipt>
   receipt(id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined>
   answer(request: ManagerAnswerRequest): Promise<ManagerAnswerResult>
@@ -132,6 +143,8 @@ export interface ManagerApi {
   onItems(said: (items: SessionItems) => void): () => void
   configure(change: Partial<ManagerConfig>): Promise<ManagerView>
   pause(): Promise<ManagerView>
+  stop(session: ChatSession['id']): Promise<ManagerView>
+  setModel(thread: ManagerThread['id'], model: ManagerThread['model']): Promise<ManagerView>
   resume(): Promise<ManagerView>
   retry(): Promise<ManagerView>
   restart(): Promise<ManagerView>

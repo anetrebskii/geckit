@@ -23,7 +23,7 @@ Manager is one conversation today. Telegram, every channel and the Manager windo
 
 | Surface | What appears | When visible |
 |---|---|---|
-| Manager window, new list on the left | Threads: "GeckIt" first, then the others by last message. Each row: where it is from, its title, who wrote last, and a dot for working or needs your answer | Manager on, at least one channel thread exists |
+| Manager window, new list on the left | New conversation at the top, then the threads: those needing an answer first, then by last message. Each row: where it is from, its title, who wrote last, and a dot for working or needs your answer (see `manager-conversations.md`) | Manager on |
 | Manager window, "3 tasks" in the thread's subtitle | A button that opens the list of the workers the open thread tracks, as a popover. Each row: state dot, title and when anything last happened in it ("now", "12m", "3:40 PM", "Yesterday", as on the board), and under them its status and where it stands ("In progress · Waiting for your answer", "Blocked · Tests fail on CI"); a click opens the worker in Chat, and an unlink icon ("Stop tracking") at its end, shown on hover or keyboard focus and always on the phone. The button carries the attention dot while one of them needs an answer; absent when the thread tracks none | A thread with at least one worker |
 | Manager window, the unlink icon ("Stop tracking") on a worker row | This thread lets the worker go, as `sessions unfollow` does: no confirmation, the row leaves the list, and no thread gets its updates until one follows it | The open thread tracks that worker |
 | Manager window, thread row | After its dots, the number of its workers working now: "2" | The thread tracks a working worker |
@@ -51,7 +51,7 @@ block-beta
   style s2 fill:#dbeafe,stroke:#2563eb
 ```
 
-The card line and Session info do not depend on the window and come with the core. The window layout is built on top of spec 021's header and transcript. The list appears once a channel thread exists; until then the window is unchanged. The composer keeps one draft for all threads: text typed in one thread stays in the field when another is opened, and the line under it says where Manager's answer goes.
+The card line and Session info do not depend on the window and come with the core. The window layout is built on top of spec 021's header and transcript. The list is shown whenever Manager is on (`manager-conversations.md`). The composer keeps one draft for all threads: text typed in one thread stays in the field when another is opened, and the line under it says where Manager's answer goes.
 
 ### Reply formatting skills (2026-11-13)
 
@@ -63,7 +63,7 @@ These skills guide generated text and do not change channel transport, routing, 
 
 ### The model
 
-Manager stays one: one assistant, one model, one set of instructions, one Pause, one list of decisions and one pool of conversations it manages. A thread is one of its conversations with the outside world, with its own context, its own queue of messages and its own place where answers go.
+Manager stays one: one set of instructions, one Pause, one list of decisions and one pool of conversations it manages. A thread is one of its conversations with the outside world, with its own context, its own queue of messages and its own place where answers go. Each thread also keeps the assistant and model it was given when it was made; Manager settings choose them only for new threads (`manager-conversations.md`).
 
 ```mermaid
 sequenceDiagram

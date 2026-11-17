@@ -110,7 +110,7 @@ export function application(runtime: CoreRuntime) {
   const list = (root: string | undefined, every: readonly string[]) => {
     const where = typeof root === 'string' && root !== '' ? root : undefined
     if (where !== undefined) rememberProject(where)
-    return sessions.list(where === undefined ? every : [where])
+    return sessions.kept(where === undefined ? every : [where])
   }
   const search = async (asked: string, root: string | undefined, every: readonly string[]) => {
     const roots = typeof root === 'string' && root !== '' ? [root] : every
@@ -168,6 +168,8 @@ export function application(runtime: CoreRuntime) {
       void sessions.refresh(getSettings().projects).then(() => runtime.refreshManager()).catch(() => undefined)
       return { ...runtime.current(), manager: runtime.managerView(), speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()) }
     },
+    /** What a remote workspace needs of this computer to start, without the whole state that `service:bootstrap` carries. */
+    'service:about': () => ({ speech: speechModel(), home: homedir(), platform: process.platform, name: machineName(hostname()) }),
     'core:state': () => runtime.current(),
     'core:resume': () => runtime.wake(),
     'settings:get': () => getSettings(),
@@ -182,7 +184,8 @@ export function application(runtime: CoreRuntime) {
     'employees:restore': (id: string, revision: number) => employees.archive(id, revision, false),
     'employees:retryInstructions': () => employees.retryInstructions(),
     'employees:memory': (id: string, cursor?: string) => employees.memory(id, cursor),
-    'manager:view': () => manager.view(),
+    // The view the runtime keeps is current; working it out again took seconds on a long Manager history.
+    'manager:view': () => runtime.managerView(),
     'manager:configure': (change: Partial<ManagerConfig>) => runtime.configureManager(change),
     'manager:history': (...args: Parameters<typeof manager.history>) => manager.history(...args),
     'manager:inspect': (...args: Parameters<typeof manager.inspect>) => manager.inspect(...args),
@@ -318,6 +321,8 @@ export function application(runtime: CoreRuntime) {
     'chat:models': (...args: Parameters<Sessions['models']>) => sessions.models(...args),
     'chat:bring': (...args: Parameters<Sessions['bring']>) => sessions.bring(...args),
     'chat:items': (...args: Parameters<Sessions['items']>) => sessions.items(...args),
+    /** What a client view reads of a conversation, the Manager's included. */
+    'chat:viewItems': (id: string) => sessions.isManager(id) ? sessions.inspectManager(id) : sessions.items(id),
     'chat:schedule': (...args: Parameters<Sessions['schedule']>) => sessions.schedule(...args),
     'chat:preparedDraft': (...args: Parameters<Sessions['preparedDraft']>) => sessions.preparedDraft(...args),
     'chat:savePreparedDraft': (...args: Parameters<Sessions['savePreparedDraft']>) => sessions.savePreparedDraft(...args),
@@ -360,6 +365,8 @@ export function application(runtime: CoreRuntime) {
     'chat:snapshot': (...args: Parameters<Sessions['snapshot']>) => sessions.snapshot(...args),
     'chat:prepare': (...args: Parameters<Sessions['prepare']>) => sessions.prepare(...args),
     'manager:pause': (...args: Parameters<typeof manager.pause>) => manager.pause(...args),
+    'manager:stop': (...args: Parameters<typeof manager.stop>) => manager.stop(...args),
+    'manager:setModel': (...args: Parameters<typeof manager.setModel>) => manager.setModel(...args),
     'manager:resume': (...args: Parameters<typeof manager.resume>) => manager.resume(...args),
     'manager:retry': (...args: Parameters<typeof manager.retry>) => manager.retry(...args),
     'manager:restart': (...args: Parameters<typeof manager.restart>) => manager.restart(...args),

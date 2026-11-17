@@ -40,6 +40,19 @@ describe('what a client is sent', () => {
     ])
   })
 
+  it('sends the Manager with its steps whole, under its own name, while another conversation is open', async () => {
+    const all: SessionItem[] = [mine('m1', 'What is running?'), { kind: 'did', id: 'd1', what: 'Ran geckit sessions list' }]
+    const one = harness(() => Promise.resolve(all))
+    await one.view.call('link:can', [['sessionsChanged', 'steps']])
+    expect(await one.view.call('chat:turns', ['manager-1', 60, true])).toEqual({ items: all, left: 0 })
+    await one.view.call('chat:watch', [['s1']])
+    one.tell('manager:items', { id: 'manager-1', items: [theirs('t1', 'One is working.')] })
+    one.tell('manager:items', { id: 'manager-2', items: [theirs('x', 'Not read here.')] })
+    vi.advanceTimersByTime(100)
+    expect(one.told('manager:items')).toEqual([{ id: 'manager-1', items: [theirs('t1', 'One is working.')] }])
+    expect(one.told('chat:items')).toEqual([])
+  })
+
   it('sends the end of a conversation, and what is before a line when asked', async () => {
     const all = Array.from({ length: 10 }, (_one, index) => theirs(`t${String(index)}`, 'x'))
     const one = harness(() => Promise.resolve(all))
@@ -118,7 +131,7 @@ describe('what a client is sent', () => {
     expect(one.told('chat:items')).toEqual([{ id: 's2', items: [theirs('x', 'Hi')] }])
   })
 
-  it('sends the rows that changed to a client that can take them, and the whole list to one that cannot', async () => {
+  it('sends the rows that changed to a client that can take them, and the whole list to one that cannot after it had time to say', async () => {
     const row = (id: string, at: number): unknown => ({ id, at, title: id })
     const newer = harness(() => Promise.resolve([]))
     const older = harness(() => Promise.resolve([]))
@@ -133,7 +146,12 @@ describe('what a client is sent', () => {
     }
     expect(newer.told('chat:sessions')).toEqual([[row('a', 2), row('b', 1)]])
     expect(newer.told('chat:sessionsChanged')).toEqual([{ changed: [row('b', 3), row('c', 0)], gone: ['a'] }])
-    expect(older.told('chat:sessions')).toHaveLength(3)
+    expect(older.told('chat:sessions')).toEqual([])
+    vi.advanceTimersByTime(10_000)
+    expect(older.told('chat:sessions')).toEqual([[row('b', 3), row('c', 0)]])
+    older.tell('chat:sessions', [row('c', 4)])
+    vi.advanceTimersByTime(300)
+    expect(older.told('chat:sessions')).toHaveLength(2)
   })
 
   it('sends pictures by name, and a picture at the width asked for when asked', async () => {

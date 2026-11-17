@@ -10,6 +10,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: playwright-core
   - package-ecosystem: github-actions
     directory: /
     schedule:

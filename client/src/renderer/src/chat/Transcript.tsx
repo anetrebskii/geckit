@@ -612,8 +612,20 @@ export const Transcript = memo(function Transcript({
   const [newMessages, setNewMessages] = useState(false)
   const latestItems = useRef(items)
   const seenItems = useRef(items)
+  const fromBottom = useRef(0)
+  const shownEnds = useRef<readonly [string | undefined, string | undefined]>([items[0]?.id, items.at(-1)?.id])
   useLayoutEffect(() => {
+    // Earlier messages put above keep what was on screen where it was.
+    const [first, last] = shownEnds.current
+    const before = first !== undefined && items[0]?.id !== first && items.at(-1)?.id === last && items.some((item) => item.id === first)
+    shownEnds.current = [items[0]?.id, items.at(-1)?.id]
+    const scroller = box.current
+    if (scroller !== null) {
+      if (before && !stuck.current) scroller.scrollTop = scroller.scrollHeight - fromBottom.current
+      fromBottom.current = scroller.scrollHeight - scroller.scrollTop
+    }
     latestItems.current = items
+    if (before) seenItems.current = items
     if (!manager || stuck.current || seenItems.current === items) return
     let here = true
     queueMicrotask(() => { if (here && !stuck.current && seenItems.current !== items) setNewMessages(true) })
@@ -653,6 +665,7 @@ export const Transcript = memo(function Transcript({
       if (scroller.scrollTop < last && gap() > 1) stuck.current = false
       else if (scroller.scrollTop > last && gap() < 16) { stuck.current = true; if (manager) { seenItems.current = latestItems.current; setNewMessages(false) } }
       last = scroller.scrollTop
+      fromBottom.current = scroller.scrollHeight - scroller.scrollTop
     }
     const wheel = (event: WheelEvent): void => {
       if (event.deltaY < 0 && scroller.scrollTop > 0) stuck.current = false
@@ -661,6 +674,7 @@ export const Transcript = memo(function Transcript({
     const follow = new ResizeObserver(() => {
       if (stuck.current) { scroller.scrollTop = scroller.scrollHeight; if (manager) { seenItems.current = latestItems.current; setNewMessages(false) } }
       else if (manager && seenItems.current !== latestItems.current) setNewMessages(true)
+      fromBottom.current = scroller.scrollHeight - scroller.scrollTop
     })
     follow.observe(scroller)
     follow.observe(content)

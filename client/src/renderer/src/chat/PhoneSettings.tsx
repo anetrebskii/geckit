@@ -19,6 +19,7 @@ import { AssistantStatus } from './AssistantStatus'
 import { Cell, Page, Switch, tooOld } from './PhoneKit'
 import { MacList } from './PhoneBoard'
 import { computerName } from './PhoneHosts'
+import { computerName as shownComputer, computerStatus, useComputers } from '../remote/Computer'
 import { PhoneProject } from './PhoneProject'
 import { homePath, projectLabel } from './project'
 import { ALL } from './useChat'
@@ -93,6 +94,8 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
   }
   const profile = settings.profiles.find((one) => one.id === settings.profile)
   const thisMac = paired?.find((one) => one.current)
+  const { source } = useComputers(undefined)
+  const here = source === undefined ? thisMac?.name : shownComputer(source.server.name)
 
   return (
     <Page title="Settings">
@@ -126,6 +129,16 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
           <div className="phone-group">
             <Cell label={thisMac?.name ?? 'Host'} says={paired.length > 1 ? `${String(paired.length)} hosts paired` : 'Paired'} onPress={() => setSwitching(true)} />
           </div>
+        </>
+      )}
+
+      {source === undefined ? null : (
+        <>
+          <div className="phone-head">Computer</div>
+          <div className="phone-group">
+            <Cell label={shownComputer(source.server.name)} icon="display" says={computerStatus(source.state)} onPress={() => { tap('light'); source.onChoose(':manage') }} />
+          </div>
+          <div className="phone-note">To connect another computer, open GeckIt on it, go to Settings, Phone, and scan the code there.</div>
         </>
       )}
 
@@ -177,7 +190,7 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
       <div className="phone-head">Dictation</div>
       <div className="phone-group">
         <Cell label="Your language" value={settings.nativeLanguage} onPress={() => setPicking('language')} />
-        {voice() === undefined ? null : <Cell label="Heard by" value={heardBy === 'host' ? (thisMac?.name ?? 'Host') : phoneOs().phone} onPress={() => setPicking('ear')} />}
+        {voice() === undefined ? null : <Cell label="Heard by" value={heardBy === 'host' ? (here ?? 'Host') : phoneOs().phone} onPress={() => setPicking('ear')} />}
       </div>
       <div className="phone-note">
         {voice() === undefined || heardBy === 'phone'
@@ -187,7 +200,7 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
 
       <div className="phone-head">About</div>
       <div className="phone-group">
-        <Cell label={`GeckIt on ${thisMac?.name ?? 'the host'}`} value={version ?? '-'} />
+        <Cell label={`GeckIt on ${here ?? 'the host'}`} value={version ?? '-'} />
       </div>
 
       {picking === 'theme' ? (

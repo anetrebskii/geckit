@@ -26,12 +26,5 @@ window.mountRemoteWorkspace = async ({ connection, server, phone, source }: Work
   const { workspaceApi } = await import('./workspace-api')
   const api = await workspaceApi(connection, server, phone)
   Object.defineProperty(window, 'geckit', { value: api })
-  if (phone) {
-    const [{ createRoot }, { createElement }, { Computer }] = await Promise.all([import('react-dom/client'), import('react'), import('./Computer')])
-    const bar = document.createElement('div')
-    bar.id = 'remote-computer-bar'
-    document.body.prepend(bar)
-    createRoot(bar).render(createElement(Computer))
-  }
   await import('../chat/main')
 }

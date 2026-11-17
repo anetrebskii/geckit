@@ -128,22 +128,22 @@ describe('Manager setup', () => {
 
 const { ManagerPage, PhoneManager } = await import('../src/renderer/src/employees/TeamManager')
 
-describe('Manager chat entry points', () => {
-  it('offers desktop and phone chat before an enabled Manager has its first session', () => {
-    const desktop = renderToStaticMarkup(createElement(ManagerPage, { settings: DEFAULT_SETTINGS, change: () => undefined, view: ready, onChat: () => undefined }))
+describe('Manager team page', () => {
+  it('has no Open chat on desktop or phone, and the phone has its setup', () => {
+    const desktop = renderToStaticMarkup(createElement(ManagerPage, { settings: DEFAULT_SETTINGS, change: () => undefined, view: ready }))
     const phone = renderToStaticMarkup(createElement(PhoneManager, { settings: DEFAULT_SETTINGS, change: () => undefined, view: ready, onBack: () => undefined }))
-    expect(desktop).toContain('Open chat</button>')
-    expect(phone).toContain('Open chat</span>')
+    expect(desktop).not.toContain('Open chat')
+    expect(phone).not.toContain('Open chat')
+    expect(phone).toContain('Setup')
     expect(desktop).toContain('Coordinates work in GeckIt, Telegram and shortcuts')
     expect(phone).toContain('Coordinates work in GeckIt, Telegram and shortcuts')
   })
 
-  it('keeps first setup on desktop while retaining chat access to disabled history', () => {
-    const fresh = renderToStaticMarkup(createElement(PhoneManager, { settings: DEFAULT_SETTINGS, change: () => undefined, view: { ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off' }, onBack: () => undefined }))
+  it('says nothing about its state or instructions before the view comes', () => {
+    const loading = renderToStaticMarkup(createElement(PhoneManager, { settings: DEFAULT_SETTINGS, change: () => undefined, view: undefined, onBack: () => undefined }))
     const disabled = renderToStaticMarkup(createElement(PhoneManager, { settings: DEFAULT_SETTINGS, change: () => undefined, view: { ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off', session: { ...worker, manager: true } }, onBack: () => undefined }))
-    expect(fresh).toContain('Set up Manager on your computer, then chat here.')
-    expect(fresh).not.toContain('Open chat')
-    expect(disabled).toContain('Open chat')
+    expect(loading).not.toContain('Not set up')
+    expect(loading).not.toContain('No instructions')
     expect(disabled).toContain('Disabled')
   })
 })
@@ -273,13 +273,14 @@ describe('Manager threads in the window', () => {
   const owned: ChatSession = { ...worker, id: 'codex:owned', title: 'Fix login redirect' }
   const followed: ChatSession = { ...worker, id: 'codex:followed', title: 'Deploy preview' }
   const threaded: ManagerView = { ...ready, session: backing, workers: [owned, followed], decisions: [{ id: 'mine', title: 'Main decision', choices: [] }, { id: 'theirs', title: 'Slack decision', choices: [], thread: 'slack:C1:1' }], requests: [{ id: 'r1', text: 'hi', source: 'desktop', at: 1, session: 'manager-slack', state: 'queued' }], threads: [
-    { id: 'slack:C1:1', place: 'Slack', title: '#dev', labels: { starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://slack.example/p1', session: 'manager-slack', conversation: slackSession, state: 'working', at: 20, owns: ['codex:owned', 'codex:followed'] },
-    { id: 'main', title: 'Manager', labels: {}, session: 'manager-main', conversation: backing, state: 'idle', at: 10, owns: [] },
+    { id: 'slack:C1:1', place: 'Slack', title: '#dev', labels: { starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://slack.example/p1', session: 'manager-slack', conversation: slackSession, provider: 'claude', model: '', state: 'working', at: 20, owns: ['codex:owned', 'codex:followed'] },
+    { id: 'main', title: 'Manager', labels: {}, session: 'manager-main', conversation: backing, provider: 'claude', model: '', state: 'idle', at: 10, owns: [] },
   ] }
 
-  it('puts GeckIt first and gives each thread its own session, requests and decisions', () => {
-    const [main, slack] = threadOrder(threaded.threads ?? [])
-    expect(main?.id).toBe('main')
+  it('puts a thread needing an answer first, then the newest, and gives each thread its own session, requests and decisions', () => {
+    const [slack, main] = threadOrder(threaded.threads ?? [])
+    expect(slack?.id).toBe('slack:C1:1')
+    expect(threadOrder([{ ...main!, state: 'asks' }, slack!]).map((one) => one.id)).toEqual(['main', 'slack:C1:1'])
     const mainView = threadView(threaded, main)
     expect(mainView.session?.id).toBe('manager-main')
     expect(mainView.decisions.map((one) => one.id)).toEqual(['mine'])
@@ -299,9 +300,9 @@ describe('Manager threads in the window', () => {
     expect(selected.historyRevision).toBeUndefined()
   })
 
-  it('lists the threads with GeckIt first and counts their working workers', () => {
-    const markup = renderToStaticMarkup(createElement(Threads, { threads: threadOrder(threaded.threads ?? []), picked: 'main', workers: [{ ...threaded.workers[0]!, state: 'working' }, { ...threaded.workers[1]!, state: 'idle' }], onPick: vi.fn() }))
-    expect(markup).toContain('aria-label="Manager threads"')
+  it('lists the threads under New conversation and counts their working workers', () => {
+    const markup = renderToStaticMarkup(createElement(Threads, { threads: threadOrder(threaded.threads ?? []), picked: 'main', workers: [{ ...threaded.workers[0]!, state: 'working' }, { ...threaded.workers[1]!, state: 'idle' }], onPick: vi.fn(), onNew: vi.fn() }))
+    expect(markup).toContain('aria-label="Manager threads"><button type="button" class="manager-thread manager-thread-new">')
     expect(markup).toContain('aria-current="true"><span class="manager-thread-text"><strong>GeckIt</strong><span>Manager chat</span>')
     expect(markup).toContain('<strong>#dev</strong><span>Slack · Maria Ivanova</span>')
     expect(markup).toContain('aria-label="1 working"')

@@ -18,7 +18,22 @@ import { disposeTransport, nodeListen } from './transport'
 import { coalesceEvents } from '../../shared/remote/coalesce'
 import { CAN, clientView } from '../../core/client-view'
 import type { ClientView } from '../../core/client-view'
-import type { SessionImage, SessionNotice } from '../../shared/api'
+import type { ChatSession, SessionImage, SessionNotice } from '../../shared/api'
+// Past these a request to a remote client is said in the log, to find what makes a connect slow.
+const SLOW_CALL = 500
+const LARGE = 256 * 1024
+// The Manager's view is large and changes often, so a remote client gets its latest at most this often, and only when it changed.
+const MANAGER_EVERY = 3000
+/** A conversation in the Manager view as Manager's screens read it; the rest of it reaches a client through the list. */
+const slim = (one: ChatSession): ChatSession => ({ id: one.id, root: one.root, title: one.title, stands: one.stands, state: one.state, at: one.at, here: one.here, mode: one.mode, ...(one.status === undefined ? {} : { status: one.status }), ...(one.model === undefined ? {} : { model: one.model }), ...(one.chosen === undefined ? {} : { chosen: one.chosen }), ...(one.retryNotice === undefined ? {} : { retryNotice: one.retryNotice }), ...(one.manager === undefined ? {} : { manager: one.manager }) })
+/** The Manager's view as a remote client draws it: its activity log is shown nowhere, and its conversations carry only what Manager's screens read. */
+export function forRemote(view: ManagerView): ManagerView {
+  const lean: ManagerView = { ...view, activity: [], workers: view.workers.map(slim), ...(view.session === undefined ? {} : { session: slim(view.session) }), ...(view.threads === undefined ? {} : { threads: view.threads.map((thread) => thread.conversation === undefined ? thread : { ...thread, conversation: slim(thread.conversation) }) }) }
+  const size = JSON.stringify(lean).length
+  if (size > LARGE) console.warn(`Remote Manager view is ${String(Math.round(size / 1024))} KB: ${Object.entries(lean).map(([key, value]) => `${key} ${String(Math.round(JSON.stringify(value ?? null).length / 1024))} KB`).join(', ')}`)
+  return lean
+}
+import type { ManagerView } from '../../shared/manager'
 import { pushWith, tokenOf } from '../../main/push'
 interface Device { readonly id: string; readonly name: string; readonly publicKey: string; readonly key: string; readonly projects: readonly string[]; readonly manager: boolean; readonly created: number; readonly revoked?: number; readonly full?: true; readonly push?: readonly string[] }
 interface AccessRecord { readonly server: RemoteServer; readonly identity: RemoteIdentity; readonly enabled: boolean; readonly signal: string; readonly devices: readonly Device[] }
@@ -61,7 +76,13 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
   }
   const stopNotices = runtime.subscribe((event: CoreEvent) => { if (event.name === 'chat:notice') void pushNotice(event.args[0]).catch((error: unknown) => console.warn(`A push was not sent: ${String(error)}`)) })
   const active = (): AccessRecord => { if (record === undefined || !record.enabled) throw new Error('Enable remote access first.'); return record }
-  const send = (channel: RemoteChannel, message: RemoteResponse): void => channel.send(stringifyRemote(message))
+  const send = (channel: RemoteChannel, message: RemoteResponse): void => {
+    const text = stringifyRemote(message)
+    channel.send(text)
+    // A large message to a remote client is what makes it slow, so it is said with what it was.
+    if (text.length > LARGE) console.warn(`Remote ${message.type === 'core-event' ? `event ${message.event.name}` : message.type} sent ${String(Math.round(text.length / 1024))} KB`)
+  }
+  const timed = (what: string, from: number): void => { const took = Date.now() - from; if (took > SLOW_CALL) console.warn(`Remote ${what} took ${String(took)} ms`) }
   const refuse = (channel: RemoteChannel, code: Extract<RemoteResponse, { type: 'error' }>['code'], message: string): void => { console.warn(`Remote client refused (${code}): ${message}`); send(channel, { type: 'error', code, message }); setTimeout(() => channel.close(), 100) }
   const serve = (channel: RemoteChannel, invitation?: Invitation, trusted?: Device): void => {
     const server = record?.server
@@ -77,11 +98,25 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     let updateTimer: ReturnType<typeof setTimeout> | undefined
     let flushTimer: ReturnType<typeof setTimeout> | undefined
     let queued: CoreEvent[] = []
+    let managerTimer: ReturnType<typeof setTimeout> | undefined
+    let managerLatest: CoreEvent | undefined
+    let managerSent = ''
+    const sendManager = (): void => {
+      managerTimer = undefined
+      const event = managerLatest
+      managerLatest = undefined
+      if (ended || event === undefined) return
+      const lean = forRemote(event.args[0] as ManagerView)
+      const text = JSON.stringify(lean)
+      if (text === managerSent) return
+      managerSent = text
+      send(channel, { type: 'core-event', event: { ...event, args: [lean] } as CoreEvent })
+    }
     let view: ClientView | undefined
     // Events go out in batches, so a streaming conversation sends its latest state rather than every step of it.
     const flush = (): void => { flushTimer = undefined; const batch = coalesceEvents(queued); queued = []; if (!ended) for (const event of batch) send(channel, { type: 'core-event', event }) }
     const timeout = setTimeout(() => { if (device === undefined) refuse(channel, 'expired', 'Code expired. Create a new code on the server.') }, invitation === undefined ? 15_000 : Math.max(1, invitation.expires - Date.now()))
-    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); clearTimeout(flushTimer); queued = []; stopChanges?.(); stopEvents?.(); view?.dispose(); away.delete(channel); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
+    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); clearTimeout(flushTimer); clearTimeout(managerTimer); queued = []; stopChanges?.(); stopEvents?.(); view?.dispose(); away.delete(channel); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
     channel.onClose(end)
     const establish = async (one: Device, text: string): Promise<void> => {
       if (ended) return
@@ -95,7 +130,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       send(channel, { type: 'trusted', trust, proof })
       const live = (): boolean => !ended && record?.enabled === true && record.devices.some((current) => current.id === one.id && current.revoked === undefined)
       if (one.full && core?.['chat:items'] !== undefined) {
-        const items = core['chat:items']
+        const items = core['chat:viewItems'] ?? core['chat:items']
         const queuedPicture = core['chat:queuedPicture']
         view = clientView({
           items: (id) => items(id),
@@ -105,6 +140,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       }
       if (one.full) stopEvents = runtime.subscribe((event: CoreEvent) => {
         if (!live() || view?.event(event) === true) return
+        if (event.name === 'manager:view') { managerLatest = event; managerTimer ??= setTimeout(sendManager, MANAGER_EVERY); return }
         queued.push(event); flushTimer ??= setTimeout(flush, 50)
       })
       stopChanges = gateway?.changed((seq) => {
@@ -165,6 +201,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
             try {
               if (!current.full || core === undefined) throw new Error('Pair again with geckit pair to control this server.')
               const { method, args } = request.call
+              const from = Date.now()
               if ((method as string) === 'push:here' || (method as string) === 'push:token') {
                 const said: unknown = args[0]
                 if ((method as string) === 'push:here') { if (said === true) away.add(channel); else away.delete(channel) }
@@ -180,6 +217,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
               const owned = view?.call(method, args)
               if (owned !== undefined) {
                 const value = await owned as RemoteResult
+                timed(method, from)
                 if (!ended && record.enabled && record.devices.some((one) => one.id === current.id && one.revoked === undefined)) send(channel, { type: 'core-result', id: request.id, value })
                 // Said back plainly first, so the client knows before anything deflated reaches it.
                 if ((method as string) === 'link:can' && view?.can('deflate') === true) channel.compress?.(true)
@@ -187,14 +225,17 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
               }
               if (!Object.hasOwn(core, method) || Object.hasOwn(Object.prototype, method)) throw new Error('Unknown GeckIt method.')
               const operation = core[method] as (...args: never[]) => RemoteResult | Promise<RemoteResult>
-              const value = await operation(...args as never[])
+              const value = (method as string) === 'manager:view' ? forRemote(await operation(...args as never[]) as ManagerView) as RemoteResult : await operation(...args as never[])
+              timed(method, from)
               if (!ended && record.enabled && record.devices.some((one) => one.id === current.id && one.revoked === undefined)) send(channel, { type: 'core-result', id: request.id, value })
             } catch (error) { if (!ended && record?.enabled && record.devices.some((one) => one.id === current.id && one.revoked === undefined)) send(channel, { type: 'core-failure', id: request.id, message: error instanceof Error ? error.message : 'Remote operation failed.' }) }
             return
           }
           if (gateway === undefined) throw new Error('Remote data is unavailable')
           const projects = current.full ? managerProjects(getSettings()) : current.projects
-          const response: RemoteResponse = request.type === 'snapshot' ? { type: 'snapshot', id: request.id, snapshot: await gateway.snapshot(projects, current.manager) } : { type: 'history', id: request.id, history: await gateway.history(projects, request.session, request.before, current.manager) }
+          const from = Date.now()
+          const response: RemoteResponse = request.type === 'snapshot' ? { type: 'snapshot', id: request.id, snapshot: await gateway.snapshot(projects, current.manager, request.lean === true) } : { type: 'history', id: request.id, history: await gateway.history(projects, request.session, request.before, current.manager) }
+          timed(request.type, from)
           if (!ended && record.enabled && record.devices.find((one) => one.id === current.id)?.revoked === undefined) send(channel, response)
         } catch (error) { refuse(channel, 'denied', error instanceof Error ? error.message : 'Remote operation denied.') }
         finally { requests-- }

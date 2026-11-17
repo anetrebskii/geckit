@@ -36,13 +36,16 @@ const SNIPPET = 160
 
 const read = new Map<string, Read>()
 
+/** Text the tools put into a conversation themselves: reminders, environment and instruction files. */
+const INJECTED = /^\s*(<|# AGENTS\.md instructions|\[Request interrupted|Caveat:)/
+
 const object = (value: unknown): Json =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : {}
 const string = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 /** What one entry of the file said in words, if anything: the person's message, or the assistant's answer. */
 export function saidIn(entry: Json): string {
-  if (entry['isSidechain'] === true) return ''
+  if (entry['isSidechain'] === true || entry['isMeta'] === true || entry['isCompactSummary'] === true) return ''
   const type = string(entry['type'])
   if (type === 'user') {
     const words = typed(entry)
@@ -50,7 +53,7 @@ export function saidIn(entry: Json): string {
     const content = object(entry['message'])['content']
     // A message with a picture in it comes as blocks; a tool's output does too, and is not something said.
     if (!Array.isArray(content) || content.some((block) => string(object(block)['type']) === 'tool_result')) return ''
-    return content.map((block) => (string(object(block)['type']) === 'text' ? string(object(block)['text']) : '')).join('\n')
+    return content.map((block) => (string(object(block)['type']) === 'text' ? string(object(block)['text']) : '')).filter((text) => !INJECTED.test(text)).join('\n')
   }
   if (type !== 'assistant') return ''
   const content = object(entry['message'])['content']
@@ -99,7 +102,7 @@ function codexSaidIn(line: string): string {
   const entry = JSON.parse(line) as { type: string; payload?: { type: string; role: string; content?: { type: string; text?: string }[] } }
   const payload = entry.payload
   if (entry.type !== 'response_item' || payload?.type !== 'message' || !['user', 'assistant'].includes(payload.role)) return ''
-  return payload.content?.filter((one) => one.type === 'input_text' || one.type === 'output_text').map((one) => one.text ?? '').join('\n') ?? ''
+  return payload.content?.filter((one) => one.type === 'input_text' || one.type === 'output_text').map((one) => one.text ?? '').filter((text) => payload.role !== 'user' || !INJECTED.test(text)).join('\n') ?? ''
 }
 
 async function brought(path: string, size: number, codex = false): Promise<Read> {

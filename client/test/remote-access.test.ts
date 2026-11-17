@@ -13,7 +13,7 @@ vi.mock('../src/service/remote/transport', () => ({ disposeTransport: () => unde
 vi.mock('../src/main/store', () => ({ getSettings: () => ({ projects: ['/srv/allowed', '/srv/private'], profiles: [] }) }))
 vi.mock('../src/core/application', () => ({ application: () => ({}) }))
 
-import { remoteAccess } from '../src/service/remote/access'
+import { forRemote, remoteAccess } from '../src/service/remote/access'
 import { serviceSecurity } from '../src/service/application'
 import { coreEvents } from '../src/core/events'
 import { DEFAULT_MANAGER_CONFIG } from '../src/shared/manager'
@@ -258,4 +258,16 @@ it('does not silently upgrade an existing scoped device to full control', async 
   first.send({ type: 'core-call', id: 50, call: { method: 'chat:rename', args: ['remote-id', 'No upgrade'] } })
   await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'core-failure' && one.id === 50)).toBe(true))
   expect(first.closed()).toBe(false)
+})
+
+it('sends a remote client the Manager view with its conversations cut to what Manager draws', () => {
+  const heavy: ChatSession = { id: 'codex:w', root: '/p', title: 'Worker', stands: 'Working', state: 'working', at: 5, here: true, mode: 'auto', status: 'blocked', moves: Array.from({ length: 500 }, (_, at) => ({ status: 'progress' as const, at })), tasks: [{ id: 't', kind: 'local_bash', what: 'x'.repeat(5000), status: 'running', started: 1 }], queued: [{ id: 'q', text: 'y'.repeat(5000), images: 0 }] }
+  const backing: ChatSession = { ...heavy, id: 'manager-1', manager: true, model: 'opus', retryNotice: 'Retrying' }
+  const lean = forRemote({ appChat: true, queued: 0, config: DEFAULT_MANAGER_CONFIG, state: 'working', session: backing, workers: [heavy], activity: [{ id: 'a', at: 1, command: ['x'], state: 'done' }], providers: [], decisions: [], threads: [{ id: 'main', title: 'Manager', provider: 'claude', model: '', labels: {}, session: backing.id, conversation: backing, state: 'working', at: 1, owns: [heavy.id] }] })
+  expect(lean.workers[0]).toEqual({ id: 'codex:w', root: '/p', title: 'Worker', stands: 'Working', state: 'working', at: 5, here: true, mode: 'auto', status: 'blocked' })
+  expect(lean.session).toMatchObject({ id: 'manager-1', state: 'working', model: 'opus', retryNotice: 'Retrying', manager: true })
+  expect(lean.session?.moves).toBeUndefined()
+  expect(lean.threads?.[0]?.conversation?.tasks).toBeUndefined()
+  expect(lean.activity).toEqual([])
+  expect(JSON.stringify(lean).length).toBeLessThan(2000)
 })

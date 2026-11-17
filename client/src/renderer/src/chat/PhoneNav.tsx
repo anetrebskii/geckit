@@ -60,7 +60,7 @@ export function PhoneNav({
     <div ref={nav} className="phone-nav">
       <button type="button" className="phone-back" onClick={() => chat.open({ kind: 'new' })}>
         <Icon name="left" size={22} />
-        Board
+        Back
       </button>
       <div className="phone-nav-title">
         <b>{session?.title ?? 'New conversation'}</b>

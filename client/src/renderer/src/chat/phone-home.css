@@ -130,6 +130,9 @@
 .place-menu-name {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .place-menu-item.on {
@@ -159,6 +162,28 @@
   height: 9px;
   background: var(--accent);
   border-radius: 50%;
+}
+
+.place-menu-link {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--text-dim);
+  border-radius: 50%;
+}
+
+.place-menu-link.up {
+  background: var(--accent);
+}
+
+/* The computer switch above the places: its name, the up-and-down chevron that says it opens a choice, apart from the places by a little space. */
+.place-menu-computer {
+  margin-block-end: 10px;
+  font-weight: 600;
+}
+
+.place-menu-computer svg.place-menu-more {
+  color: var(--text-faint);
 }
 
 .place-menu-foot {
@@ -1158,4 +1183,15 @@ html.phone .secrets-section .browser-profile + .browser-profile::before {
 .phone-task-form input.secret-sheet-mono::placeholder {
   font-family: var(--font-ui, -apple-system, system-ui, sans-serif);
   font-size: 17px;
+}
+
+/* A checklist's items in its sheet: one grouped list like the rows above it, not a framed box. */
+.checklist-sheet-items .checklist-items {
+  background: var(--bg-raised);
+  border: 0;
+  border-radius: 12px;
+}
+
+.checklist-sheet-items + .phone-note {
+  margin-inline: 16px;
 }

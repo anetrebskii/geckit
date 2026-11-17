@@ -25,7 +25,7 @@ export async function connectService(directory: string, start: boolean) {
     if (failure !== undefined) throw failure
     try { return await connect() } catch { /* Wait for the owner to finish starting. */ }
     // Another launcher can own the directory even after our child loses the race.
-    if (process.platform !== 'win32' && child?.exitCode !== undefined && child.exitCode !== null) break
+    if (process.platform !== 'win32' && child?.exitCode !== undefined && child.exitCode !== null && canStartService(directory)) break
     await delay(100)
   }
   throw new Error(`GeckIt service did not start. See ${join(directory, 'service.log')}. Existing service ownership was preserved.`)

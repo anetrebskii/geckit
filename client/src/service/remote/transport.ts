@@ -12,6 +12,12 @@ const ice = async (pairing: RemoteSignal): Promise<IceServer[]> => (await iceFor
 })).filter((one) => one !== undefined)
 export const disposeTransport = (): void => cleanup()
 const bytesOf = (data: Buffer | ArrayBuffer): ArrayBuffer => (data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer)
+/** How a link was made, direct on the network or through the relay, since a relayed one carries far less a second. */
+function said(peer: PeerConnection): void {
+  const pair = peer.getSelectedCandidatePair()
+  if (pair === null) return
+  console.warn(`Remote link made: ${pair.local.type} ${pair.local.transportType} to ${pair.remote.type} ${pair.remote.transportType}`)
+}
 export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChannel) => void, failed: (error: Error) => void): () => void {
   const peers = new Set<PeerConnection>()
   const seen = new Set<string>()
@@ -32,7 +38,7 @@ export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChanne
     const drop = (reason: string): void => { clearTimeout(timer); clearTimeout(grace); if (!peers.delete(peer)) return; console.warn(`Remote link closed: ${reason}`); peer.close() }
     // A link that stops answering is often back within seconds, so only one that stays away is given up.
     peer.onStateChange((state) => {
-      if (state === 'connected') { clearTimeout(timer); clearTimeout(grace); grace = undefined }
+      if (state === 'connected') { clearTimeout(timer); clearTimeout(grace); grace = undefined; said(peer) }
       else if (state === 'disconnected') { grace ??= setTimeout(() => drop('the link stayed disconnected for 15 s'), 15_000); grace.unref() }
       else if (state === 'failed' || state === 'closed') drop(`the link ${state}`)
     })

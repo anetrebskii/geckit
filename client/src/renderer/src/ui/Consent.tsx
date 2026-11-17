@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { DEFAULT_SETTINGS } from '../../../shared/api'
 import type { Settings } from '../../../shared/api'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from './Icon'
@@ -27,7 +28,8 @@ export function Consent({
   readonly change: (change: Partial<Settings>) => void
 }): React.JSX.Element | null {
   const report = useErrorQuestion()
-  const counting = !settings.analyticsAsked && (settings.welcomed || ON_PHONE)
+  // The defaults stand in until the real settings come, and they have never asked: asking then would ask again every launch.
+  const counting = settings !== DEFAULT_SETTINGS && !settings.analyticsAsked && (settings.welcomed || ON_PHONE)
   const cards = (
     <>
       {report === undefined ? null : <ErrorCard report={report} />}

@@ -40,13 +40,13 @@ html:not(.framed) .app:has(> .app-nav.over) .place-dialog-host .shortcut-editor-
   padding-left: 68px;
 }
 
-/* The traffic lights span the folded sidebar and the bar beside it, so the bar's row runs across the sidebar and its edge starts below. */
-html:not(.framed) .app-nav.rail {
+/* One bar runs across the whole window top, folded or not: the traffic lights and the sidebar button sit in it, and the sidebar's edge starts below it. */
+html:not(.framed) .app-nav:not(.over) {
   position: relative;
   border-right: 0;
 }
 
-html:not(.framed) .app-nav.rail::after {
+html:not(.framed) .app-nav:not(.over)::after {
   position: absolute;
   top: 45px;
   right: 0;
@@ -86,17 +86,17 @@ html:not(.phone) .place-manager .manager-tasks {
   padding-block: 0;
 }
 
-html:not(.framed) .app:has(> .app-nav.rail) .place-manager .manager-side-head {
+html:not(.framed) .place-manager .manager-side-head {
   background: var(--bg);
 }
 
-html:not(.framed) .app-nav.rail .nav-top {
+html:not(.framed) .app-nav .nav-top {
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 
 /* Below that line the first place starts level with the board's columns beside it. */
-html:not(.framed) .app-nav.rail .nav-items {
+html:not(.framed) .app-nav .nav-items {
   padding-top: 12px;
 }
 
@@ -340,6 +340,19 @@ html:not(.framed) .nav-toggle-hole {
 }
 
 .nav-add {
+  color: var(--text-faint);
+}
+
+/* The computer switch above the places: its name in the text colour, the up-and-down chevron that says it opens a choice, apart from the places by a little space. */
+.nav-computer {
+  margin-block-end: 8px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.nav-computer > .nav-computer-more {
+  width: 12px;
+  height: 12px;
   color: var(--text-faint);
 }
 

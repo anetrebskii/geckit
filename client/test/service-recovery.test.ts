@@ -88,14 +88,7 @@ it('allows the CLI to start without an owner even when an old token remains', ()
   expect(readFileSync(join(path, 'operator-token'), 'utf8')).toBe('previous-token')
 })
 
-it.skipIf(process.platform === 'win32')('preserves manual recovery for an existing owner on other platforms', () => {
-  const path = directory()
-  stale(path)
-  expect(canStartService(path)).toBe(false)
-  expect(pid(path)).toBe(deadPid)
-})
-
-describe.skipIf(process.platform !== 'win32')('Windows service recovery', () => {
+describe('service recovery', () => {
   it.each([[true, true], [true, false], [false, true]])('recovers stopped owner=%s token=%s without changing settings or history', async (owner, token) => {
     const path = directory()
     stale(path, owner, token)
@@ -144,7 +137,7 @@ describe.skipIf(process.platform !== 'win32')('Windows service recovery', () => 
     expect(readFileSync(join(path, 'operator-token'), 'utf8')).toBe(token)
   })
 
-  it('holds exclusive ownership even if its metadata has been removed', async () => {
+  it.skipIf(process.platform !== 'win32')('holds exclusive ownership even if its metadata has been removed', async () => {
     const path = directory()
     const release = await ownDataDirectory(path)
     cleanup.push(release)

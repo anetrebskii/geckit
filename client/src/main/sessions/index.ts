@@ -433,6 +433,7 @@ function goalSent(text: string): string | undefined {
 
 /** How long an idle session keeps its process. */
 const QUIET = 10 * 60_000
+const KEPT_LIST_FOR = 30_000
 
 /** How long a general question is kept once it has gone quiet. */
 const QUESTION_KEPT = 24 * 60 * 60_000
@@ -576,6 +577,8 @@ export class Sessions {
   readonly #holders = new Set<string>()
   readonly #rows = new Map<string, Row>()
   readonly #lists = new Map<string, Promise<ChatSession[]>>()
+  /** When each project's conversations were last read from disk. */
+  readonly #readAt = new Map<string, number>()
   readonly #providerLists = new Map<string, Promise<Awaited<ReturnType<LlmProvider['list']>> | undefined>>()
   readonly #listStatus = new Map<string, SessionListStatus>()
   readonly #clearedTasks = new Map<string, Map<string, number>>()
@@ -1135,6 +1138,14 @@ export class Sessions {
     return (await this.allForManager(roots)).filter((one) => !this.isManager(one.id))
   }
 
+  /** The list as already held once every project in it was read, so a client connecting is not kept waiting on disk; it is read again behind the answer at most every 30 s, and changes reach clients as chat:sessions. */
+  async kept(roots: readonly string[]): Promise<ChatSession[]> {
+    const read = roots.map((root) => this.#readAt.get(root))
+    if (read.some((at) => at === undefined)) return this.list(roots)
+    if (Date.now() - Math.min(...read as number[]) > KEPT_LIST_FOR) setTimeout(() => { void this.refresh(roots).catch(() => undefined) }, 0)
+    return this.#listed(roots).filter((one) => !this.isManager(one.id))
+  }
+
   listStatus(): readonly SessionListStatus[] { return [...this.#listStatus.values()] }
 
   #readList(provider: LlmProvider, roots: readonly string[]): Promise<Awaited<ReturnType<LlmProvider['list']>> | undefined> {
@@ -1176,7 +1187,8 @@ export class Sessions {
     const key = JSON.stringify([...roots].sort())
     const held = this.#lists.get(key)
     if (held !== undefined) return held
-    const reading = this.#readForManager(roots).finally(() => this.#lists.delete(key))
+    const started = Date.now()
+    const reading = this.#readForManager(roots).then((found) => { for (const root of roots) this.#readAt.set(root, started); return found }).finally(() => this.#lists.delete(key))
     this.#lists.set(key, reading)
     return reading
   }

@@ -349,6 +349,7 @@ export class CodexSessions {
     const ended = (how: 'done' | 'stopped' | 'failed', text?: string): void => {
       clearRetry()
       clearRequests()
+      items.clear()
       if (how === 'stopped') remembered.clear()
       if (!active) return
       active = false
@@ -428,7 +429,9 @@ export class CodexSessions {
           case 'item/started':
           case 'item/completed': {
             const item = event.params.item
-            items.set(item.id, item)
+            // A finished item takes no more deltas or approvals, and a held conversation lives for hours.
+            if (event.method === 'item/completed') items.delete(item.id)
+            else items.set(item.id, item)
             if (item.type === 'userMessage') return
             clearRetry()
             const read = codexItem(item, options.root, event.method === 'item/started')

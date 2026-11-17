@@ -11,7 +11,12 @@ import { devicePublicKey, rememberServer, signDevice } from './storage'
 export const HOLD = 60_000
 export const LINK_DOWN = 'The link to the computer is down. Try again when it is back.'
 export type ConnectionState = 'connecting' | 'pending' | 'connected' | 'reconnecting' | 'disconnected' | 'expired' | 'reused' | 'revoked' | 'incompatible' | 'error'
-export interface RemoteView { readonly state: ConnectionState; readonly message: string; readonly snapshot?: RemoteSnapshot; readonly history?: RemoteHistory; readonly trust?: RemoteTrust }
+/** The steps of a connect, in order: the pairing service, the computer's answer, the link, proving who each side is, its state, the workspace starting, the conversation list. */
+export const CONNECT_STAGES = ['service', 'answer', 'joining', 'proving', 'snapshot', 'bootstrap', 'list'] as const
+export type ConnectStage = typeof CONNECT_STAGES[number]
+/** When each step of the connect under way began, with what it brought in characters, the last one still going until `ready`. */
+export type ConnectSteps = readonly { readonly stage: ConnectStage | 'ready'; readonly at: number; readonly size?: number }[]
+export interface RemoteView { readonly state: ConnectionState; readonly message: string; readonly snapshot?: RemoteSnapshot; readonly history?: RemoteHistory; readonly trust?: RemoteTrust; readonly steps?: ConnectSteps }
 export function connectRemote(pairing: RemoteSignal, name: string, change: (view: RemoteView) => void, saved?: RemoteTrust) {
   const abort = new AbortController()
   let channel: RemoteChannel | undefined
@@ -27,14 +32,19 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
   let ready = false
   let connectedOnce = false
   let resync = false
+  let steps: ConnectSteps = []
+  let base: Omit<RemoteView, 'steps'> = { state: 'connecting', message: '' }
+  const stage = (at: ConnectStage | 'ready'): void => { if (stopped) return; steps = [...steps, { stage: at, at: Date.now() }]; change({ ...base, steps }) }
+  const sized = (at: ConnectStage, size: number): void => { steps = steps.map((one) => (one.stage === at ? { ...one, size } : one)) }
+  let heard = 0
   const events = new Set<(event: CoreEvent) => void>()
   const readyAgain = new Set<() => void>()
   // What was asked while the link was down goes once it is back, unless it stays away this long; what had already gone out is never sent again.
   const held: { readonly go: () => void; readonly give: (error: Error) => void }[] = []
   const pending = new Map<number, { readonly resolve: (value: RemoteResult) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
-  const rejectPending = (): void => { ready = false; for (const one of pending.values()) { clearTimeout(one.timer); one.reject(new Error('Connection lost. Check the server before retrying this action.')) }; pending.clear() }
+  const rejectPending = (reason = 'Connection lost. Check the server before retrying this action.'): void => { ready = false; for (const one of pending.values()) { clearTimeout(one.timer); one.reject(new Error(reason)) }; pending.clear() }
   const send = (message: RemoteRequest): void => channel?.send(stringifyRemote(message))
-  const snapshot = (): void => { if (snapshotPending) { dirty = true; return }; snapshotPending = true; send({ type: 'snapshot', id: ++next }) }
+  const snapshot = (): void => { if (snapshotPending) { dirty = true; return }; snapshotPending = true; send({ type: 'snapshot', id: ++next, ...(trust?.full === true ? { lean: true as const } : {}) }) }
   const fail = (state: ConnectionState, message: string): void => { console.warn(`Remote connection stopped (${state}): ${message}`); stopped = true; rejectPending(); for (const one of held.splice(0)) one.give(new Error(message)); abort.abort(); channel?.close(); change({ state, message }) }
   const later = (): void => { refresh = setTimeout(() => { refresh = undefined; void dial() }, [2000, 5000, 10_000, 30_000][Math.min(tries++, 3)] ?? 30_000) }
   // A saved computer that drops or answers oddly is dialled again; only a first pairing stops.
@@ -43,7 +53,7 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     if (trust === undefined || (saved === undefined && !connectedOnce)) { fail('error', `Could not connect: ${reason}`); return }
     console.warn(`Remote connection lost, reconnecting: ${reason}`)
     const old = channel
-    channel = undefined; snapshotPending = false; rejectPending(); resync = true
+    channel = undefined; snapshotPending = false; rejectPending(LINK_DOWN); resync = true
     old?.close()
     change({ state: 'reconnecting', message: 'Reconnecting…' })
     if (refresh === undefined) later()
@@ -51,20 +61,24 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
   const catchUp = (): void => {
     const emit = (event: CoreEvent): void => { for (const heard of events) heard(event) }
     const read = <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => call(method, ...args)
-    void read('chat:list', undefined).then((sessions) => emit({ name: 'chat:sessions', args: [sessions] } as CoreEvent)).catch(() => undefined)
+    // A workspace that reads the list itself when the link is back says so with onReconnected; asking twice made the computer read every conversation twice.
+    if (readyAgain.size === 0) void read('chat:list', undefined).then((sessions) => emit({ name: 'chat:sessions', args: [sessions] } as CoreEvent)).catch(() => undefined)
     void read('manager:view').then((view) => emit({ name: 'manager:view', args: [view] } as CoreEvent)).catch(() => undefined)
     void read('settings:get').then((settings) => emit({ name: 'settings:changed', args: [settings] } as CoreEvent)).catch(() => undefined)
     void read('lineup:state').then((lineup) => emit({ name: 'lineup:changed', args: [lineup] } as CoreEvent)).catch(() => undefined)
   }
   const dial = async (): Promise<void> => {
     if (stopped) return
-    change({ state: trust === undefined ? 'connecting' : 'reconnecting', message: trust === undefined ? 'Connecting…' : 'Reconnecting…' })
+    base = { state: trust === undefined ? 'connecting' : 'reconnecting', message: trust === undefined ? 'Connecting…' : 'Reconnecting…' }
+    steps = []
+    change(base)
     try {
       const publicKey = await devicePublicKey()
       if (stopped) return
-      const link = await remoteDial(trust ?? pairing, abort.signal)
+      const link = await remoteDial(trust ?? pairing, abort.signal, stage)
       if (stopped) { link.close(); return }
       channel = link
+      stage('proving')
       let proofText = ''
       let serverKey = ''
       let serverId = ''
@@ -95,10 +109,12 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
             if (trust !== undefined && (trust.device !== received.device || trust.key !== received.key)) { fail('error', 'Device trust changed. Pair again with a new code.'); return }
             trust = received; await rememberServer(received)
             if (stopped) return
+            stage('snapshot')
             tries = 0; seq = -1; epoch = ''; snapshotPending = false; snapshot(); return
           }
           if (trust === undefined) throw new Error('Server sent data before authentication.')
           if (response.type === 'core-result' || response.type === 'core-failure') {
+            heard = raw.length
             const one = pending.get(response.id)
             if (one !== undefined) { pending.delete(response.id); clearTimeout(one.timer); if (response.type === 'core-result') one.resolve(response.value); else one.reject(new Error(response.message)) }
             return
@@ -113,7 +129,9 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
             connectedOnce = true
             if (resync) { resync = false; catchUp(); for (const again of readyAgain) again() }
             for (const one of held.splice(0)) one.go()
-            change({ state: 'connected', message: trust.full ? 'Connected' : 'Connected · Read only', snapshot: response.snapshot, trust })
+            sized('snapshot', raw.length)
+            base = { state: 'connected', message: trust.full ? 'Connected' : 'Connected · Read only', snapshot: response.snapshot, trust }
+            change({ ...base, steps })
             if (dirty) { dirty = false; snapshot() }; return
           }
           if (response.type === 'changed') { if (trust.full) return; if (refresh === undefined) refresh = setTimeout(() => { refresh = undefined; snapshot() }, 300); return }
@@ -134,7 +152,8 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     }
   }
   const call = <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => new Promise((resolve, reject) => {
-    if ((!ready || channel === undefined) && !stopped && trust?.full === true && connectedOnce) {
+    // A saved computer's calls wait for the link, the first one too, so its workspace opens on what was kept before it answers.
+    if ((!ready || channel === undefined) && !stopped && trust?.full === true) {
       const one = {
         go: () => { clearTimeout(expired); void call(method, ...args).then(resolve, reject) },
         give: (error: Error) => { clearTimeout(expired); reject(error) },
@@ -147,7 +166,17 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     const id = ++next
     const sentOn = channel
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('Server did not answer. Check the server before retrying this action.')) }, method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000)
+    const starting = (method as string) === 'service:about' || method === 'service:bootstrap'
+    const first = starting && ['snapshot', 'bootstrap'].includes(steps.at(-1)?.stage ?? '') ? 'start' : method === 'chat:list' && steps.at(-1)?.stage === 'bootstrap' ? 'chat:list' : undefined
+    if (first === 'start' && steps.at(-1)?.stage === 'snapshot') stage('bootstrap')
+    if (first === 'chat:list') stage('list')
     pending.set(id, { resolve: (value) => {
+      if (first === 'start') { sized('bootstrap', heard); change({ ...base, steps }) }
+      if (first === 'chat:list') {
+        sized('list', heard)
+        stage('ready')
+        console.info(`Connected to ${trust?.server.name ?? 'the server'}: ${steps.slice(0, -1).map((one, index) => `${one.stage} ${String(((steps[index + 1]?.at ?? Date.now()) - one.at) / 1000)} s${one.size === undefined ? '' : `, ${String(Math.round(one.size / 1024))} KB`}`).join('; ')}`)
+      }
       // Said back plainly; from then on this side sends deflated too.
       if ((method as string) === 'link:can' && value !== null && typeof value === 'object' && 'can' in value && Array.isArray(value.can) && value.can.includes('deflate')) sentOn.compress?.(true)
       resolve(value as Awaited<ReturnType<CoreMethods[K]>>)

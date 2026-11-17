@@ -15,8 +15,17 @@ import type { WorkspaceConnection } from './Workspace'
 import { clientData } from '../../../shared/client-data'
 import { keep, readKept } from '../kept'
 
+// Long enough to read a sentence, short enough not to linger over the work.
+const NOTICE_FOR = 6000
+
 export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean) {
-  const bootstrap = await connection.call('service:bootstrap')
+  // A server older than service:about answers only the whole bootstrap.
+  const asked = connection.call('service:about').catch(() => connection.call('service:bootstrap'))
+  // What it said last time opens the workspace at once, on what the client kept, while the link is still being made.
+  const aboutKey = `server:${server.id}:about`
+  const known = await readKept<Pick<Awaited<typeof asked>, 'platform' | 'home'>>(aboutKey)
+  void asked.then((about) => keep(aboutKey, { platform: about.platform, home: about.home }), () => undefined)
+  const bootstrap = known ?? await asked
   const call = <T,>(name: string, ...args: unknown[]): Promise<T> => connection.call(name as keyof CoreMethods, ...args as Parameters<CoreMethods[keyof CoreMethods]>) as Promise<T>
   // What this client reads of the server, as every client does, and kept here so it opens on that while the link is made.
   const data = clientData({
@@ -26,17 +35,21 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
   })
   connection.onReconnected?.(() => data.reconnected())
   const folderHost: HostView = { id: ':remote-server', name: server.name, address: '', user: '', port: 0, auth: 'key', state: 'up', remembered: false, canRemember: false }
+  let noticeTimer: number | undefined
   const report = (error: Error): void => {
-    let notice = document.getElementById('remote-workspace-error')
-    if (notice === null) {
-      notice = document.createElement('div')
-      notice.id = 'remote-workspace-error'
-      notice.className = 'remote-feedback failed'
-      notice.setAttribute('role', 'alert')
-      notice.addEventListener('click', () => notice?.remove())
-      document.body.prepend(notice)
-    }
+    // A call lost to a dropped link, which the reconnecting pill already says: not a fault to show.
+    if (error.message === LINK_DOWN) return
+    // What failed with nowhere else to say it: the product's own pill along the bottom, gone by itself or on a tap.
+    document.getElementById('remote-workspace-error')?.remove()
+    window.clearTimeout(noticeTimer)
+    const notice = document.createElement('div')
+    notice.id = 'remote-workspace-error'
+    notice.className = document.documentElement.classList.contains('phone') ? 'phone-notice' : 'toast'
+    notice.setAttribute('role', 'alert')
     notice.textContent = error.message
+    notice.addEventListener('click', () => notice.remove())
+    document.body.append(notice)
+    noticeTimer = window.setTimeout(() => notice.remove(), NOTICE_FOR)
   }
   const showFile = async (rootPath: string, path: string): Promise<void> => {
     const { FileView } = await import('../chat/FileView')
@@ -74,7 +87,8 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
         if (ownCalls.has(channel)) return await localInvoke(channel) as Result
         return await connection.call(channel as keyof CoreMethods, ...args as Parameters<CoreMethods[keyof CoreMethods]>) as Result
       } catch (error) {
-        const failure = error instanceof Error ? error : new Error(String(error))
+        // The connection lives in the page around this frame, so its errors are another window's Error and fail instanceof here.
+        const failure = error instanceof Error ? error : new Error(typeof (error as { message?: unknown } | null)?.message === 'string' ? (error as { message: string }).message : String(error))
         if (failure.message === 'Unknown GeckIt method.') {
           const older = new Error('GeckIt on the server is older than this app. Update it there to use this.')
           if (!quiet.has(channel)) report(older)
@@ -125,6 +139,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
   }, data)
   // How this client looks, which projects it shows and whether it counts or sends errors are its own, whatever the server has.
   const owned = clientOwn(`server:${server.id}:own`)
+  const settingsKey = `server:${server.id}:settings`
   const errors = phoneErrors(() => owned.mine().sendErrors === true, () => void settings.set({ sendErrors: true }))
   const counting = (name: EventName): void => {
     if (owned.mine().analytics !== true || owned.mine().analyticsAsked !== true) return
@@ -132,7 +147,14 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
   }
   const settings = {
     ...api.settings,
-    get: async (): Promise<Settings> => owned.own(await api.settings.get()),
+    // What the computer said last time first, so the workspace opens as it was left, then what it says now.
+    get: async (): Promise<Settings> => {
+      const fresh = api.settings.get().then((now) => { void keep(settingsKey, now); return now })
+      const kept = await readKept<Settings>(settingsKey)
+      if (kept === undefined) return owned.own(await fresh)
+      void fresh.then((now) => { window.dispatchEvent(new CustomEvent('remote:settings:changed', { detail: now })) }, () => undefined)
+      return owned.own(kept)
+    },
     set: async (change: Partial<Settings>): Promise<Settings> => {
       const { here, there } = owned.take(change)
       if (change.sendErrors !== undefined) errors.follow(change.sendErrors)

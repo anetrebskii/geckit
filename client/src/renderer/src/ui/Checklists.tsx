@@ -6,6 +6,7 @@ import type { Checklist } from '../../../shared/checklists'
 import { newItem } from '../../../shared/checklists'
 import { ChecklistItems, ChecklistNotes } from '../chat/ChecklistField'
 import { projectName } from '../chat/project'
+import { Cell, FullSheet, Switch } from '../chat/PhoneKit'
 import { Icon } from './Icon'
 import { Menu } from './Menu'
 
@@ -109,6 +110,84 @@ function ChecklistForm({ checklist, folders, onSave, onCancel, onDelete, askFirs
   )
 }
 
+/** On the phone, a checklist is written in a sheet of its own, as a shortcut is: Cancel and Save in its bar, the rows grouped, Delete at the foot. */
+function ChecklistSheet({ checklist, folders, onSave, onCancel, onDelete, askFirst = false }: {
+  readonly checklist: Checklist
+  readonly askFirst?: boolean
+  readonly folders: readonly string[]
+  readonly onSave: (checklist: Checklist) => void
+  readonly onCancel: () => void
+  readonly onDelete?: (() => void) | undefined
+}): React.JSX.Element {
+  const [name, setName] = useState(checklist.name)
+  const [root, setRoot] = useState(checklist.root ?? SHARED)
+  const [isDefault, setIsDefault] = useState(checklist.isDefault === true)
+  const [items, setItems] = useState(checklist.items.length === 0 ? [newItem()] : checklist.items)
+  const [picking, setPicking] = useState(false)
+  const [asking, setAsking] = useState(askFirst)
+  const fresh = checklist.name === ''
+  const ready = name.trim() !== '' && items.some((one) => one.title.trim() !== '')
+  const places = checklist.root === undefined || folders.includes(checklist.root) ? folders : [...folders, checklist.root]
+  const save = (): void => {
+    if (!ready) return
+    onSave({
+      id: checklist.id,
+      name: name.trim(),
+      ...(root === SHARED ? {} : { root }),
+      ...(root !== SHARED && isDefault ? { isDefault: true } : {}),
+      items: items.filter((one) => one.title.trim() !== '').map((one) => ({ ...one, title: one.title.trim() })),
+    })
+  }
+  return (
+    <FullSheet title={fresh ? 'New checklist' : checklist.name} action="Save" ready={ready} onAction={save} onClose={onCancel}>
+      <div className="phone-task-label">Name</div>
+      <input className="phone-task-goal" autoFocus={fresh} aria-label="Name" value={name} maxLength={80} placeholder="Feature flow" onChange={(event) => setName(event.target.value)} />
+      <div className="phone-group phone-form-group">
+        <Cell label="Belongs to" value={root === SHARED ? 'Shared' : projectName(root)} says={root === SHARED ? 'Offered in New task for every folder' : `Offered in New task for ${projectName(root)} only`} onPress={() => setPicking(true)} />
+        {root === SHARED ? null : (
+          <Cell label="Default for this folder" says="New tasks there start with it">
+            <Switch on={isDefault} label="Default for this folder" onChange={setIsDefault} />
+          </Cell>
+        )}
+      </div>
+      <div className="phone-task-label">Items</div>
+      <div className="checklist-sheet-items">
+        <ChecklistItems items={items} onChange={setItems} />
+        <button type="button" className="shortcut-add-goal checklist-add" onClick={() => setItems((was) => [...was, newItem()])}>
+          <Icon name="plus" size={11} />
+          Add an item
+        </button>
+        <ChecklistNotes checklist={{ items }} />
+      </div>
+      <div className="phone-note">Each item is a result, in order. A task moves on to the next one only when this one holds.</div>
+      {onDelete === undefined ? null : (
+        <div className="phone-group phone-form-group">
+          <Cell label="Delete Checklist" danger onPress={() => setAsking(true)} />
+        </div>
+      )}
+      {picking ? (
+        <Menu
+          anchor={new DOMRect()}
+          title="Belongs to"
+          chosen={root}
+          choices={[{ value: SHARED, label: 'Shared', says: 'Every folder' }, ...places.map((one) => ({ value: one, label: projectName(one) }))]}
+          onPick={setRoot}
+          onClose={() => setPicking(false)}
+        />
+      ) : null}
+      {asking && onDelete !== undefined ? (
+        <Menu
+          anchor={new DOMRect()}
+          title={`Delete "${checklist.name}"?`}
+          choices={[{ value: 'delete', label: 'Delete Checklist', says: 'Running tasks keep their copy', danger: true }]}
+          onPick={onDelete}
+          onClose={() => setAsking(false)}
+        />
+      ) : null}
+    </FullSheet>
+  )
+}
+
 export function ChecklistsSection({ settings, change }: Part): React.JSX.Element {
   const checklists = settings.checklists ?? []
   const folders = shownProjects(settings)
@@ -116,6 +195,7 @@ export function ChecklistsSection({ settings, change }: Part): React.JSX.Element
   const [deleting, setDeleting] = useState(false)
   const [adding, setAdding] = useState<Checklist | undefined>()
   const [more, setMore] = useState<{ readonly id: string; readonly anchor: DOMRect } | undefined>()
+  const phone = document.documentElement.classList.contains('phone')
   const store = (next: readonly Checklist[]): void => change({ checklists: next })
   const save = (saved: Checklist): void => {
     const cleared = saved.isDefault === true ? checklists.map((one) => (one.id !== saved.id && one.root === saved.root && one.isDefault === true ? { ...one, isDefault: undefined } : one)) : checklists
@@ -154,7 +234,7 @@ export function ChecklistsSection({ settings, change }: Part): React.JSX.Element
           New checklist
         </button>
       </header>
-      {adding === undefined ? null : (
+      {adding === undefined || phone ? null : (
         <div className="browser-profiles-group">
           <ChecklistForm checklist={adding} folders={folders} onSave={save} onCancel={() => setAdding(undefined)} />
         </div>
@@ -170,7 +250,7 @@ export function ChecklistsSection({ settings, change }: Part): React.JSX.Element
           <div className="browser-profiles-group">
             <ul className="browser-profiles-list">
               {group.list.map((one) =>
-                editing === one.id ? (
+                editing === one.id && !phone ? (
                   <li key={one.id} className="browser-profile editing">
                     <ChecklistForm checklist={one} folders={folders} onSave={save} onCancel={() => setEditing(undefined)} onDelete={() => remove(one.id)} askFirst={deleting} />
                   </li>
@@ -211,6 +291,11 @@ export function ChecklistsSection({ settings, change }: Part): React.JSX.Element
           </div>
         </div>
       ))}
+      {phone && adding !== undefined ? <ChecklistSheet checklist={adding} folders={folders} onSave={save} onCancel={() => setAdding(undefined)} /> : null}
+      {phone && editing !== undefined ? (() => {
+        const one = checklists.find((each) => each.id === editing)
+        return one === undefined ? null : <ChecklistSheet key={one.id} checklist={one} folders={folders} onSave={save} onCancel={() => setEditing(undefined)} onDelete={() => remove(one.id)} askFirst={deleting} />
+      })() : null}
       {more === undefined ? null : (
         <Menu
           anchor={more.anchor}

@@ -843,6 +843,9 @@ function Correct({ settings, change }: Part): React.JSX.Element {
   )
 }
 
+/** Where the phone app is handed out before it is in the App Store. */
+const TESTFLIGHT = 'https://testflight.apple.com/join/7B7vbk2e'
+
 export function PhoneAccess({ on, change }: { readonly on: boolean; readonly change: (on: boolean) => void }): React.JSX.Element {
   const [view, setView] = useState<PhoneView>({ count: 0 })
   const [copied, setCopied] = useState(false)
@@ -866,30 +869,40 @@ export function PhoneAccess({ on, change }: { readonly on: boolean; readonly cha
   }
 
   return (
-    <div className="field">
-      <label>Phone</label>
-      <label className="check">
-        <input type="checkbox" checked={on} onChange={(event) => change(event.target.checked)} />
-        Open the conversations on your phone
-      </label>
-      <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-        Scan the code with the GeckIt app on your phone, or copy it and paste it there. A code works once, for five minutes.
-      </span>
-      {on && view.qr !== undefined && view.code !== undefined ? (
-        <div className="phone-link">
-          <img src={view.qr} alt="QR code for the GeckIt app" width={160} height={160} />
-          <span>
-            <code className="phone-code">{view.code}</code>
-            <button type="button" className="quiet" onClick={() => copy(view.code ?? '')}>
-              {copied ? 'Copied' : 'Copy code'}
-            </button>
-            <button type="button" className="quiet" onClick={() => window.geckit.phone.newCode()}>
-              New code
-            </button>
+    <section className="assistant-settings phone-settings" aria-labelledby="phone-settings-title">
+      <div className="provider-library-head">
+        <h3 id="phone-settings-title">Phone</h3>
+      </div>
+      <div className="assistant-options">
+        <label className="assistant-option">
+          <span className="assistant-option-copy">
+            <span className="assistant-option-name">Phone Access</span>
+            <span className="assistant-option-description">Open your tasks and conversations from the GeckIt app on your iPhone.</span>
           </span>
-        </div>
-      ) : null}
-      {on && view.trouble !== undefined ? <span className="phone-error">{view.trouble}</span> : null}
-    </div>
+          <input className="assistant-toggle" type="checkbox" role="switch" aria-label="Phone access" checked={on} onChange={(event) => change(event.target.checked)} />
+        </label>
+      </div>
+      {!on ? null : (
+        <>
+          <h4 className="phone-pair-title">Connect a Phone</h4>
+          <div className="assistant-options phone-pair">
+            <div className="phone-pair-body">
+              {view.qr === undefined ? <span className="phone-pair-qr skeleton-line" aria-busy="true" /> : <img className="phone-pair-qr" src={view.qr} alt="Code to scan with the GeckIt app" width={148} height={148} />}
+              <ol className="phone-pair-steps">
+                <li>Install GeckIt on your iPhone from <a href={TESTFLIGHT} onClick={(event) => { event.preventDefault(); window.geckit.chat.openLink(TESTFLIGHT) }}>TestFlight</a>.</li>
+                <li>Open GeckIt and tap <b>Scan Code</b>.</li>
+                <li>Point the camera at this code.</li>
+              </ol>
+            </div>
+            <div className="phone-pair-foot">
+              <span>Or copy the code and paste it in the app. A code works once, for five minutes.</span>
+              <button type="button" className="quiet" disabled={view.code === undefined} onClick={() => copy(view.code ?? '')}>{copied ? 'Copied' : 'Copy Code'}</button>
+              <button type="button" className="quiet" onClick={() => window.geckit.phone.newCode()}>New Code</button>
+            </div>
+          </div>
+          {view.trouble === undefined ? null : <p className="phone-error" role="alert">{view.trouble}</p>}
+        </>
+      )}
+    </section>
   )
 }

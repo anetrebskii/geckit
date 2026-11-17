@@ -72,4 +72,17 @@ describe('searching what was said', () => {
     expect(await searchCodex(files, 'billing deploy')).toEqual([{ id: 'codex:aaa', root: ROOT, said: 'Billing deploy finished.', count: 2 }])
     expect(await searchCodex(files, 'zebra')).toEqual([])
   })
+
+  it('leaves out skills, summaries and instructions the tools put in themselves', async () => {
+    await writeFile(
+      file,
+      line({ type: 'user', isMeta: true, message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: walrus' }] } }) +
+        line({ type: 'user', isCompactSummary: true, message: { role: 'user', content: [{ type: 'text', text: 'Summary of walrus work' }] } }) +
+        line({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>walrus</system-reminder>' }, { type: 'image' }] } }),
+    )
+    expect(await searchClaude([ROOT], 'walrus')).toEqual([])
+    const codex = join(file, '..', 'codex.jsonl')
+    await writeFile(codex, line({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# AGENTS.md instructions for /work walrus' }, { type: 'input_text', text: '<environment_context>walrus</environment_context>' }] } }))
+    expect(await searchCodex([{ id: 'codex:bbb', root: ROOT, path: codex }], 'walrus')).toEqual([])
+  })
 })

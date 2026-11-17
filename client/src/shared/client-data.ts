@@ -198,7 +198,7 @@ export function clientData(link: DataLink) {
     },
     list: (root: string | undefined): Promise<ChatSession[]> =>
       root === undefined
-        ? keptFirst('list', () => link.call<ChatSession[]>('chat:list', root).then((all) => { rows = all; return all }), 'chat:sessions')
+        ? keptFirst('list', () => pages().catch(() => false).then(() => link.call<ChatSession[]>('chat:list', root)).then((all) => { rows = all; return all }), 'chat:sessions')
         : link.call<ChatSession[]>('chat:list', root),
     /** Which conversation is in front; behind another app nothing is, and what was open is still what is sent. */
     watching: (id: string | undefined): void => {

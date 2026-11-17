@@ -57,7 +57,7 @@ describe('remote workspace calls', () => {
       expect(rememberServer).toHaveBeenCalledWith(trust)
       vi.useFakeTimers()
       const uncertain = connection.call('chat:rename', 'session', 'Changed title')
-      const rejection = expect(uncertain).rejects.toThrow('Connection lost. Check the server before retrying this action.')
+      const rejection = expect(uncertain).rejects.toThrow(LINK_DOWN)
       first.link.close()
       await rejection
       const waiting = connection.call('chat:rename', 'session', 'Asked while down')

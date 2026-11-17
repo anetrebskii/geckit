@@ -53,6 +53,9 @@ let chromeConnected = chrome === 'connected'
 let chromeReceived = ['ready', 'kept', 'connected'].includes(chrome) ? 2_497_281_120 : 1_210_000_000
 let chromeModel = chrome === 'absent' ? false : true
 let testProfiles = [{ name: 'store', open: true }, { name: 'staging', open: false }]
+// Settings, Phone: a fixed code and a drawn stand-in for its QR.
+const qrCells = Array.from({ length: 21 * 21 }, (_one, index) => ((index * 7919) % 13) < 6 ? `<rect x="${String(index % 21)}" y="${String(Math.floor(index / 21))}" width="1" height="1"/>` : '').join('')
+Object.assign(window.geckit, { phone: { state: async () => ({ count: 0, code: '9cXYKItqnkWMRyQ-Xb8NOUoktqzNY65vMWSvA8QIDtc', qr: `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" shape-rendering="crispEdges">${qrCells}</svg>`)}` }), onState: () => () => undefined, newCode: () => undefined } })
 Object.assign(window.geckit, { browser: {
   state: async () => {
     if (chrome === 'downloading' || chrome === 'waiting') chromeReceived = Math.min(2_497_281_120, chromeReceived + 90_000_000)
@@ -259,7 +262,7 @@ function Preview(): React.JSX.Element {
   if (query.has('phone')) return open ? <PhoneVpnSettings settings={settings} save={save} back="Settings" onBack={() => setOpen(false)} /> : <Page title="Settings"><div className="phone-group"><Cell label="VPN IP check" value={settings.vpnIpCheck ? 'On' : 'Off'} onPress={() => setOpen(true)} /></div></Page>
   return <>
     <header className="board-head"><h1>GeckIt</h1><button ref={trigger} type="button" className="quiet" onClick={() => setOpen(true)}>Settings</button></header>
-    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : query.get('section') === 'channels' ? 'channels' : query.get('section') === 'secrets' ? 'secrets' : query.get('section') === 'checklists' ? 'checklists' : 'assistants'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
+    {open ? <SettingsDialog first={query.get('section') === 'vpn' ? 'vpn' : query.get('section') === 'general' ? 'general' : query.get('section') === 'assistants' ? 'assistants' : query.get('section') === 'integrations' ? 'integrations' : query.get('section') === 'channels' ? 'channels' : query.get('section') === 'secrets' ? 'secrets' : query.get('section') === 'checklists' ? 'checklists' : query.get('section') === 'phone' ? 'phone' : 'assistants'} settings={settings} change={change} onClose={() => setOpen(false)} onShortcuts={() => undefined} /> : null}
   </>
 }
 

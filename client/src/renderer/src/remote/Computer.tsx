@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { RemoteServer, RemoteTrust } from '../../../shared/remote/protocol'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import type { Choice } from '../ui/Menu'
 import { ON_PHONE } from '../on-phone'
 import type { RemoteView } from './client'
 import { savedServers, shownName } from './storage'
@@ -57,6 +58,19 @@ export function useComputers(reading: unknown, onConnect?: (id?: string) => void
   return { source, computers, trouble, choose }
 }
 
+/** A computer's name as a person reads it: a Mac's network name loses its `.local` and gets its spaces back. */
+export const computerName = (name: string): string => /\.local$/i.test(name) ? name.replace(/\.local$/i, '').replace(/-/g, ' ') : name
+
+/** What the computer switcher offers: the computers, the current one checked, then connecting another and managing the saved ones. */
+export function computerChoices(computers: ComputerChoices['computers'], local: boolean): Choice[] {
+  return [
+    ...(local ? [{ value: ':local', label: 'This computer', icon: 'display' }] : []),
+    ...computers.map((one) => ({ value: one.server.id, label: computerName(one.server.name), icon: 'display' })),
+    { value: ':add', label: 'Connect Computer…', icon: 'plus', divided: true },
+    ...(computers.length === 0 ? [] : [{ value: ':manage', label: 'Manage Computers…', icon: 'settings' }]),
+  ]
+}
+
 export const computerStatus = (state: RemoteView['state'] | undefined): string => state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting…' : state === 'reconnecting' ? 'Reconnecting…' : 'Disconnected'
 
 export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
@@ -85,7 +99,7 @@ export function Computer({ onConnect }: ComputerProps): React.JSX.Element {
       autoFocus
       title="Computer"
       chosen={source?.server.id ?? ':local'}
-      choices={[...(ON_PHONE ? [] : [{ value: ':local', label: 'This computer', icon: 'display' as const }]), ...computers.map((one) => ({ value: one.server.id, label: one.server.name, icon: 'server' })), { value: ':add', label: 'Connect computer…', icon: 'plus' }, ...(computers.length === 0 ? [] : [{ value: ':manage', label: 'Manage computers…', icon: 'settings' }])]}
+      choices={computerChoices(computers, !ON_PHONE)}
       {...(trouble === '' ? {} : { note: trouble })}
       onPick={choose}
       onClose={() => setAnchor(undefined)}

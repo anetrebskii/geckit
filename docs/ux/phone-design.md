@@ -24,7 +24,7 @@ This document decides what the app becomes; `phone.md` still decides how it conn
 | Sessions that ask | "Waiting for you", like any idle one | A "Needs you" group at the top of In progress, each row with the ask and Allow once and No on it |
 | Empty column | Blank | One line: "Nothing in review." |
 | Plan usage | A bar pinned to the bottom | The list's footer; a banner only when a window is at 90% |
-| Conversation header | Back icon, cut title, "Status" text | "Board" back button, title with the project under it, More button |
+| Conversation header | Back icon, cut title, "Status" text | "Back" button (a conversation opens from Tasks, Questions or Manager), title with the project under it, More button |
 | Where it stands, Links, Rename, Stop | Status popover; Links only when there are links | One action sheet from More |
 | Messages | The person's in a grey block, full width | The person's in a bubble at the right; Claude's text full width |
 | A permission card | Scrolls with the transcript | Docked above the composer until answered; the answer stays in the transcript as a line |

@@ -59,10 +59,10 @@ import type { SecretEntry, SecretLifetime, SecretMetadata, SecretUse } from './s
 import type { SealedValue } from './secret-seal'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from './providers'
 import type { Piece } from './pairing'
-import { clientData } from './client-data'
+import { EARLIER, TAIL, clientData } from './client-data'
 import type { ClientData, Found } from './client-data'
 import type { VoiceMemosConnection } from './manager-intake'
-import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from './manager'
+import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerPiece, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from './manager'
 import type { ChannelScreen, ChannelScreenRequest } from './channel-ui'
 import type { ChannelJson } from './channels'
 import type { ChannelChange, ChannelId, ChannelInspectRequest, ChannelInspectResult, ChannelsView } from './channels'
@@ -121,6 +121,8 @@ return {
     view: (): Promise<ManagerView> => rendererTransport.invoke('manager:view'),
     history: (request: Parameters<ManagerApi['history']>[0]): Promise<ManagerView> => rendererTransport.invoke('manager:history', request),
     inspect: (id: string): Promise<SessionItems> => rendererTransport.invoke('manager:inspect', id),
+    turns: (id: string): Promise<ManagerPiece> => rendererTransport.invoke<Piece>('chat:turns', id, TAIL, true).then((piece) => ({ id, ...piece })),
+    before: (id: string, before: string): Promise<ManagerPiece> => rendererTransport.invoke<Piece>('chat:turnsBefore', id, before, EARLIER).then((piece) => ({ id, ...piece })),
     send: (request: ManagerSendRequest): Promise<ManagerRequestReceipt> => rendererTransport.invoke('manager:sendApp', request),
     receipt: (id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined> => rendererTransport.invoke('manager:receipt', id),
     answer: (request: ManagerAnswerRequest): Promise<ManagerAnswerResult> => rendererTransport.invoke('manager:answerApp', request),
@@ -129,6 +131,8 @@ return {
     onItems: (said: (items: SessionItems) => void): (() => void) => rendererTransport.listen('manager:items', said),
     configure: (change: Partial<ManagerConfig>): Promise<ManagerView> => rendererTransport.invoke('manager:configure', change),
     pause: (): Promise<ManagerView> => rendererTransport.invoke('manager:pause'),
+    stop: (session: string): Promise<ManagerView> => rendererTransport.invoke('manager:stop', session),
+    setModel: (thread: string, model: string): Promise<ManagerView> => rendererTransport.invoke('manager:setModel', thread, model),
     resume: (): Promise<ManagerView> => rendererTransport.invoke('manager:resume'),
     retry: (): Promise<ManagerView> => rendererTransport.invoke('manager:retry'),
     restart: (): Promise<ManagerView> => rendererTransport.invoke('manager:restart'),

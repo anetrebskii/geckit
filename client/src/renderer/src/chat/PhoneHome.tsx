@@ -8,9 +8,11 @@ import { Icon } from '../ui/Icon'
 import { ChecklistsSection } from '../ui/Checklists'
 import { SecretsSection } from '../ui/Secrets'
 import { macs } from '../macs'
+import { computerChoices, computerName, useComputers } from '../remote/Computer'
 import { PhoneTeam } from '../employees/PhoneTeam'
 import { PhoneBrowser } from './PhoneBrowser'
 import { Page, PhoneMenu } from './PhoneKit'
+import { Menu } from '../ui/Menu'
 import { menuDot, waitingCount, waitingSaid, WORK_PLACES, WORKSPACE_PLACES, type PlaceId, type PlaceItem } from './places'
 import { PhoneBoard } from './PhoneBoard'
 import { PhoneQuestions } from './PhoneQuestions'
@@ -116,6 +118,17 @@ export function PhoneHome({
     </button>
   )
   const host = macs()?.list().find((one) => one.current)?.name ?? 'the host'
+  const { source, computers, choose: chooseComputer } = useComputers(menu)
+  const [switching, setSwitching] = useState(false)
+  // Which computer the app shows is a switch above the places it scopes, not one of them: one row, its menu, no selection of its own.
+  const switcher = source === undefined ? null : (
+    <button type="button" className="place-menu-item place-menu-computer" aria-haspopup="menu" aria-expanded={switching} aria-label={`Computer: ${computerName(source.server.name)}${source.state === 'connected' ? '' : ', not connected'}`} onClick={() => setSwitching(true)}>
+      <Icon name="display" size={22} />
+      <span className="place-menu-name">{computerName(source.server.name)}</span>
+      {source.state === 'connected' ? null : <span className="place-menu-link" aria-hidden="true" />}
+      <Icon name="updown" size={14} className="place-menu-more" />
+    </button>
+  )
   const swipeShut = useSwipeLeft(() => setMenu(false))
 
   return (
@@ -155,15 +168,17 @@ export function PhoneHome({
         <PhoneSettings chat={chat} />
       </div>
       {menu || shortcuts || searching ? null : <EdgeMenu onOpen={() => { tap('light'); setMenu(true) }} />}
-      <div className={`place-menu-scrim${menu ? ' open' : ''}`} {...swipeShut} onPointerUp={(event) => { if (!swipeShut.onPointerUp(event)) setMenu(false) }} aria-hidden="true" />
+      <div className={`place-menu-scrim${menu ? ' open' : ''}`} {...swipeShut} onPointerUp={(event) => { if (swipeShut.onPointerUp(event) === 'tap') setMenu(false) }} aria-hidden="true" />
       <nav className={`place-menu${menu ? ' open' : ''}`} aria-label="Places" inert={!menu} {...swipeShut}>
         <div className="place-menu-items">
+          {switcher}
           {WORK_PLACES.map(item)}
           <div className="place-menu-group">Workspace</div>
           {WORKSPACE_PLACES.map(item)}
         </div>
         <div className="place-menu-foot">{item({ id: 'settings', name: 'Settings', icon: 'settings' })}</div>
       </nav>
+      {switching && source !== undefined ? <Menu anchor={new DOMRect()} title="Computer" chosen={source.server.id} choices={computerChoices(computers, false)} onPick={(id) => { setSwitching(false); setMenu(false); chooseComputer(id) }} onClose={() => setSwitching(false)} /> : null}
       {saying ? <PhoneSay chat={chat} onClose={() => setSaying(false)} /> : null}
       {editing === undefined ? null : <ShortcutSheet key={editing.at} chat={chat} given={editing.draft} onClose={() => setEditing(undefined)} />}
     </div>
@@ -196,11 +211,11 @@ function EdgeMenu({ onOpen }: { readonly onOpen: () => void }): React.JSX.Elemen
   )
 }
 
-/** A short swipe left closes the menu, from the panel or the dimmed screen beside it; onPointerUp says whether one closed it. */
+/** A short swipe left closes the menu, from the panel or the dimmed screen beside it; onPointerUp says whether one closed it, or the press was a tap begun here (not the lift of the swipe that opened it). */
 function useSwipeLeft(onShut: () => void): {
   readonly onPointerDown: (event: React.PointerEvent) => void
   readonly onPointerMove: (event: React.PointerEvent) => void
-  readonly onPointerUp: (event: React.PointerEvent) => boolean
+  readonly onPointerUp: (event: React.PointerEvent) => 'shut' | 'tap' | undefined
   readonly onPointerCancel: () => void
 } {
   const from = useRef<{ x: number; y: number; shut: boolean } | undefined>(undefined)
@@ -217,9 +232,9 @@ function useSwipeLeft(onShut: () => void): {
       onShut()
     },
     onPointerUp: () => {
-      const shut = from.current?.shut === true
+      const held = from.current
       from.current = undefined
-      return shut
+      return held === undefined ? undefined : held.shut ? 'shut' : 'tap'
     },
     onPointerCancel: () => (from.current = undefined),
   }

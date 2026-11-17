@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { version as bundledVersion } from '../../package.json'
 import { askedEndpoint, endpointOnDisk } from '../cli/endpoint'
 import { connectRpc, rpcEndpoint } from '../core/rpc'
-import { canStartService } from '../core/ownership'
+import { canStartService, serviceCrashed } from '../core/ownership'
 import type { RpcClient, RpcEvent } from '../core/rpc'
 import type { ServiceEvents, ServiceMethods } from '../service/application'
 
@@ -78,7 +78,7 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
       child.once('exit', (code, signal) => {
         alive = false
         launchExit = `GeckIt service exited before desktop connected (${signal ?? String(code)}). Check ${logFile}.`
-        if (process.platform !== 'win32' && current === undefined && !closed) launchError = new Error(launchExit)
+        if (process.platform !== 'win32' && current === undefined && !closed && canStartService(options.directory)) launchError = new Error(launchExit)
       })
       child.unref()
       launched = true
@@ -159,7 +159,7 @@ export async function connectDesktop(options: DesktopServiceOptions): Promise<De
       const legacy = endpointOnDisk() && existsSync(askedEndpoint(options.directory))
       if (legacy && !control && !token) throw new Error('This data directory is owned by a GeckIt version without service control. Quit that instance before starting desktop. No socket was removed.', { cause: error })
       // A competing launcher may win ownership; keep attaching even if our child exits.
-      if (!launched && (process.platform === 'win32' || (!control && !token)) && canStartService(options.directory)) launch()
+      if (!launched && (process.platform === 'win32' || !control || serviceCrashed(options.directory)) && canStartService(options.directory)) launch()
       await new Promise<void>((resolve) => setTimeout(resolve, STARTUP_RETRY))
     }
   }

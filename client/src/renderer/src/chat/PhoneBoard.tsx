@@ -2,7 +2,7 @@ import { awaitingApproval, checklistDone, checklistProgress } from '../../../sha
 import { AssignSheet, EmployeeAvatar, EmployeeFilter } from '../employees/Employees'
 import { ProviderIcon } from './ProviderIcon'
 import { Tags } from './Tags'
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { BOARD_COLUMNS, columnOf, goalMet, homeOf, SESSION_STATUSES } from '../../../shared/api'
@@ -139,6 +139,25 @@ export function PhoneBoard({
     { readonly id: string; readonly moved: number; readonly scrolled: number; readonly scroll: number; readonly middles: readonly number[]; readonly height: number } | undefined
   >()
   const restGroup = useRef<HTMLDivElement>(null)
+  // Each segment is as wide as its name and count, as UISegmentedControl apportions by content, so no count is cut off; the thumb follows the chosen one.
+  const seg = useRef<HTMLDivElement>(null)
+  const segCounts = BOARD_COLUMNS.map((one) => counts.get(one.id) ?? 0).join(',')
+  useLayoutEffect(() => {
+    const bar = seg.current
+    if (bar === null) return
+    const place = (): void => {
+      const on = bar.querySelector<HTMLElement>('button.on')
+      const thumb = bar.querySelector<HTMLElement>('.phone-seg-thumb')
+      if (on === null || thumb === null || on.offsetWidth === 0) return
+      thumb.style.width = `${String(on.offsetWidth)}px`
+      thumb.style.transform = `translateX(${String(on.offsetLeft - 2)}px)`
+    }
+    place()
+    // Measured again when the board comes into view or the screen turns, since a hidden bar has no widths.
+    const watch = new ResizeObserver(place)
+    watch.observe(bar)
+    return () => watch.disconnect()
+  }, [shown, segCounts, chat.listed])
   const list = useRef<HTMLDivElement>(null)
   const finger = useRef<number | undefined>(undefined)
   const from = drag === undefined ? -1 : rest.findIndex((one) => one.id === drag.id)
@@ -320,7 +339,7 @@ export function PhoneBoard({
           </span>
         </div>
         <div className={`phone-seg-bar${scrolled ? ' scrolled' : ''}`}>
-          <div className="phone-seg phone-board-seg" role="tablist" style={{ '--at': BOARD_COLUMNS.findIndex((one) => one.id === shown), '--count': BOARD_COLUMNS.length } as React.CSSProperties}>
+          <div ref={seg} className="phone-seg phone-board-seg" role="tablist">
             <span className="phone-seg-thumb" />
             {BOARD_COLUMNS.map((one) => (
               <button

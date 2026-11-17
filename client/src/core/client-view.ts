@@ -20,6 +20,8 @@ export const TURNS = 60
 export const EARLIER = 200
 const ITEMS_EVERY = 100
 const LIST_EVERY = 300
+// A new client says what it can within seconds; until then the whole list is held back, since it asks for it itself.
+const LIST_GRACE = 10_000
 const WHOLE_KEPT = 8
 const SCALED_KEPT = 60
 
@@ -80,7 +82,10 @@ interface Changes { readonly items: Map<string, SessionItem>; readonly gone: Set
 export function clientView(source: ViewSource, offered: readonly Can[], send: (event: ViewEvent) => void) {
   // A client that never said what it can is from before this, and is sent everything as it was.
   let can: Set<string> | undefined
+  const born = Date.now()
   const viewed = new Set<string>()
+  // The Manager's conversations: told under their own name to a client that read one, whatever else it has open, with every run of steps whole as the Manager draws them.
+  const managers = new Set<string>()
   let watched = false
   const sentRows = new Map<string, Row[]>()
   let sentList: Map<string, string> | undefined
@@ -117,7 +122,14 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
     return promise
   }
 
-  const fold = (id: string, items: readonly SessionItem[]): SessionItem[] => foldFor(can ?? new Set(), id, items)
+  const fold = (id: string, items: readonly SessionItem[]): SessionItem[] => {
+    const now = can ?? new Set<string>()
+    if (!managers.has(id)) return foldFor(now, id, items)
+    const steps = new Set(now)
+    steps.delete('steps')
+    return foldFor(steps, id, items)
+  }
+  const named = (id: string): string => (managers.has(id) ? 'manager:items' : 'chat:items')
 
   const sendItems = (): void => {
     itemsTimer = undefined
@@ -125,11 +137,11 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
     for (const [id, held] of gathered) {
       if (can === undefined) {
         // A client from before it said what it can, that said which conversation it has open, is sent that one.
-        if (watched && !viewed.has(id)) continue
-        send({ name: 'chat:items', args: [{ id, items: [...held.items.values()], ...(held.gone.size > 0 ? { gone: [...held.gone] } : {}) } satisfies SessionItems] })
+        if (watched && !viewed.has(id) && !managers.has(id)) continue
+        send({ name: named(id), args: [{ id, items: [...held.items.values()], ...(held.gone.size > 0 ? { gone: [...held.gone] } : {}) } satisfies SessionItems] })
         continue
       }
-      if (!viewed.has(id)) continue
+      if (!viewed.has(id) && !managers.has(id)) continue
       const sent = sentRows.get(id)
       const all = whole.get(id)
       // Until the client has read its end, what it is told would land after it; the end it reads has it.
@@ -137,7 +149,7 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
       const now = rowsOf(fold(id, [...all.values()]))
       const { items, gone } = diffRows(sent, now)
       sentRows.set(id, now)
-      if (items.length > 0 || gone.length > 0) send({ name: 'chat:items', args: [{ id, items, ...(gone.length > 0 ? { gone } : {}) } satisfies SessionItems] })
+      if (items.length > 0 || gone.length > 0) send({ name: named(id), args: [{ id, items, ...(gone.length > 0 ? { gone } : {}) } satisfies SessionItems] })
     }
     gathered.clear()
   }
@@ -173,6 +185,7 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
   const sendList = (): void => {
     listTimer = undefined
     if (ended || list === undefined) return
+    if (can === undefined && Date.now() - born < LIST_GRACE) { listTimer = setTimeout(sendList, LIST_EVERY); return }
     if (can?.has('sessionsChanged') !== true || sentList === undefined) {
       send({ name: 'chat:sessions', args: [list] })
       if (can?.has('sessionsChanged') === true) sentList = diffList(new Map(), list).rows
@@ -208,10 +221,11 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
       watched = true
       viewed.clear()
       for (const id of ids) viewed.add(id)
-      for (const id of sentRows.keys()) if (!viewed.has(id)) sentRows.delete(id)
+      for (const id of sentRows.keys()) if (!viewed.has(id) && !managers.has(id)) sentRows.delete(id)
     },
-    'chat:turns': async (id: string, count: number = TURNS): Promise<Piece> => {
+    'chat:turns': async (id: string, count: number = TURNS, manager = false): Promise<Piece> => {
       if (source.allowed !== undefined) await guard(id)
+      if (manager) managers.add(id)
       const folded = fold(id, await wholeOf(id, true))
       viewed.add(id)
       sentRows.set(id, rowsOf(folded))
@@ -250,7 +264,8 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
     },
     /** Takes in what happened; true when the view sends it on itself, as it should go to this client. */
     event: (event: ViewEvent): boolean => {
-      if (event.name === 'chat:items') {
+      if (event.name === 'chat:items' || event.name === 'manager:items') {
+        if (event.name === 'manager:items') managers.add((event.args[0] as SessionItems).id)
         gather(event.args[0] as SessionItems)
         return true
       }

@@ -5,6 +5,7 @@ import type { ChatSession, ClaudeModel, SessionItem, SessionItems, SessionProvid
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE } from '../../shared/manager'
 import type { ManagerApi, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from '../../shared/manager'
 import type { Geckit } from '../../preload'
+import { pieceOf } from '../../shared/pairing'
 import type { PhoneCalls } from './phone-calls'
 import './styles.css'
 import './chat/phone-home.css'
@@ -47,11 +48,11 @@ if (query.has('threads')) {
   const slack: ChatSession = { ...backing, id: 'manager-slack-fixture', title: 'Fix login redirect' }
   const following: ChatSession = { ...worker, id: 'codex:worker-following', title: 'Deploy preview for the login fix', state: 'working', stands: 'Working' }
   view = { ...view, workers: [...view.workers.filter((one) => one.id !== worker.id), worker, following], threads: [
-    { id: 'main', title: 'Manager', labels: {}, session: backing.id, conversation: backing, state: 'idle', at: Date.now() - 600_000, owns: [] },
-    { id: 'slack:C012:1730800000.000100', place: 'Slack', title: '#dev', labels: { channel: 'C012DEV', thread: '1730800000.000100', starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://example.slack.com/archives/C012DEV/p1730800000000100', session: slack.id, conversation: slack, state: 'working', at: Date.now() - 60_000, owns: [worker.id, following.id] },
-    { id: 'telegram:4242', place: 'Telegram', title: 'Alex', labels: { chat: '4242', user: 'Alex' }, from: 'Alex', state: 'asks', at: Date.now() - 300_000, owns: [], ...(query.has('closedThread') ? { closed: 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.' } : {}) },
+    { id: 'main', title: 'Manager', labels: {}, session: backing.id, conversation: backing, provider: 'claude', model: '', state: 'idle', at: Date.now() - 600_000, owns: [] },
+    { id: 'slack:C012:1730800000.000100', place: 'Slack', title: '#dev', labels: { channel: 'C012DEV', thread: '1730800000.000100', starter: 'Maria Ivanova' }, from: 'Maria Ivanova', link: 'https://example.slack.com/archives/C012DEV/p1730800000000100', session: slack.id, conversation: slack, provider: 'claude', model: '', state: 'working', at: Date.now() - 60_000, owns: [worker.id, following.id] },
+    { id: 'telegram:4242', place: 'Telegram', title: 'Alex', labels: { chat: '4242', user: 'Alex' }, from: 'Alex', provider: 'claude', model: '', state: 'asks', at: Date.now() - 300_000, owns: [], ...(query.has('closedThread') ? { closed: 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.' } : {}) },
   ] }
-}
+} else if (view.session !== undefined) view = { ...view, threads: [{ id: 'main', title: 'Manager', labels: {}, session: backing.id, conversation: backing, provider: initialProvider, model: '', state: 'idle', at: Date.now() - 600_000, owns: [] }] }
 let inspectionItems: readonly SessionItem[] = query.has('inspectEmpty') || query.get('state') === 'setup' ? [] : [
   ...(query.has('question') ? [{ kind: 'card', id: 'manager-typed-question', card: { kind: 'question', title: 'Which description should I update?', choices: ['Threads post', 'Instagram caption', 'Type something.', 'Chat about this'] } } satisfies SessionItem] : []),
   { kind: 'mine', id: 'manager-question', text: '[Telegram]\nCheck the latest Apple submission.' },
@@ -71,6 +72,7 @@ const receipts = new Map<ManagerSendRequest['id'], ManagerRequestReceipt>()
 const sends: ManagerSendRequest[] = []
 const answers: { readonly id: string; readonly choice: string }[] = []
 const calls = { send: 0, receipt: 0, answer: 0, answerCard: 0 }
+const conversations = new Map<string, readonly SessionItem[]>()
 let sendAttempt = 0
 let answeringFails = query.has('answerFailure')
 let connected = !query.has('offline')
@@ -93,13 +95,17 @@ const replaceBacking = (provider: SessionProvider, model: string): void => {
   const id = `manager-fixture-${String(Date.now())}`
   backing = { ...backing, id: provider === 'claude' ? id : `${provider}:${id}`, model: model || modelsFor(provider)[0]?.value || '', chosen: model }
 }
-const manager: ManagerApi = {
+const manager: ManagerApi & Required<Pick<ManagerApi, 'turns' | 'before'>> = {
   history: async () => { throw new Error('History actions require the isolated historyActions preview.') },
   voiceMemos: async () => ({ state: 'unsupported', detail: 'Voice Memos connection checks are unavailable in this preview.' }),
-  view: async () => view,
+  view: async () => { if (query.has('slowView')) await new Promise((done) => setTimeout(done, 60_000)); return view },
+  turns: async (id) => { const read = await manager.inspect(id); return { ...read, ...(query.has('inspectPaged') ? pieceOf([...read.items], undefined, 60) : { items: read.items, left: 0 }) } },
+  before: async (id, before) => { await new Promise<void>((resolve) => setTimeout(resolve, 400)); return { id, ...pieceOf([...inspectionItems], before, 200) } },
   inspect: async (id) => {
     const attempt = ++inspectionAttempts
     if (query.has('inspectFailure') && attempt === 1) throw new Error('Fixture history read failed. No provider was contacted.')
+    const own = conversations.get(id)
+    if (own !== undefined) return { id, items: own }
     const snapshot: SessionItems = { id, items: inspectionReplacement ? [{ kind: 'theirs', id: 'replacement-reply', text: 'Replacement Manager session fixture. Previous history is not shown as current.' }] : inspectionItems }
     if (query.has('inspectReplace') && !inspectionReplacement) {
       inspectionReplacement = true
@@ -119,6 +125,16 @@ const manager: ManagerApi = {
     if (!view.config.enabled || view.state === 'paused' || view.state === 'blocked') throw new Error('Manager is unavailable. Open Manager settings to continue.')
     if (query.has('sendFailure') && ++sendAttempt === 1) throw new Error('Synthetic send failure. No request was accepted.')
     sends.push(request)
+    if (request.create !== undefined) {
+      const session = `manager-new-${String(conversations.size + 1)}`
+      const title = request.text.trim().split('\n')[0] ?? 'New conversation'
+      conversations.set(session, [{ kind: 'mine', id: `app-${request.id}`, text: request.text }])
+      const receipt: ManagerRequestReceipt = { id: request.id, session, state: 'sent' }
+      receipts.set(request.id, receipt)
+      update({ threads: [...(view.threads ?? []), { id: `geckit:${session}`, title: title.length > 60 ? `${title.slice(0, 59)}…` : title, provider: view.config.provider, model: request.create.model ?? view.config.chatModel, labels: {}, session, conversation: { ...backing, id: session }, state: 'idle', at: Date.now(), owns: [] }] })
+      setTimeout(() => { const items = [...conversations.get(session) ?? [], { kind: 'theirs' as const, id: `reply-${request.id}`, text: 'New conversation fixture received your request. No provider was contacted.' }]; conversations.set(session, items); for (const callback of managerItemListeners) callback({ id: session, items }) }, 400)
+      return receipt
+    }
     const receipt: ManagerRequestReceipt = { id: request.id, session: backing.id, state: 'queued' }
     receipts.set(request.id, receipt)
     const pending = { ...receipt, text: request.text, at: Date.now(), source: 'desktop' as const }
@@ -181,6 +197,8 @@ const manager: ManagerApi = {
     view = withoutError
     return update({ config, ...(config.enabled ? { session: backing } : {}), state: !config.enabled ? 'off' : view.state === 'paused' ? 'paused' : 'idle' })
   },
+  stop: async () => update({ state: 'idle' }),
+  setModel: async (thread, model) => update({ threads: (view.threads ?? []).map((one) => one.id === thread ? { ...one, model } : one) }),
   pause: async () => update({ state: 'paused' }), resume: async () => update({ state: 'idle', queued: 0 }), retry: async () => { const { error: removed, ...rest } = view; void removed; view = rest; return update({ state: 'idle' }) },
   restart: async () => { replaceBacking(view.config.provider, view.config.chatModel); return update({ session: backing, state: view.state === 'paused' ? 'paused' : 'idle' }) },
   on: (callback) => { managerListeners.add(callback); return () => managerListeners.delete(callback) },
@@ -204,8 +222,9 @@ const chat: Partial<Geckit['chat']> = {
   },
   openFile: noop, stop: noop, openLink: noop, listStatus: async () => [], onListStatus: listen,
 }
-const bridge: Omit<Partial<Geckit>, 'chat' | 'hosts' | 'shortcuts' | 'settings' | 'update' | 'errors' | 'speech'> & { readonly chat: typeof chat; readonly hosts: Partial<Geckit['hosts']>; readonly shortcuts: Partial<Geckit['shortcuts']>; readonly settings: Partial<Geckit['settings']>; readonly update: Partial<Geckit['update']>; readonly errors: Partial<Geckit['errors']> } = {
+const bridge: Omit<Partial<Geckit>, 'chat' | 'hosts' | 'shortcuts' | 'settings' | 'update' | 'errors' | 'speech' | 'channels'> & { readonly chat: typeof chat; readonly hosts: Partial<Geckit['hosts']>; readonly channels: Partial<Geckit['channels']>; readonly shortcuts: Partial<Geckit['shortcuts']>; readonly settings: Partial<Geckit['settings']>; readonly update: Partial<Geckit['update']>; readonly errors: Partial<Geckit['errors']> } = {
   platform: 'darwin', home: '/Users/alex', copy: noop, pathFor: () => '', manager,
+  channels: { view: async () => ({ channels: [], failures: [] }), onShown: listen },
   employees: { list: async () => ({ employees: [] }), save: async () => { throw new Error('Employee editing is outside this Manager fixture.') }, archive: async () => ({ employees: [] }), restore: async () => ({ employees: [] }), retryInstructions: async () => ({ employees: [] }), memory: async () => { throw new Error('No employee memory in this fixture.') }, on: listen },
   chat, hosts: { list: async () => [], prompts: async () => [], onChanged: listen, onPrompt: listen, onAnswered: listen }, shortcuts: { onManage: listen },
   settings: { get: async () => settings, set: async (change) => { settings = { ...settings, ...change }; for (const callback of settingsListeners) callback(settings); return settings }, on: (callback) => { settingsListeners.add(callback); return () => settingsListeners.delete(callback) } },

@@ -23,7 +23,7 @@ The Chat window has one real page, the board, and everything else hangs off its 
 
 | Surface | What appears | When seen |
 |---|---|---|
-| Chat window, new | A sidebar along the left edge, full height, below the window's traffic lights on macOS | Always on desktop |
+| Chat window, new | One bar across the whole window top, holding the traffic lights on macOS, the sidebar button and the place's own tools; the sidebar runs along the left edge below it, the same shown with names or folded to icons | Always on desktop |
 | Sidebar, new | Group one, no header: Tasks, Manager, Questions | Always |
 | Content area, Questions, moved | The general questions kept off the board (today the Questions button and its menu in the board bar): the list on the left, the open question on the right, "Ask a question" with Cmd+Shift+N in the page header | Questions chosen, or Cmd+Shift+N |
 | Sidebar, new | Group two, header "Workspace": Team, Shortcuts, Checklists, Browsers, Secrets | Always |
@@ -39,7 +39,7 @@ The Chat window has one real page, the board, and everything else hangs off its 
 | Content area, Settings, moved | The settings section list as a column on the left of the page, the section on the right; Checklists, Web Browser and Secrets no longer in it; Hosts (SSH) stays | Settings chosen |
 | Board top bar, existing | Loses Shortcuts, Team, Manager, the gecko button, Settings, the computer selector (now the Computers group) and Questions (now a sidebar item); keeps Board/List, Filters, Search and New task | Tasks chosen |
 | Status bar, existing | Loses the Manager portrait: Manager is in the sidebar | Always |
-| Sidebar, moved | Group three, header "Computers", above the footer: the GeckIt computers this one is paired with over GeckIt's own link, the list the board bar's computer menu held. "This computer" first, then each saved computer, then "Connect computer" and, once one is saved, "Manage computers". The computer shown is marked; when it is another computer, a dot says connected (green) or not (grey). In the rail each saved computer is a two-letter monogram of its name, since the same icon twice would not tell them apart. Hosts reached over SSH are not here: they stay in Settings, Hosts | Always on desktop |
+| Sidebar, moved | The computer switch, the first row of the sidebar above Tasks (changed 2026-11-17): the shown computer's name ("This computer", or a saved computer's name, a Mac's network name without `.local` and with spaces for hyphens), an up-and-down chevron, and a grey dot only while that computer is not connected. It has no selection of its own; the place shown is the sidebar's one selection. Pressed, a menu "Computer": This computer (desktop only), each saved computer, the shown one checked, then "Connect Computer…" and, once one is saved, "Manage Computers…". In the rail it is the top icon, a saved computer's two-letter monogram. On the phone it heads the side menu the same way. Hosts reached over SSH are not here: they stay in Settings, Hosts | Always on desktop |
 | Content area, another computer | That computer's own workspace, with its own sidebar, as the computer menu opened it; its Computers group returns to This computer | A saved computer chosen |
 | Board, existing | Unchanged: a card says "2 queued" for messages waiting in it, and a conversation waiting for a slot says "Waiting for a slot" (`conversation-queue.md`) | Tasks chosen |
 | Phone, left menu | The same places in a left menu opened from a button at the top left (section "Phone" below) | Always on the phone |
@@ -158,8 +158,8 @@ stateDiagram-v2
 | Any place | Cmd+, | Settings | The Settings page on the section shown last |
 | Any place | Pressed a saved computer under Computers | That computer's workspace | Tasks first, today's connecting screen, then its board with its own sidebar; the computer marked, with its dot |
 | Another computer's workspace | Pressed "This computer" | This computer's Tasks | The local board; This computer marked |
-| Any place | Pressed "Connect computer" | Connect a computer | Tasks, with today's "Connect a computer" dialog over it |
-| Any place | Pressed "Manage computers" | Saved computers | Tasks, with today's list of saved computers over it |
+| Any place | Pressed "Connect Computer…" in the computer menu | Connect a computer | Tasks, with today's "Connect a computer" dialog over it |
+| Any place | Pressed "Manage Computers…" in the computer menu | Saved computers | Tasks, with today's list of saved computers over it |
 | Tasks | Picked "Checklists" in the New task form | Checklists | The New task form stays as typed; the Checklists page shows. Tasks brings the form back as it was |
 | Any place | Cmd+Shift+N | Questions | The Questions page, ready to ask |
 | Any place | Cmd+N | Tasks | Tasks, with the New task form open |
@@ -228,7 +228,7 @@ flowchart LR
 | Computer items | "This computer", then each computer's saved name |
 | Shown computer, tooltip and accessible name | "This computer, shown"; another computer "Studio Mac, connected" / "Studio Mac, not connected" |
 | Add one | "Connect computer" |
-| Saved list | "Manage computers" |
+| Saved list | "Manage Computers…" |
 | Keyboard shortcuts list, new line | "Show or hide the sidebar's names" |
 
 ## 8. Edge cases
