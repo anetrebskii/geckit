@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { remoteChannel } from '../src/shared/remote/channel'
 import type { RawChannel } from '../src/shared/remote/channel'
@@ -35,7 +35,7 @@ describe('the remote channel', () => {
     left.compress?.(true)
     left.send(big)
     left.send('short')
-    await settle()
+    await vi.waitFor(() => expect(heard).toHaveLength(4), { timeout: 5000 })
     expect(heard).toEqual(['first', big, big, 'short'])
     expect(wire.binary).toBeGreaterThan(0)
     expect(wire.binary).toBeLessThan(big.length / 16_000)
