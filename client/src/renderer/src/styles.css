@@ -8265,8 +8265,14 @@ html.framed .board-head {
   box-shadow: 0 18px 50px rgb(0 0 0 / 35%);
 }
 
+/* The checklist beside it widens the window rather than narrowing the conversation. */
+.talk.over.inspecting {
+  width: min(calc(1200px + var(--talk-panel, 380px)), calc(100% - 80px));
+}
+
 @media (width <= 900px) {
-  .talk.over {
+  .talk.over,
+  .talk.over.inspecting {
     inset: 52px 14px 22px;
     width: calc(100% - 28px);
   }

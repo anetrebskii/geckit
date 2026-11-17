@@ -687,7 +687,7 @@ export function Chat(): React.JSX.Element {
         onDoubleClick={() => chat.change({ boardHeight: DEFAULT_SETTINGS.boardHeight })}
       />
 
-      <div className={`talk${(board && !below) || raised ? ' over' : ''}${raised ? ' raised' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}`} hidden={!raised && board && !overBoard}>
+      <div className={`talk${(board && !below) || raised ? ' over' : ''}${raised ? ' raised' : ''}${chat.session?.state === 'asks' ? ' asks' : ''}${checklistShown && !ON_PHONE && chat.session !== undefined && chat.root !== undefined ? ' inspecting' : ''}`} hidden={!raised && board && !overBoard} style={{ '--talk-panel': `${String(panelWidth)}px` } as React.CSSProperties}>
         {ON_PHONE && overBoard ? <EdgeBack onBack={() => chat.open({ kind: 'new' })} /> : null}
         {ON_PHONE && overBoard && chat.session !== undefined ? <EdgeInfo onPull={setPulled} onOpen={() => setInfoing(true)} /> : null}
         {ON_PHONE && overBoard && host?.state === 'lost' ? (
