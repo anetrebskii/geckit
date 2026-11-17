@@ -888,6 +888,12 @@ export class Sessions {
     void this.#sendGoal(id, next).catch(() => undefined)
   }
 
+  /** An item was ticked before this turn ended and the next was never started: an earlier deferral or a service restart dropped the handoff, which the note still shows. */
+  #handoffLost(id: string): boolean {
+    const note = this.#deps.notes.all()[id]
+    return note?.checklist !== undefined && note.goalMet !== undefined && nextCondition(note.checklist) !== undefined
+  }
+
   /** A person's item is worked as an ordinary turn, not a goal: whether it holds is theirs to say, which no goal check can wait for. */
   async #sendPerson(id: string, item: ChecklistItem): Promise<void> {
     const live = this.#live.get(id)
@@ -4122,6 +4128,7 @@ export class Sessions {
   }
 
   #ended(live: Live, signal: Extract<Signal, { kind: 'ended' }>): void {
+    const handoffLost = this.#handoffLost(live.id)
     clearTimeout(live.stopping)
     live.stopping = undefined
     this.#uncut(live.id)
@@ -4248,7 +4255,7 @@ export class Sessions {
     }
 
     this.#rest(live)
-    if (signal.how === 'done' && live.checklistPending) this.#advance(live.id)
+    if (signal.how === 'done' && (live.checklistPending || handoffLost)) this.#advance(live.id)
   }
 
   /** Where the goal stands once a turn is over, which only the tool's file says, and a line where it ended by itself. */

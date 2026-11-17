@@ -151,6 +151,8 @@ stateDiagram-v2
 
 An edit that has finished settling while the assistant is working keeps its pending handoff. When that turn finishes normally and its queued messages have finished, GeckIt starts the latest current item once. A stopped, failed or limited turn does not start it. Until the handoff, the inspector shows "Next"; after dispatch it shows "Goal". This restores the existing rule that a settled edit follows the conversation when it rests.
 
+The same holds for a tick whose handoff was lost, for example because a service restart dropped the deferred handoff or an earlier version never retried it: an item is ticked, the next item never became the goal, and the saved task still shows that. The next turn that finishes normally starts the next item once.
+
 ## 5. What stays silent
 
 | State | Why it is not shown |

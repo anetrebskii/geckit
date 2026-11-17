@@ -1136,6 +1136,42 @@ describe('a task checklist', () => {
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Docs updated' }))
   })
 
+  it('starts the next item at the end of a later turn when the handoff after a tick was lost', async () => {
+    let read: GoalRead = {}
+    const timers: Array<() => void> = []
+    const built = build({
+      later: (run) => { timers.push(run); return () => undefined },
+      disk: { list: async () => [], read: async () => undefined, has: async () => false, goal: async () => read },
+    })
+    const id = await built.sessions.send({ root: ROOT, mode: 'manual', text: 'do the thing', checklist: { items: [
+      { id: 'a', title: 'Pushed', check: 'none' },
+      { id: 'b', title: 'Deployed to development', check: 'none' },
+    ] } })
+    built.fake.hear({ signals: [{ kind: 'started', session: id, key: false }] })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    for (const run of timers.splice(0)) run()
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Pushed' }))
+    read = { goal: { condition: 'Pushed', checks: 0 } }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.goal?.condition).toBe('Pushed'))
+    await settled()
+    for (const run of timers.splice(0)) run()
+    read = metNote('Pushed')
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(built.rows, id)?.checklist?.items.map((one) => one.state)).toEqual(['passed', undefined]))
+    timers.length = 0
+    await settled()
+    expect(built.fake.sent.some((one) => one.text === '/goal Deployed to development')).toBe(false)
+
+    await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'push to main' })
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Deployed to development' }))
+    read = { goal: { condition: 'Deployed to development', checks: 0 } }
+    built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await settled()
+    expect(built.fake.sent.filter((one) => one.text === '/goal Deployed to development')).toHaveLength(1)
+  })
+
   it('moves the goal to an edited current item once the conversation rests', async () => {
     const built = build({ later: soon })
     const id = await started(built)
