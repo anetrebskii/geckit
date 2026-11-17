@@ -305,7 +305,7 @@ export function Picker({
         {...(tip === undefined ? {} : { title: tip })}
         onClick={(event) => {
           onOpen?.()
-          setAnchor({ rect: event.currentTarget.getBoundingClientRect(), typed: false })
+          setAnchor({ rect: event.currentTarget.getBoundingClientRect(), typed: event.detail === 0 })
         }}
       >
         {label}

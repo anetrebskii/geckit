@@ -8,6 +8,7 @@ import type { TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
 import { signInLink } from './live-view'
+import { addressOf } from '../shared/live-view'
 import { serveSecretFiles } from './secrets-serve'
 import { receiver, type SealedValue } from '../shared/secret-seal'
 import { alive, camoufoxHeadless, camoufoxLibraries, camoufoxSupported, downloading, migrateChromeProfiles, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
@@ -54,6 +55,66 @@ type Center = { readonly x: number; readonly y: number; readonly label: string }
 type Box = Omit<Center, 'label'> & { readonly width: number; readonly height: number; readonly scrollX: number; readonly scrollY: number }
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
 export const VIEW_SIZE = { width: 1280, height: 800 } as const
+/** Where the caret of the focused field is, in the page's own pixels: Firefox leaves it out of screenshots, so the live view draws it. */
+export const CARET_SCRIPT = `(() => {
+  let field = document.activeElement
+  let dx = 0, dy = 0
+  while (field && field.tagName === 'IFRAME') { try { const box = field.getBoundingClientRect(); dx += box.left; dy += box.top; field = field.contentDocument.activeElement } catch { return null } }
+  if (!field) return null
+  const view = field.ownerDocument.defaultView
+  const paint = view.getComputedStyle(field.isContentEditable ? (view.getSelection()?.focusNode?.parentElement ?? field) : field)
+  const color = paint.caretColor === 'auto' || paint.caretColor === '' ? paint.color : paint.caretColor
+  const done = (box, height) => box && box.width + box.height >= 0 && height > 0 ? { x: Math.round(dx + box.left), y: Math.round(dy + box.top), height: Math.round(height), color } : null
+  if (field.isContentEditable) {
+    const pick = view.getSelection()
+    if (!pick || pick.rangeCount === 0 || !pick.isCollapsed) return null
+    const range = pick.getRangeAt(0).cloneRange()
+    let box = range.getClientRects()[0]
+    if (!box) { const mark = document.createElement('span'); mark.textContent = '\u200b'; range.insertNode(mark); box = mark.getBoundingClientRect(); mark.remove() }
+    return done(box, box.height)
+  }
+  const kinds = ['text', 'search', 'url', 'tel', 'email', 'password', 'number']
+  if (!(field.tagName === 'TEXTAREA' || (field.tagName === 'INPUT' && kinds.includes(field.type)))) return null
+  if (field.selectionStart === null || field.selectionStart !== field.selectionEnd) return null
+  const style = view.getComputedStyle(field)
+  const mirror = field.ownerDocument.createElement('div')
+  for (const name of ['boxSizing', 'width', 'height', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle', 'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'textTransform', 'textIndent', 'lineHeight', 'textAlign', 'wordSpacing', 'tabSize']) mirror.style[name] = style[name]
+  const area = field.tagName === 'TEXTAREA'
+  Object.assign(mirror.style, { position: 'absolute', visibility: 'hidden', top: '0', left: '-9999px', overflow: 'hidden', whiteSpace: area ? 'pre-wrap' : 'pre', wordWrap: area ? 'break-word' : 'normal', borderColor: 'transparent' })
+  const value = field.type === 'password' ? '\u2022'.repeat(field.value.length) : field.value
+  mirror.textContent = value.slice(0, field.selectionStart)
+  const mark = field.ownerDocument.createElement('span')
+  mark.textContent = '\u200b'
+  mirror.appendChild(mark)
+  field.ownerDocument.body.appendChild(mirror)
+  const box = field.getBoundingClientRect()
+  const size = parseFloat(style.fontSize) || 16
+  const line = parseFloat(style.lineHeight) || size * 1.2
+  const height = Math.min(line, size * 1.3)
+  const top = area ? (parseFloat(style.borderTopWidth) || 0) + mark.offsetTop - field.scrollTop + (line - height) / 2 : (box.height - height) / 2
+  const left = (parseFloat(style.borderLeftWidth) || 0) + mark.offsetLeft - field.scrollLeft
+  mirror.remove()
+  if (left < 0 || left > box.width) return null
+  return done({ left: box.left + left, top: box.top + top, width: 0, height }, height)
+})()`
+
+/** Where the page's text fields are, so the phone raises its keyboard only for a tap on one. */
+export const FIELDS_SCRIPT = `(() => {
+  const kinds = new Set(['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number'])
+  const found = []
+  const look = (doc, dx, dy) => {
+    for (const one of doc.querySelectorAll('input, textarea, [contenteditable=""], [contenteditable="true"], iframe')) {
+      if (found.length >= 80) return
+      const box = one.getBoundingClientRect()
+      if (box.width <= 0 || box.height <= 0 || box.bottom + dy < 0 || box.top + dy > innerHeight || box.right + dx < 0 || box.left + dx > innerWidth) continue
+      if (one.tagName === 'IFRAME') { try { if (one.contentDocument) look(one.contentDocument, dx + box.left, dy + box.top) } catch {} continue }
+      if (one.disabled || one.readOnly || (one.tagName === 'INPUT' && !kinds.has(one.type))) continue
+      found.push({ x: Math.round(dx + box.left), y: Math.round(dy + box.top), width: Math.round(box.width), height: Math.round(box.height) })
+    }
+  }
+  look(document, 0, 0)
+  return found
+})()`
 
 /** Playwright's launch error ends with its call log; the cause is in the browser's own error lines and exit. */
 export function launchFailure(message: string): string {
@@ -182,6 +243,23 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     }
   }
   let viewPage: Page | undefined
+  const viewOpeners: Page[] = []
+  /** A popup the sign-in page opens, such as Sign in with Google, is shown in its place until it closes, then the page that opened it again. */
+  const follow = (page: Page): void => {
+    page.on('popup', (popup) => {
+      if (viewPage !== page) return
+      viewOpeners.push(page)
+      viewPage = popup
+      follow(popup)
+      void popup.setViewportSize(VIEW_SIZE).then(() => popup.bringToFront()).catch(() => undefined)
+      popup.on('close', () => {
+        if (viewPage !== popup) return
+        let back = viewOpeners.pop()
+        while (back !== undefined && back.isClosed()) back = viewOpeners.pop()
+        viewPage = back
+      })
+    })
+  }
   const viewTarget = (): Page => { if (viewPage === undefined || viewPage.isClosed()) throw new Error('The sign-in tab is closed. Start the sign-in again.'); return viewPage }
   const viewInput = async (input: ViewInput | undefined): Promise<object> => {
     if (input === undefined) throw new Error('Nothing to do.')
@@ -191,7 +269,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     else if (input.type === 'key') await press(page, input.key)
     else if (input.type === 'text') await page.keyboard.insertText(input.text.slice(0, 2000))
     else if (input.type === 'go') {
-      const url = /^[a-z][a-z0-9+.-]*:/i.test(input.url) ? input.url : `https://${input.url}`
+      const url = addressOf(input.url)
       if (!/^https?:\/\//i.test(url)) throw new Error('Open an http or https address.')
       await navigate(page, url)
     } else if (input.type === 'back') await page.goBack({ waitUntil: 'domcontentloaded' })
@@ -257,10 +335,10 @@ export async function testBrowser(name: string, folder: string = browserFolder()
         return evaluate(page, '({width: innerWidth, height: innerHeight, dark: matchMedia("(prefers-color-scheme: dark)").matches, still: matchMedia("(prefers-reduced-motion: reduce)").matches})')
       }
       case 'record': return record(request)
-      case 'view-open': if (viewPage === undefined || viewPage.isClosed()) viewPage = await context.newPage(); await viewPage.setViewportSize(VIEW_SIZE); if (request.url) await navigate(viewPage, request.url); return { ...VIEW_SIZE }
-      case 'view-frame': { const page = viewTarget(); return { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60 })).toString('base64'), ...VIEW_SIZE, url: page.url(), title: await page.title() } satisfies ViewFrame }
+      case 'view-open': if (viewPage === undefined || viewPage.isClosed()) { viewOpeners.length = 0; viewPage = await context.newPage(); follow(viewPage) } await viewPage.setViewportSize(VIEW_SIZE); await viewPage.bringToFront(); if (request.url) await navigate(viewPage, request.url); return { ...VIEW_SIZE }
+      case 'view-frame': { const page = viewTarget(); return { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60 })).toString('base64'), ...(page.viewportSize() ?? VIEW_SIZE), url: page.url(), title: await page.title(), ...await page.evaluate(CARET_SCRIPT).then((caret) => caret === null || caret === undefined ? {} : { caret: caret as NonNullable<ViewFrame['caret']> }, () => ({})), ...await page.evaluate(FIELDS_SCRIPT).then((fields) => ({ fields: fields as NonNullable<ViewFrame['fields']> }), () => ({})) } satisfies ViewFrame }
       case 'view-input': return viewInput(request.input)
-      case 'view-close': { const page = viewPage; viewPage = undefined; if (page !== undefined && !page.isClosed()) await page.close(); return {} }
+      case 'view-close': { const pages = [...viewOpeners, ...(viewPage === undefined ? [] : [viewPage])]; viewPage = undefined; viewOpeners.length = 0; for (const page of pages) if (!page.isClosed()) await page.close(); return {} }
       default: throw new Error(`Unknown command ${request.cmd}.`)
     }
   }

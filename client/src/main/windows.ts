@@ -131,6 +131,8 @@ export function chatWindow(): BrowserWindow {
     show: false,
     title: 'Chat',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // Centred on the bar's 45 px row, with the sidebar button after them as in Slack; places.css keeps the two in step.
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 16 } } : {}),
     backgroundColor: '#ffffff',
     webPreferences: { preload, sandbox: false },
     ...onScreen(getSettings().chatBounds),

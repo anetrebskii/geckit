@@ -36,7 +36,7 @@ export function serveSecrets(host: Host): () => void {
     const needTask = (): string => { if (task === undefined) throw new Error('Secrets are asked for from a conversation; this command runs outside one.'); return task }
     switch (ask.op) {
       case 'request': {
-        const made = await secrets.request({ name: text(ask['name']), kind: text(ask['kind']) as SecretKind, places: list(ask['places']), note: text(ask['note']), ...(text(ask['field']) === '' ? {} : { field: text(ask['field']) }), taskId: needTask(), taskTitle: sessionOf(ask.conversation)?.title ?? '', replace: ask['replace'] === true })
+        const made = await secrets.request({ name: text(ask['name']), kind: text(ask['kind']) as SecretKind, places: list(ask['places']), note: text(ask['note']), user: text(ask['user']), ...(text(ask['field']) === '' ? {} : { field: text(ask['field']) }), taskId: needTask(), taskTitle: sessionOf(ask.conversation)?.title ?? '', replace: ask['replace'] === true })
         if (made.existing !== undefined) return { kept: lifetimeSaid(made.existing) }
         host.notice(sessionOf(ask.conversation)?.id ?? '', `Secret requested: ${text(ask['name'])}`, `${text(ask['kind'])} on ${list(ask['places']).join(', ')}. The link works for 15 minutes.`)
         return { link: made.link, expiresAt: made.expiresAt }

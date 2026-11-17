@@ -1,3 +1,6 @@
+import type { TaskChecklist } from './checklists'
+import type { ShortcutRun } from './shortcut-runs'
+import type { ShortcutDestinationChannel } from './shortcut-destinations'
 import type {
   ViewFrame,
   ViewInput,
@@ -52,13 +55,15 @@ import type {
 import type { GeckoAction, GeckoHanded, GeckoItem, GeckoRing, GeckoView } from './gecko'
 import type { HostAnswer, HostCheck, HostDraft, HostPrompt, HostView, KnownHost } from './hosts'
 import type { Link } from './links'
-import type { SecretMetadata, SecretUse } from './secrets'
+import type { SecretEntry, SecretLifetime, SecretMetadata, SecretUse } from './secrets'
+import type { SealedValue } from './secret-seal'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from './providers'
 import { pieceOf } from './pairing'
 import type { Piece } from './pairing'
 import type { VoiceMemosConnection } from './manager-intake'
 import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from './manager'
-import type { TelegramAction, TelegramApi, TelegramView } from './telegram'
+import type { ChannelScreen, ChannelScreenRequest } from './channel-ui'
+import type { ChannelJson } from './channels'
 import type { ChannelChange, ChannelId, ChannelInspectRequest, ChannelInspectResult, ChannelsView } from './channels'
 import type { EmployeeDraft, EmployeeMemory, EmployeesApi, EmployeesView } from './employees'
 import type { SessionListStatus } from './session-list'
@@ -114,6 +119,7 @@ return {
     receipt: (id: ManagerSendRequest['id']): Promise<ManagerRequestReceipt | undefined> => rendererTransport.invoke('manager:receipt', id),
     answer: (request: ManagerAnswerRequest): Promise<ManagerAnswerResult> => rendererTransport.invoke('manager:answerApp', request),
     answerCard: (session: string, card: string, answer: string): Promise<boolean> => rendererTransport.invoke('manager:answerCard', session, card, answer),
+    unfollow: (thread: string, worker: string): Promise<ManagerView> => rendererTransport.invoke('manager:unfollow', thread, worker),
     onItems: (said: (items: SessionItems) => void): (() => void) => rendererTransport.listen('manager:items', said),
     configure: (change: Partial<ManagerConfig>): Promise<ManagerView> => rendererTransport.invoke('manager:configure', change),
     pause: (): Promise<ManagerView> => rendererTransport.invoke('manager:pause'),
@@ -123,13 +129,10 @@ return {
     on: (said: (view: ManagerView) => void): (() => void) => rendererTransport.listen('manager:view', said),
   } satisfies ManagerApi,
 
-  telegram: {
-    view: (): Promise<TelegramView> => rendererTransport.invoke('telegram:view'),
-    action: (action: TelegramAction): Promise<TelegramView> => rendererTransport.invoke('telegram:action', action),
-    on: (said: (view: TelegramView) => void): (() => void) => rendererTransport.listen('telegram:view', said),
-  } satisfies TelegramApi,
-
   channels: {
+    screen: (id: ChannelId, request: ChannelScreenRequest): Promise<ChannelScreen> => rendererTransport.invoke('channels:screen', id, request),
+    request: (id: ChannelId, request: ChannelJson): Promise<ChannelJson> => rendererTransport.invoke('channels:request', id, request),
+    onShown: (said: (view: { readonly id: ChannelId; readonly value: ChannelJson }) => void): (() => void) => rendererTransport.listen('channels:shown', said),
     view: (): Promise<ChannelsView> => rendererTransport.invoke('channels:view'),
     install: (url: string): Promise<ChannelsView> => rendererTransport.invoke('channels:install', url),
     configure: (id: ChannelId, change: ChannelChange): Promise<ChannelsView> => rendererTransport.invoke('channels:configure', id, change),
@@ -170,6 +173,9 @@ return {
   correct: (request: CorrectRequest): Promise<Answered> => rendererTransport.invoke('correct', request),
 
   shortcuts: {
+    onRun: (said: (run: ShortcutRun) => void): (() => void) => rendererTransport.listen('shortcuts:runChanged', said),
+    destinations: (): Promise<readonly ShortcutDestinationChannel[]> => rendererTransport.invoke('shortcuts:destinations'),
+    runs: (id?: string): Promise<readonly ShortcutRun[]> => rendererTransport.invoke('shortcuts:runs', id),
     save: (draft: ShortcutDraft): Promise<Shortcut> => rendererTransport.invoke('shortcuts:save', draft),
     remove: (id: string): void => rendererTransport.send('shortcuts:remove', id),
     /** Run by hand: the conversation it started, or nothing where it could not. */
@@ -302,6 +308,7 @@ return {
     transport: (id: string, transport: ClaudeTransport): void => rendererTransport.send('chat:transport', id, transport),
     assignEmployee: (id: string, employeeId: string | null): Promise<void> => rendererTransport.invoke('chat:assignEmployee', id, employeeId),
     rename: (id: string, title: string): void => rendererTransport.send('chat:rename', id, title),
+    setChecklist: (id: string, checklist: TaskChecklist, typing?: boolean): void => rendererTransport.send('chat:setChecklist', id, checklist, typing),
     mark: (id: string, status: SessionStatus | undefined): void => rendererTransport.send('chat:mark', id, status ?? null),
     hide: (id: string): void => rendererTransport.send('chat:hide', id),
     /** Keeps a general question for good, or lets it go a day after its last answer again. */
@@ -381,6 +388,9 @@ return {
     history: (name: string): Promise<SecretUse[]> => rendererTransport.invoke('secrets:history', name),
     revoke: (name: string): Promise<number> => rendererTransport.invoke('secrets:revoke', name),
     status: (): Promise<{ readonly store?: string; readonly locked?: boolean; readonly problem?: string }> => rendererTransport.invoke('secrets:status'),
+    prepare: (entry: SecretEntry): Promise<{ readonly requestId: string; readonly brokerKey: string }> => rendererTransport.invoke('secrets:prepare', entry),
+    save: (requestId: string, ciphertext: SealedValue, lifetime: SecretLifetime): Promise<string> => rendererTransport.invoke('secrets:save', requestId, ciphertext, lifetime),
+    update: (entry: SecretEntry): Promise<string> => rendererTransport.invoke('secrets:update', entry),
   },
 
   /** Other computers conversations run on, reached over SSH. */

@@ -21,6 +21,7 @@ type Meta struct {
 	Places         []string `json:"places"`
 	Field          string   `json:"field,omitempty"`
 	Note           string   `json:"note,omitempty"`
+	User           string   `json:"user,omitempty"`
 	Lifetime       string   `json:"lifetime"`
 	ExpiresAt      int64    `json:"expiresAt,omitempty"`
 	TaskID         string   `json:"taskId,omitempty"`
@@ -113,6 +114,9 @@ func (m *Manager) Save(value []byte, meta Meta) (Meta, error) {
 	}
 	if meta.Lifetime == "once" {
 		meta.UsesLeft = 1
+	}
+	if meta.Kind != "website" {
+		meta.User = ""
 	}
 	meta.Cleaned = len(value) >= clean.MinLength
 	meta.GivenToProgram = meta.Kind == "command"
@@ -245,4 +249,57 @@ func (m *Manager) Sweep() int {
 		}
 	}
 	return n
+}
+
+func (m *Manager) Update(name string, places []string, note, user, lifetime string) (Meta, error) {
+	d, ok := Lifetimes[lifetime]
+	if !ok {
+		return Meta{}, refuse("unknown", "Unknown lifetime.")
+	}
+	if len(places) == 0 {
+		return Meta{}, refuse("place", "Say where the secret may be used.")
+	}
+	p, err := m.load(name)
+	if err != nil {
+		return Meta{}, err
+	}
+	defer memguard.WipeBytes(p.Value)
+	if m.expired(p) {
+		return Meta{}, refuse("expired", fmt.Sprintf("There is no secret %s.", name))
+	}
+	if lifetime == "task" && p.TaskID == "" {
+		return Meta{}, refuse("task", "A This task secret needs its task.")
+	}
+	if lifetime != p.Lifetime {
+		p.ExpiresAt, p.UsesLeft = 0, 0
+		if d > 0 {
+			p.ExpiresAt = m.ms() + d.Milliseconds()
+		}
+		if lifetime == "once" {
+			p.UsesLeft = 1
+		}
+	}
+	p.Places, p.Lifetime = places, lifetime
+	b, err := json.Marshal(p)
+	if err != nil {
+		return Meta{}, err
+	}
+	err = m.st.Put(name, b)
+	memguard.WipeBytes(b)
+	if err != nil {
+		return Meta{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	x, ok := m.metas[name]
+	if !ok {
+		return Meta{}, refuse("unknown", fmt.Sprintf("There is no secret %s.", name))
+	}
+	if x.Kind != "website" {
+		user = ""
+	}
+	x.Places, x.Note, x.User, x.Lifetime, x.ExpiresAt, x.UsesLeft = places, note, user, lifetime, p.ExpiresAt, p.UsesLeft
+	m.dirty = true
+	m.record(Record{Name: name, Kind: "update", Result: "ok"})
+	return *x, m.saveMetas()
 }

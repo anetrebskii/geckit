@@ -1,17 +1,20 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { SessionItem, SessionItems, Settings } from '../../../shared/api'
+import type { ChatSession, SessionItem, SessionItems, Settings } from '../../../shared/api'
+import { columnOf } from '../../../shared/api'
 import type { ManagerDecision, ManagerThread, ManagerView } from '../../../shared/manager'
 import { MANAGER_MAIN_THREAD } from '../../../shared/manager'
 import { llmProviderInfo } from '../../../shared/providers'
 import { updatedItems } from '../../../shared/transcript-items'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
+import { Menu } from '../ui/Menu'
 import { Files } from './Prose'
 import { Transcript } from './Transcript'
 import { ManagerHistory } from './ManagerHistory'
 import { ManagerComposer } from './ManagerComposer'
 import { managerAssistant } from './manager-label'
+import { ago } from './time'
 
 interface InspectionRead extends Pick<SessionItems, 'id' | 'items'> { readonly attempt: number }
 const EMPTY: readonly SessionItem[] = []
@@ -105,7 +108,10 @@ const threadName = (thread: ManagerThread): string => thread.id === MANAGER_MAIN
 const threadFrom = (thread: ManagerThread): string => thread.id === MANAGER_MAIN_THREAD ? 'Manager chat' : [thread.place, thread.from].filter((part) => part !== undefined && part !== '').join(' · ')
 
 export function Threads({ threads, picked, workers, onPick }: { readonly threads: readonly ManagerThread[]; readonly picked: string; readonly workers: ManagerView['workers']; readonly onPick: (id: string) => void }): React.JSX.Element {
-  if (ON_PHONE) return <label className="manager-thread-menu"><span>Thread</span><select value={picked} onChange={(event) => onPick(event.target.value)}>{threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.id === MANAGER_MAIN_THREAD ? 'GeckIt' : `${threadFrom(thread)} · ${thread.title}`}</option>)}</select></label>
+  if (ON_PHONE) {
+    const shown = threads.find((thread) => thread.id === picked)
+    return <label className="manager-thread-pick"><span>{shown === undefined ? 'GeckIt' : threadName(shown)}</span><Icon name="down" size={12} /><select aria-label="Thread" value={picked} onChange={(event) => onPick(event.target.value)}>{threads.map((thread) => <option key={thread.id} value={thread.id}>{thread.id === MANAGER_MAIN_THREAD ? 'GeckIt' : `${thread.title} · ${threadFrom(thread)}`}</option>)}</select></label>
+  }
   return <nav className="manager-threads" aria-label="Manager threads">{threads.map((thread) => {
     const working = workers.filter((one) => one.state === 'working' && thread.owns.includes(one.id)).length
     return <button key={thread.id} type="button" className="manager-thread" aria-current={thread.id === picked ? 'true' : undefined} onClick={() => onPick(thread.id)}>
@@ -116,13 +122,54 @@ export function Threads({ threads, picked, workers, onPick }: { readonly threads
   })}</nav>
 }
 
-function Work({ thread, workers, onOpen }: { readonly thread: ManagerThread; readonly workers: ManagerView['workers']; readonly onOpen?: ((id: string) => void) | undefined }): React.JSX.Element | null {
+const workSays = (one: ChatSession): string => [one.status === 'blocked' ? 'Blocked' : columnOf(one.status).title, one.stands].filter((part) => part !== '').join(' · ')
+
+function Tasks({ thread, workers, connected, onOpen }: { readonly thread: ManagerThread; readonly workers: ManagerView['workers']; readonly connected: boolean; readonly onOpen?: ((id: string) => void) | undefined }): React.JSX.Element | null {
+  const [anchor, setAnchor] = useState<DOMRect>()
+  const [now, setNow] = useState(0)
+  const [leaving, setLeaving] = useState<string>()
+  const [error, setError] = useState('')
   const owns = workers.filter((one) => thread.owns.includes(one.id))
   if (owns.length === 0) return null
-  return <details className="manager-work" open><summary>Work <span>{owns.length}</span></summary><div className="manager-work-list">{owns.map((one) => <button key={one.id} type="button" className="manager-work-row" disabled={onOpen === undefined} title="Open this conversation" onClick={() => onOpen?.(one.id)}><span className="manager-thread-dot" data-state={one.state === 'asks' ? 'asks' : one.state === 'failed' ? 'failed' : one.state === 'working' ? 'working' : 'idle'} aria-hidden="true" /><span>{one.title}</span></button>)}</div></details>
+  const close = (): void => { setAnchor(undefined); setError('') }
+  const stop = (id: string): void => {
+    setLeaving(id)
+    setError('')
+    const last = owns.length === 1
+    void window.geckit.manager.unfollow(thread.id, id).then(() => { if (last) document.querySelector<HTMLElement>('.manager-toolbar [aria-label="Details"]')?.focus() }, (caught: Error) => setError(caught.message)).finally(() => setLeaving(undefined))
+  }
+  return <>
+    <button type="button" className="manager-tasks" aria-haspopup="menu" aria-expanded={anchor !== undefined} onClick={(event) => { setNow(Date.now()); setAnchor(event.currentTarget.getBoundingClientRect()) }}>
+      {owns.some((one) => one.state === 'asks') ? <span className="manager-thread-dot" data-state="asks" aria-label="Needs your answer" /> : null}
+      {owns.length} {owns.length === 1 ? 'task' : 'tasks'}<Icon name="down" size={10} />
+    </button>
+    {anchor === undefined ? null : <Menu anchor={anchor} title="Tracked by this thread" autoFocus choices={[]} onPick={noop} onClose={close}>
+      {owns.map((one) => <div key={one.id} className="manager-work-row">
+        <button type="button" className="menu-item manager-work-open" disabled={onOpen === undefined} title={`${one.title}\n${workSays(one)}`} onClick={() => { close(); onOpen?.(one.id) }}>
+          <span className="manager-thread-dot" data-state={one.state === 'asks' ? 'asks' : one.state === 'failed' ? 'failed' : one.state === 'working' ? 'working' : 'idle'} aria-hidden="true" />
+          <span className="manager-work-text">
+            <span className="manager-work-line"><span className="manager-work-title">{one.title}</span><time className="manager-work-at" dateTime={new Date(one.at).toISOString()}>{ago(one.at, now)}</time></span>
+            <span className="manager-work-says">{workSays(one)}</span>
+          </span>
+        </button>
+        <button type="button" className={`icon-button manager-work-stop${leaving === one.id ? ' is-leaving' : ''}`} aria-label={`Stop tracking ${one.title}`} title="Stop tracking" disabled={!connected || leaving !== undefined} onClick={() => stop(one.id)}><Icon name={leaving === one.id ? 'spinner' : 'unlink'} size={14} /></button>
+      </div>)}
+      {error === '' ? null : <p className="manager-work-error" role="alert">{error}</p>}
+    </Menu>}
+  </>
 }
 
-export function ManagerChat({ view: all, settings, connected = true, onSettings, onOpen }: { readonly view: ManagerView; readonly settings: Settings; readonly connected?: boolean; readonly onSettings?: (() => void) | undefined; readonly onOpen?: ((id: string) => void) | undefined }): React.JSX.Element {
+function Details({ rows }: { readonly rows: readonly (readonly [string, string])[] }): React.JSX.Element {
+  const [anchor, setAnchor] = useState<DOMRect>()
+  return <>
+    <button type="button" className="icon-button" aria-label="Details" title="Details" aria-haspopup="dialog" aria-expanded={anchor !== undefined} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}><Icon name="info" /></button>
+    {anchor === undefined ? null : <Menu anchor={anchor} title="Details" choices={[]} onPick={noop} onClose={() => setAnchor(undefined)}>
+      <dl className="manager-details in-menu">{rows.map(([key, value]) => <Fragment key={key}><dt>{key}</dt><dd>{value}</dd></Fragment>)}</dl>
+    </Menu>}
+  </>
+}
+
+export function ManagerChat({ view: all, settings, connected = true, onSettings, onOpen, head, tail }: { readonly view: ManagerView; readonly settings: Settings; readonly connected?: boolean; readonly onSettings?: (() => void) | undefined; readonly onOpen?: ((id: string) => void) | undefined; readonly head?: React.ReactNode; readonly tail?: React.ReactNode }): React.JSX.Element {
   const threads = useMemo(() => threadOrder(all.threads ?? []), [all.threads])
   const [picked, setPicked] = useState(MANAGER_MAIN_THREAD)
   const thread = threads.find((one) => one.id === picked) ?? threads[0]
@@ -135,24 +182,37 @@ export function ManagerChat({ view: all, settings, connected = true, onSettings,
     setError('')
     void (view.state === 'paused' ? window.geckit.manager.resume() : window.geckit.manager.retry()).catch((caught: Error) => setError(caught.message))
   }
-  const facts = [llmProviderInfo(managerAssistant(view), undefined, settings.providerPlugins).name, view.session?.model ?? 'Provider default', view.workers.length === 0 ? undefined : `${String(view.workers.length)} ${view.workers.length === 1 ? 'worker' : 'workers'}`].filter((fact) => fact !== undefined)
-  const chat = <div className="manager-chat">
-    <div className="manager-inspection-info"><ManagerHistory view={view} thread={thread} connected={connected} onDeleted={() => setPicked(MANAGER_MAIN_THREAD)} /><p className="manager-inspection-facts">{facts.join(' · ')}</p>
-      {!view.config.enabled ? <p>{ON_PHONE && view.session === undefined ? 'Set up Manager on your computer, then chat here.' : 'Manager disabled. History is kept.'}</p> : view.state === 'paused' ? <p>Manager paused</p> : view.state === 'blocked' ? <p>Manager unavailable</p> : null}
-      {view.error === undefined ? null : <p className="manager-error" role="status">{view.error}</p>}{error === '' ? null : <p className="manager-error" role="alert">{error}</p>}
-      {view.state !== 'working' || view.session?.retryNotice === undefined ? null : <p className="manager-retry" role="status">{view.session.retryNotice}</p>}
-      {connected && view.config.enabled && (view.state === 'paused' || view.state === 'blocked') ? <button type="button" className="quiet small" onClick={recover}>{view.state === 'paused' ? 'Resume' : 'Try again'}</button> : null}
-      {!view.config.enabled && onSettings !== undefined ? <button type="button" className="quiet small" onClick={onSettings}>Open Manager in Team</button> : null}
-    </div>
-    {!channel ? null : <div className="manager-thread-head">
-      <p>{[thread.place, thread.title, thread.from].filter((part) => part !== undefined && part !== '').join(' · ')}{thread.link === undefined ? null : <button type="button" className="quiet small" onClick={() => { if (thread.link !== undefined) window.geckit.chat.openLink(thread.link) }}>Open in {thread.place ?? 'channel'}</button>}</p>
-      {Object.entries(thread.labels).map(([key, value]) => <p key={key} className="manager-thread-label">{key}: {value}</p>)}
-      {thread.closed === undefined ? null : <p className="manager-error" role="status">{thread.closed}</p>}
+  const details: (readonly [string, string])[] = [['Assistant', llmProviderInfo(managerAssistant(view), undefined, settings.providerPlugins).name], ['Model', view.session?.model ?? 'Default'], ['Managed workers', String(all.workers.length)], ...Object.entries(thread?.labels ?? {})]
+  const notices = [
+    !view.config.enabled ? <p key="off">{ON_PHONE && view.session === undefined ? 'Set up Manager on your computer, then chat here.' : 'Manager disabled. History is kept.'}</p> : view.state === 'paused' ? <p key="paused">Manager paused</p> : view.state === 'blocked' ? <p key="blocked">Manager unavailable</p> : null,
+    view.error === undefined ? null : <p key="error" className="manager-error" role="status">{view.error}</p>,
+    error === '' ? null : <p key="recover" className="manager-error" role="alert">{error}</p>,
+    view.state !== 'working' || view.session?.retryNotice === undefined ? null : <p key="retry" className="manager-retry" role="status">{view.session.retryNotice}</p>,
+  ].filter((one) => one !== null)
+  const recoverable = connected && view.config.enabled && (view.state === 'paused' || view.state === 'blocked')
+  const setUp = !view.config.enabled && onSettings !== undefined
+  const toolbar = <div className="manager-toolbar">
+    {thread === undefined || threads.length === 0 ? head : <div className="manager-toolbar-title">
+      {ON_PHONE ? <Threads threads={threads} picked={thread.id} workers={all.workers} onPick={setPicked} /> : <h3 title={threadName(thread)}>{threadName(thread)}</h3>}
+      <p><span>{threadFrom(thread)}</span><Tasks thread={thread} workers={all.workers} connected={connected} onOpen={onOpen} /></p>
     </div>}
-    {thread === undefined ? null : <Work thread={thread} workers={all.workers} onOpen={onOpen} />}
+    <div className="manager-toolbar-actions">
+      {!channel || thread.link === undefined ? null : <button type="button" className="icon-button" aria-label={`Open in ${thread.place ?? 'channel'}`} title={`Open in ${thread.place ?? 'channel'}`} onClick={() => { if (thread.link !== undefined) window.geckit.chat.openLink(thread.link) }}><Icon name="external" /></button>}
+      <Details rows={details} />
+      <ManagerHistory view={view} thread={thread} connected={connected} onDeleted={() => setPicked(MANAGER_MAIN_THREAD)} />
+      {tail}
+    </div>
+  </div>
+  const chat = <div className="manager-chat">
+    {toolbar}
+    {notices.length === 0 && !recoverable && !setUp ? null : <div className="manager-inspection-info">
+      {notices}
+      {recoverable ? <button type="button" className="quiet small" onClick={recover}>{view.state === 'paused' ? 'Resume' : 'Try again'}</button> : null}
+      {setUp ? <button type="button" className="quiet small" onClick={onSettings}>Open Manager in Team</button> : null}
+    </div>}
     <History key={view.session?.id ?? thread?.id ?? 'manager'} view={view} connected={connected} onReady={historyRead} />
     <ManagerComposer view={view} connected={connected} historyReady={view.session === undefined || (history?.id === view.session.id && history.ready)} closed={!channel ? undefined : thread.closed ?? (thread.session === undefined ? 'This thread has no Manager session yet.' : undefined)} posted={channel ? `Manager's answer is also posted to ${thread.place ?? 'the channel'}.` : undefined} />
   </div>
-  if (threads.length === 0) return chat
-  return <div className="manager-chat-threads"><Threads threads={threads} picked={thread?.id ?? MANAGER_MAIN_THREAD} workers={all.workers} onPick={setPicked} />{chat}</div>
+  if (threads.length === 0 || ON_PHONE) return chat
+  return <div className="manager-chat-threads"><div className="manager-side">{head === undefined ? null : <div className="manager-side-head">{head}</div>}<Threads threads={threads} picked={thread?.id ?? MANAGER_MAIN_THREAD} workers={all.workers} onPick={setPicked} /></div>{chat}</div>
 }

@@ -17,8 +17,8 @@ function lit(step: ManagerStepName, delegation: ManagerConfig['delegation']): re
 
 function say(step: ManagerStepName, delegation: ManagerConfig['delegation']): string {
   if (step === 'assistant') return 'One GeckIt session is the manager. The assistant you pick here is the one that runs it.'
-  if (step === 'delegation') return delegation === 'approve' ? 'Manager asks you before each new worker starts. Answer in the app or Telegram.' : 'Manager starts a worker session for each task and follows it up.'
-  return 'Write in the app or Telegram. Manager gives work to employees and brings back the results.'
+  if (step === 'delegation') return delegation === 'approve' ? 'Manager asks you before each new worker starts. Answer in the app or a connected channel.' : 'Manager starts a worker session for each task and follows it up.'
+  return 'Write in the app or a connected channel. Manager gives work to employees and brings back the results.'
 }
 
 /** What the open step is about, drawn as the three parts it joins and the direction it adds. */

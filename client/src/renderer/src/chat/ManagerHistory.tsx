@@ -58,7 +58,7 @@ export function ManagerHistory({ view, thread, connected, onDeleted }: { readonl
   const [anchor, setAnchor] = useState<DOMRect>()
   const [target, setTarget] = useState<Target>()
   return <>
-    <button ref={opener} type="button" className="quiet small" disabled={!connected || view.appChat !== true} aria-haspopup="menu" aria-expanded={anchor !== undefined} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}>Conversation actions <Icon name="down" size={11} /></button>
+    <button ref={opener} type="button" className="icon-button" aria-label="More" title="More" disabled={!connected || view.appChat !== true} aria-haspopup="menu" aria-expanded={anchor !== undefined} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}><Icon name="more" /></button>
     {anchor === undefined ? null : <Menu anchor={anchor} title="Conversation actions" autoFocus {...(pending === undefined ? {} : { note: 'Finish incomplete cleanup before sending a new message.' })} choices={pending === undefined ? [{ value: 'clear', label: 'Clear history…', danger: true }, { value: 'delete', label: 'Delete conversation…', danger: true }] : [{ value: pending.action, label: pending.action === 'clear' ? 'Retry clearing history…' : 'Retry deleting conversation…', danger: true }]} onClose={() => setAnchor(undefined)} onPick={(action) => {
       setAnchor(undefined)
       if (action !== 'clear' && action !== 'delete') return

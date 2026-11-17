@@ -27,12 +27,15 @@ Only the person pairs: `geckit computers add <code>` and `geckit computers forge
 
 ## The live view
 
-A sheet over the window, the same on the desktop and the phone.
+A sheet over the window that reads as a browser window of its own, the same on the desktop and the phone.
 
-- Title: `Sign in: geckit:<name>`, with the computer's name under it when it is not this one.
-- An address row: Back, the page's address (editable; Return opens it), and Done.
-- The picture of the page, at its own width, scaled to fit; on the phone it pinches to zoom.
-- A Keyboard button on the phone, which raises the keyboard. On the desktop, typing goes to the page once it has been clicked.
+- Toolbar: the profile's letter badge in its colour with `geckit:<name>` (the prefix quieter) and a status line under it, a dot and `Opening on <computer>`, `Live on <computer>` or `Not connected to <computer>` (`this computer` when it is this one). Its tooltip says what crosses: `You see a picture of the browser on <computer>. What you type goes into it directly, and its sign-ins stay there.` Then Back and the address pill; then Done, a word in the accent colour, tinted on hover, as Done is in a Mac sheet.
+- Address pill: away from the keyboard it shows the site in full strength and the rest of the address quieter, with a check for https; focused, it shows the whole address selected. Return opens it. No scheme is needed: a host gets `https://`, this computer and the local network (`localhost`, `127.0.0.1`, `192.168.x.x`, `.local`) get `http://`, and anything else, such as words, is searched on DuckDuckGo.
+- No tabs. A popup or new tab the page opens, such as Sign in with Google, takes the view's place at the same size; when it closes, the view returns to the page that opened it. Done closes them all.
+- The sheet takes the page's shape (1280 by 800) at the largest size the window allows, so the page fills it edge to edge. A thin bar runs along the page's top while opening.
+- Caret: Firefox leaves the caret out of its pictures, so the computer reports where the focused field's caret is with each picture, in the field's own caret colour, and the view draws it blinking while its keys go to the page. Clicking elsewhere, or the view losing the keyboard, hides it.
+- A Keyboard button beside the address on the phone, which raises the keyboard and, while it is up, shows pressed and hides it. A tap on one of the page's text fields raises the keyboard, a tap anywhere else hides it: each frame says where the page's fields are. On the phone the bar uses phone sizes (17 pt names and address, 40 pt buttons), and the page opens filling the screen's height, at the top when zoomed out; pinching or the - and + buttons in the bottom corner zoom it, from the whole page in view to three times the opening size, keeping the point under the fingers or the screen's centre in place. Taps land where they are on the zoomed picture.
+- Under 760 px wide and on the phone the address moves to a second row.
 
 States:
 
@@ -40,7 +43,7 @@ States:
 | --- | --- |
 | Opening | `Opening geckit:<name>…` and a spinner. If Chrome for Testing is still downloading on that computer, the view moves to Failed with the computer's own words, such as `Downloading Chrome for Testing, 40%.`, and Try again. |
 | Live | The picture, refreshed about five times a second and right after each click or key. |
-| Failed | The computer's own message, with Try again and Close. A dropped connection lands here too; the last picture stays, dimmed. |
+| Failed | A card over the stage: `The browser is not showing`, the computer's own message, Close and Try again. A dropped connection lands here too; the last picture stays behind it, dimmed. |
 | Done | The sheet closes. The browser on the computer closes too, unless a conversation is using it; the sign-in is kept either way. |
 
 What crosses to the viewing device is the picture and the person's clicks and keys. Passwords typed go straight into the page on the computer.
@@ -58,8 +61,15 @@ What crosses to the viewing device is the picture and the person's clicks and ke
 
 Settings > Integrations > Test browsers, on whichever computer the window is showing (the toolbar's computer menu chooses):
 
-- Each profile: `geckit:<name>`, its note, open or closed; Sign in, Open, Delete.
+- Each profile: `geckit:<name>`, its note, open or closed; Open browser (the live view when the window shows another computer), Show in GeckIt (the live view, on this computer), Edit, Delete.
 - `New account profile`: name and account, Create. The same naming rule as the command.
+
+On the phone, Settings > Web Browser > Browser profiles shows the host the phone is paired with:
+
+- Rows: the profile's coloured letter, `geckit:<name>`, a dot with Open or Closed and its note. Tapping a row opens the live view of that profile on the host; More holds Open browser, Edit and Delete. Delete asks first: "Its sign-ins and history go with it".
+- The + in the bar, or New profile when the list is empty, opens a full sheet: Name (lowercased, the same rule; a taken name says so and Create stays off) and Description, optional. Edit is the same sheet with Save; the name is locked while its browser is open.
+- Three skeleton rows while the host answers; Camoufox downloading or failing on the host is said under the list.
+- Browser access: the Chrome through GeckIt switch for the host. Off, rows do not open and Open browser is disabled.
 
 ## Out of scope
 

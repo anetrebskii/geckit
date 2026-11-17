@@ -16,18 +16,13 @@ GeckIt asks Discord who the bot is, and seals the token in its secure storage on
 
 1. Press Add to server. Discord asks which server and shows what the bot may do there: View Channels, Send Messages, Read Message History, Create Public Threads, Send Messages in Threads and Attach Files.
 2. Back in GeckIt, press Check again. The servers it joined are listed.
-3. Leave Every channel it can see, or pick Only the channels I choose and tick them.
-4. Answer direct messages is on at first.
+3. The bot always answers in every channel it can see and in direct messages. There are no channel or direct-message switches.
 
 ## 3. Choose who may write
 
 Add the Discord user ID of each person who may use the bot. In Discord, turn on Developer Mode in Settings, Advanced, then right-click a person and choose Copy User ID. GeckIt shows each person's name once it checks the ID with Discord. Nobody else is answered.
 
-## 4. Choose what it may reach
-
-Tick May talk to Manager. Under More are the folders it may start conversations in and the check that refuses messages containing a token or key, on at first.
-
-Press Save and turn on. The row says Connecting, then Connected as the bot's name.
+Only the bot token and allowed-user list are configurable. Manager access, all GeckIt project folders and secret checks are enabled automatically. Press Save channel settings to save the people list. The channel's On switch starts or stops its connection.
 
 ## Using it
 

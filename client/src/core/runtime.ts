@@ -1,11 +1,10 @@
-import { telegramThreadKey } from '../shared/telegram'
+import { ShortcutRuns } from '../main/shortcut-runs'
 import { providerSettings } from '../main/provider-settings'
 import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { ChatSession, Lineup } from '../shared/api'
-import type { ManagerConfig, ManagerDecision, ManagerSpeech, ManagerView } from '../shared/manager'
-import { say } from '../main/manager-voice'
+import type { ManagerConfig, ManagerView } from '../shared/manager'
 import { DEFAULT_MANAGER_INTAKE } from '../shared/manager-intake'
 import { classifyIntake } from '../main/intake-classify'
 import { correct, stopCorrecting } from '../main/correct'
@@ -16,20 +15,17 @@ import { transcribeInstalledFile } from '../main/transcribe'
 import { installedSpeechModel, onSpeechModel, whisperCli } from '../main/whisper'
 import { stopFindModelDownload } from '../cli/find-model'
 import { sweepRecordings } from '../main/recordings'
-import { TelegramAttachments } from '../main/telegram-attachments'
-import { ManagerTelegram } from '../main/telegram'
-import { threadActivity } from '../main/manager-status'
-import type { TelegramVault } from '../main/telegram'
+import { ChannelAttachments } from '../main/channel-attachments'
 import { Shares } from '../main/shares'
-import { managerTelegramStatus } from '../main/telegram-text'
-import { configureManagerAccess } from '../main/telegram-access'
 import type { HostsDeps } from '../main/hosts/hosts'
 import { hostTerminal } from '../main/hosts/route'
 import { Plans } from '../main/plans'
 import { updateInstalledPlugins } from '../main/sessions/plugins'
 import type { PluginUpdateResult } from '../shared/providers'
 import { coreEvents } from './events'
-import { Channels } from '../main/channels/channels'
+import { installedChannels } from '../main/channels/libraries'
+import { Channels, restoreChannelManager } from '../main/channels/channels'
+import type { ChannelVault } from '../main/channels/channels'
 
 import { Employees } from '../main/employees'
 import { keepBrowserBridge, setGuideEmployees, setGuideManager, syncEmployeeGuides } from '../main/guide'
@@ -49,14 +45,8 @@ import { createCoreSessions } from './sessions'
 import { registerProjectBrowserConversation } from '../cli/browser-lifecycle'
 
 export interface RuntimeOptions {
-  readonly vault?: TelegramVault
+  readonly vault?: ChannelVault
   readonly secrets?: HostsDeps['secrets']
-}
-
-/** The paired Telegram chat's status after every Manager view: only the chat's own thread and the workers it tracks, docs/ux/channel-status.md. */
-export function telegramProgress(bridge: Pick<ManagerTelegram, 'view' | 'progress'>, view: ManagerView): void {
-  const chat = bridge.view().account?.chatId
-  bridge.progress(chat === undefined ? undefined : threadActivity(view, `telegram:${bridge.view().account === undefined ? String(chat) : telegramThreadKey(bridge.view().account!)}`))
 }
 
 export async function createRuntime(cliScript: string, options: RuntimeOptions = {}) {
@@ -64,20 +54,18 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
   const events = coreEvents()
   let all: readonly ChatSession[] = []
   let lineup: Lineup = { working: 0, limit: 0 }
-  let telegram: ManagerTelegram | undefined
   let plans: Plans | undefined
   let channels: Channels | undefined
   const hostWasUp = new Map<string, boolean>()
   const shares = new Shares({
-    changed: () => { events.emit('peer:shares', shares.rooms()); if (telegram !== undefined) events.emit('telegram:view', telegram.view()) },
-    ended: (id) => telegram?.linkEnded(id),
+    changed: () => { events.emit('peer:shares', shares.rooms()); channels?.sharesChanged() },
+    ended: (id) => channels?.shareEnded(id),
   })
   const directory = dataDirectory()
   const notes = notesStore()
   let sessions: Sessions | undefined
+  let shortcutRuns: ShortcutRuns | undefined
   let manager: Manager | undefined
-  let managerView: ManagerView | undefined
-  const telegramLanguage = (): ManagerSpeech | undefined => { const chat = telegram?.view().account?.chatId; return chat === undefined ? undefined : managerView?.threads?.find((one) => one.id === `telegram:${telegram?.view().account === undefined ? String(chat) : telegramThreadKey(telegram.view().account!)}`)?.language }
   const routes = createCoreHosts({
     folder: join(directory, 'hosts'),
     executable: process.execPath,
@@ -167,11 +155,11 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     stopSpeech?.()
     stopCorrecting()
     shares.stopAll()
-    telegram?.stop()
     await channels?.dispose()
     manager?.dispose()
     sessions?.dispose()
     routes.forwards.dispose()
+    shortcutRuns?.dispose()
     routes.hosts.dispose()
     await Promise.all([routes.runs.flush(), guideWrites, stopFindModelDownload(), stopCamoufoxPreparation()])
   }
@@ -190,6 +178,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         all = changed
         for (const conversation of changed) registerProjectBrowserConversation(conversation, getSettings().projects)
         manager?.observeSessions(changed)
+        shortcutRuns?.changed()
         events.emit('chat:sessions', changed)
         const settings = getSettings()
         const progressOrder = keptOrder(settings.progressOrder, changed)
@@ -202,105 +191,43 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       plan: (plan) => events.emit('chat:plan', plan),
       notify: (notice) => {
         if (sessions?.isManager(notice.session)) return
-        if (notice.asks && manager?.manages(notice.session) === true && sessions?.pendingForManager(notice.session).length === 0) void (telegram?.view().account?.team === undefined ? telegram?.notify(`${notice.title}\n${notice.body}\n\n${say(telegramLanguage()).reviewWorker}`) : undefined)?.catch(() => undefined)
         events.emit('chat:notice', notice)
       },
     })
     const started = sessions
     const syncInstructions = async (instructions: string): Promise<void> => { setGuideManager(instructions); await syncEmployeeGuides(getSettings()) }
-    const attachments = new TelegramAttachments(directory)
+    const attachments = new ChannelAttachments(directory)
     const sources = new Map<string, VoiceMemosSource>()
-    const coordinator: Manager = new Manager({ directory, threadAllowed: (thread) => !thread.startsWith('telegram:team:') || telegram?.view().account !== undefined && coordinator.threadRecord(thread)?.key === telegramThreadKey(telegram.view().account!) && telegram.view().state === 'connected', syncInstructions, attachments, intake: {
-      pairing: () => { const state = telegram?.view(); return state?.state === 'connected' && state.account !== undefined && state.bot !== undefined ? `${String(state.bot.id)}:${String(state.account.id)}:${String(state.account.chatId)}` : undefined },
+    const registry = await installedChannels()
+    const coordinator: Manager = new Manager({ directory, restoreRecord: (record) => restoreChannelManager(record, registry.loaded), threadAllowed: (thread) => channels?.allowed(thread) ?? coordinator.threadRecord(thread)?.shared !== true, syncInstructions, attachments, intake: {
+      pairing: () => channels?.pairing(),
       adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),
       classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),
-    }, target: (host, args, authorized) => { if (cliTargets === undefined) throw new Error('Host targeting is unavailable. No command ran locally.'); return cliTargets.run(host, args, authorized) }, product: (args) => { if (cliTargets === undefined) throw new Error('Product CLI is unavailable in this host runtime.'); return cliTargets.local(args) }, computers: () => cliTargets?.list() ?? [], providerSettings: (args) => providerSettings(args, { read: getSettings, save: setSettings, inUse: (provider) => started.providerInUse(provider), manager: () => view.config }), employees, channelFile: (thread) => { if (channels === undefined) throw new Error('Channels are not ready yet.'); return channels.fileSender(thread) }, telegramFile: () => telegram === undefined ? (() => { throw new Error('Telegram is not ready yet.') })() : telegram.fileSender(), sessions: started, notes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, cliScript, args, context) })
+    }, target: (host, args, authorized) => { if (cliTargets === undefined) throw new Error('Host targeting is unavailable. No command ran locally.'); return cliTargets.run(host, args, authorized) }, product: (args) => { if (cliTargets === undefined) throw new Error('Product CLI is unavailable in this host runtime.'); return cliTargets.local(args) }, computers: () => cliTargets?.list() ?? [], providerSettings: (args) => providerSettings(args, { read: getSettings, save: setSettings, inUse: (provider) => started.providerInUse(provider), manager: () => view.config }), employees, channelFile: (thread) => { if (channels === undefined) throw new Error('Channels are not ready yet.'); return channels.fileSender(thread) }, ownerThread: (thread) => channels?.owner(thread) === true, fileLimit: (thread) => channels?.fileLimit(thread), sessions: started, notes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, cliScript, args, context) })
     manager = coordinator
     if (coordinator.instructions().trim() !== '') void syncInstructions(coordinator.instructions()).catch((error: Error) => { console.warn('Could not write Manager instructions', error) })
     let view: ManagerView = await coordinator.view()
-    managerView = view
-    const decisions = new Map<string, string>()
-    let deliveryChannel = ''
-    // Telegram talks to Manager in a thread of its own per chat; the paired person still answers GeckIt's own decisions there, as before threads.
-    const telegramThread = (): string => {
-      const account = telegram?.view().account
-      if (account === undefined) throw new Error('Telegram is not connected.')
-      return coordinator.thread({ channel: 'telegram', place: 'Telegram', key: telegramThreadKey(account), title: account.team === undefined ? account.name : `${account.team.title} / ${String(account.team.topicId)}`, from: account.name, labels: { chat: String(account.chatId), user: String(account.id), ...(account.username === undefined ? {} : { username: `@${account.username}` }) } })
-    }
-    const forTelegram = (decision: ManagerDecision): boolean => telegram?.view().account?.team === undefined ? decision.thread === undefined || !decision.thread.startsWith('telegram:team:') && coordinator.threadRecord(decision.thread)?.channel === 'telegram' : decision.thread === telegramThread()
-    const bridge = new ManagerTelegram({
-      directory,
-      shares,
-      attachments,
-      vault: options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } },
-      manager: {
-        thread: telegramThread,
-        accepted: (id) => coordinator.accepted(id),
-        historyBoundary: (chatId) => coordinator.historyBoundaryFor('telegram', telegram?.view().account === undefined ? String(chatId) : telegramThreadKey(telegram.view().account!)),
-        originCurrent: (origin) => { const account = telegram?.view().account; return coordinator.originCurrent(origin) && (account === undefined || account.team === undefined && !origin.thread?.startsWith('telegram:team:') || origin.thread === telegramThread()) },
-        pending: () => coordinator.telegramPending(),
-        typingAllowed: () => coordinator.telegramTypingAllowed(telegramThread()),
-        onPending: (changed) => coordinator.on(() => changed()),
-        submit: (text, id, files, authorized, source) => coordinator.send(text, 'telegram', id, [], authorized, files, [], telegramThread(), source),
-        reply: async (text, id, reference, authorized, files, source) => { await coordinator.reply(text, id, reference, authorized, files, reference.thread ?? telegramThread(), source) },
-        pause: async () => { await coordinator.pause() },
-        resume: async () => { await coordinator.resume() },
-        status: (speech) => telegram?.view().account?.team === undefined ? managerTelegramStatus(view, speech) : (() => { const own = view.threads?.find((one) => one.id === telegramThread()); return `Manager: ${view.state === 'off' || view.state === 'paused' ? view.state : own?.state ?? 'idle'}. ${String(own?.owns.length ?? 0)} team workers. ${String(coordinator.telegramReplies(telegramThread()).filter((one) => one.state === 'uncertain').length)} uncertain replies.${own?.error === undefined ? '' : ` ${own.error}`}` })(),
-        language: telegramLanguage,
-        enabled: () => coordinator.enabled(),
-        decisions: () => view.decisions.filter(forTelegram),
-        hasDecision: (id) => view.decisions.some((item) => item.id === id && forTelegram(item)),
-        answer: async (id, choice, authorized) => {
-          const decision = view.decisions.find((item) => item.id === id && forTelegram(item))
-          if (telegram?.view().account?.team !== undefined && decision === undefined) throw new Error('This decision belongs to another thread.')
-          if (decision === undefined || decision.kind === 'native' || decision.choices.some((item) => item.value === choice)) return (await coordinator.answer(id, choice, authorized)).answer
-          else await coordinator.send(`Reply to Manager decision ${id} (${decision.title}): ${choice}`, 'telegram', undefined, [], authorized, [], [], telegramThread())
-        },
-      },
-      changed: (changed) => {
-        events.emit('telegram:view', changed)
-        const channel = changed.account === undefined || changed.state !== 'connected' ? '' : `${String(changed.bot?.id)}:${telegramThreadKey(changed.account)}`
-        if (channel !== '' && channel !== deliveryChannel) {
-          deliveryChannel = channel
-          decisions.clear()
-          notifyDecisions(view)
-          if (changed.account?.team !== undefined) queueMicrotask(() => { if (bridge.view().state === 'connected') { coordinator.channelReady(telegramThread()); deliverTeamReplies() } })
-        }
-        if (changed.state === 'disconnected') deliveryChannel = ''
-        coordinator.close('telegram', changed.state === 'connected' && changed.account !== undefined ? undefined : 'Telegram is not connected. Connect it in Settings, Channels to reply in this thread.')
-      },
-    })
-    telegram = bridge
-    const deliverTeamReplies = (): void => {
-      if (bridge.view().state !== 'connected' || bridge.view().account?.team === undefined) return
-      void coordinator.deliverTelegramReplies(telegramThread(), (text, origin, beforeSend) => bridge.deliver(text, origin, beforeSend)).catch((error: Error) => console.warn('Could not persist Telegram reply delivery', error.message))
-    }
-    const notifyDecisions = (changed: ManagerView): void => {
-      if (bridge.view().account === undefined) return
-      for (const id of decisions.keys()) if (!changed.decisions.some((item) => item.id === id && forTelegram(item))) {
-        decisions.delete(id)
-        try { bridge.resolve(id) } catch { /* Telegram reports its secure-storage failure in its own view. */ }
-      }
-      for (const decision of changed.decisions.filter(forTelegram)) {
-        const signature = JSON.stringify(decision)
-        if (decisions.get(decision.id) === signature) continue
-        decisions.set(decision.id, signature)
-        void bridge.notify(decision.title, decision).catch(() => undefined)
-      }
-    }
     coordinator.on((changed) => {
       view = changed
-      managerView = changed
       events.emit('manager:view', changed)
-      notifyDecisions(changed)
-      telegramProgress(bridge, changed)
-      deliverTeamReplies()
     })
     coordinator.onItems((items) => events.emit('manager:items', items))
+    // Manager is always on and starts work by itself; an assistant that cannot run it yet leaves it off until one can.
+    if (!view.config.enabled || view.config.delegation !== 'automatic') void coordinator.configure({ enabled: true, delegation: 'automatic' }).catch((error: Error) => { console.warn('Could not turn Manager on', error.message) })
+    const vault = options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } }
     const hub = new Channels({
+      registry,
       directory,
       attachments,
-      vault: options.vault ?? { available: () => false, encrypt: () => { throw new Error('Secure storage is unavailable.') }, decrypt: () => { throw new Error('Secure storage is unavailable.') } },
+      vault,
+      shares,
+      review: (session) => coordinator.manages(session) && started.pendingForManager(session).length === 0,
+      renameNoteKey: (from, to) => {
+        const all = notes.all() as Readonly<Record<string, Readonly<Record<string, unknown>>>>
+        if (!Object.values(all).some((note) => from in note)) return
+        notes.replace(Object.fromEntries(Object.entries(all).map(([id, { [from]: value, ...note }]) => [id, value === undefined || to in note ? note : { ...note, [to]: value }])) as ReturnType<typeof notes.all>)
+      },
+      viewed: (view) => events.emit('channels:shown', view),
       settings: getSettings,
       save: setSettings,
       sessions: started,
@@ -319,8 +246,8 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       changed: (changed) => events.emit('channels:changed', changed),
     })
     channels = hub
-    coordinator.onHistoryChange((change) => bridge.historyChanged(change))
-    coordinator.onResponse((text, origin) => { if (origin.thread !== undefined && !origin.thread.startsWith('telegram:team:') && coordinator.threadRecord(origin.thread)?.channel === 'telegram' && (bridge.view().account?.team === undefined && !origin.thread.startsWith('telegram:team:') || origin.thread === telegramThread())) void bridge.notify(text, undefined, origin).catch(() => undefined) })
+    const runs = new ShortcutRuns({ directory, onRun: (run) => events.emit('shortcuts:runChanged', run), items: (id) => started.items(id), manager: coordinator, conversations: () => all, publish: (destination, input) => hub.publishShortcut(destination, input) })
+    shortcutRuns = runs
 
     setGuideManager(coordinator.instructions())
     keepBrowserBridge(getSettings().chromeBridge)
@@ -345,8 +272,6 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       if (active || stopped) return
       active = true
       sweepRecordings()
-      if (view.config.enabled) void bridge.start()
-      else await bridge.action({ kind: 'disconnect' })
       providerUpdateTimer = setInterval(() => { if (getSettings().providerAutoUpdate) void checkProviderUpdates().catch(() => undefined) }, 24 * 60 * 60_000)
       if (getSettings().providerAutoUpdate) void checkProviderUpdates().catch(() => undefined)
       providerUpdateTimer.unref?.()
@@ -354,6 +279,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       channelUpdateTimer.unref?.()
       void hub.start().then(() => { if (getSettings().channelAutoUpdate) return hub.checkUpdates() }).catch((error: Error) => console.error('Could not start channels:', error.message))
       stopSchedule = startShortcuts({
+        runs,
         manager: (shortcut, request) => coordinator.runShortcut(shortcut, request),
         start: (message) => started.send(message),
         rename: (id, title) => started.rename(id, title),
@@ -361,12 +287,13 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         employee: (id) => employees.list().employees.find((one) => one.id === id),
       }, (look) => { resumeSchedule = look; return () => { resumeSchedule = undefined } })
       await started.resumeQueues()
+      runs.changed()
       const running = Object.entries(routes.runs.all()).map(([id, run]) => ({ id, root: run.root }))
       const hosts = [...new Set(running.map((run) => hostOf(run.root)).filter((id) => id !== undefined))]
       void Promise.allSettled(hosts.map((id) => routes.hosts.ensure(id))).then(() => stopped ? undefined : started.reattach(running)).catch((error: Error) => console.error(error.message))
     }
-    const configureManager = async (change: Partial<ManagerConfig>): Promise<ManagerView> => configureManagerAccess(coordinator, bridge, change)
-    return { cliRegistry: (args: readonly string[]): string => { if (cliTargets === undefined) throw new Error('Computer registry is unavailable on this runtime.'); return cliTargets.registry(args) }, setCliTargets: (targets: NonNullable<typeof cliTargets>) => { cliTargets = targets }, sessions: started, manager: coordinator, telegram: bridge, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, managerView: () => view, refreshManager: async () => { view = await coordinator.view(); events.emit('manager:view', view) }, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), telegram: bridge.view(), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
+    const configureManager = (change: Partial<ManagerConfig>): Promise<ManagerView> => coordinator.configure(change)
+    return { shortcutRuns: runs, cliRegistry: (args: readonly string[]): string => { if (cliTargets === undefined) throw new Error('Computer registry is unavailable on this runtime.'); return cliTargets.registry(args) }, setCliTargets: (targets: NonNullable<typeof cliTargets>) => { cliTargets = targets }, sessions: started, manager: coordinator, channels: hub, shares, plans, employees, routes, notes, hostNamed, start, dispose, wake: () => { resumeSchedule?.(); started.again() }, configureManager, checkProviderUpdates, subscribe: events.subscribe, emit: events.emit, managerView: () => view, refreshManager: async () => { view = await coordinator.view(); events.emit('manager:view', view) }, current: () => ({ sessions: all, lineup, settings: getSettings(), employees: employees.list(), hosts: routes.hosts.views(), prompts: routes.hosts.prompts(), channels: hub.views(), channelPhoneViews: hub.views('phone'), shares: shares.rooms(), working: started.working(), wanting: started.wanting(), watched: started.watched() }) }
   } catch (error) {
     await dispose()
     throw error

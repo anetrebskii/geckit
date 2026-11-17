@@ -3,7 +3,7 @@ import './secret.css'
 
 import { sealFor, keyHashOf } from '../shared/secret-seal'
 
-interface Card { readonly name: string; readonly kind: 'website' | 'http' | 'command' | 'ssh'; readonly places: readonly string[]; readonly note: string; readonly field: string; readonly computer: string; readonly task: string; readonly brokerKey: string }
+interface Card { readonly name: string; readonly kind: 'website' | 'http' | 'command' | 'ssh'; readonly places: readonly string[]; readonly note: string; readonly user?: string; readonly field: string; readonly computer: string; readonly task: string; readonly brokerKey: string }
 
 const KINDS: Record<Card['kind'], string> = { website: 'Website', http: 'HTTP API', command: 'Command', ssh: 'SSH key' }
 const KEEP = [['task', 'This task'], ['once', 'One use'], ['15m', '15 minutes'], ['1h', '1 hour'], ['1d', '1 day'], ['keep', 'Keep']] as const
@@ -62,6 +62,9 @@ function form(card: Card, id: string, linkKey: string): void {
     eye.textContent = showing ? 'Show' : 'Hide'
     eye.setAttribute('aria-pressed', String(!showing))
   })
+  const asksUser = card.kind === 'website' && (card.user ?? '') === ''
+  const user = el('input', { id: 'user', type: 'text', autocomplete: 'username', spellcheck: false, maxLength: 200 })
+  user.setAttribute('autocapitalize', 'off')
   const keep = el('fieldset', { className: 'secret-keep' }, el('legend', {}, 'Keep it'))
   for (const [key, label] of KEEP) {
     const radio = el('input', { type: 'radio', name: 'keep', value: key, checked: key === 'task' })
@@ -77,10 +80,12 @@ function form(card: Card, id: string, linkKey: string): void {
     el('div', { className: 'secret-card' },
       el('div', { className: 'secret-name' }, card.name),
       ...(card.note === '' ? [] : [el('p', { className: 'secret-what' }, card.note)]),
+      ...(card.kind === 'website' && card.user !== undefined && card.user !== '' ? [el('p', {}, `Signs in as ${card.user}`)] : []),
       el('p', {}, card.task === '' ? `Asked by ${card.computer}` : `Asked by ${card.computer} for ${card.task}`),
       el('p', {}, placesOf(card)),
     ),
-    el('label', { htmlFor: 'value' }, 'Value'),
+    ...(asksUser ? [el('label', { htmlFor: 'user' }, 'Username or email'), el('div', { className: 'secret-value' }, user), el('p', { className: 'secret-hint' }, 'Optional. Not secret: the conversation sees it and types it in.')] : []),
+    el('label', { htmlFor: 'value' }, card.kind === 'website' ? 'Password' : 'Value'),
     el('div', { className: 'secret-value' }, value, eye),
     keep,
     error,
@@ -98,7 +103,7 @@ function form(card: Card, id: string, linkKey: string): void {
     void (async () => {
       try {
         const ciphertext = await sealFor(card.brokerKey, value.value, 'geckit-secret-v1')
-        const answer = await call({ action: 'save', id, linkKey, ciphertext, lifetime })
+        const answer = await call({ action: 'save', id, linkKey, ciphertext, lifetime, ...(asksUser && user.value.trim() !== '' ? { user: user.value.trim() } : {}) })
         if (answer.status === 200) { value.value = ''; message(`Saved for ${card.computer}`, 'You can close this page.', true); return }
         refused(answer.json['error'])
       } catch {
@@ -110,7 +115,8 @@ function form(card: Card, id: string, linkKey: string): void {
     })()
   })
   show(shape)
-  value.focus()
+  if (asksUser) user.focus()
+  else value.focus()
 }
 
 async function start(): Promise<void> {

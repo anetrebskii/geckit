@@ -7,6 +7,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { Cell, FullSheet, Page, Switch } from '../chat/PhoneKit'
+import { destinationSummary, ShortcutDelivery, useShortcutRuns } from '../chat/ShortcutDestinations'
 import { projectLabel } from '../chat/project'
 import type { Chat } from '../chat/useChat'
 import { EMPLOYEE_AVATARS } from './avatars'
@@ -27,9 +28,9 @@ const open = (one: ChatSession): boolean => one.status !== 'done' && one.status 
 
 export function PhoneTeam({ chat, back, first, onBack, onEdit }: {
   readonly chat: PhoneTeamChat
-  readonly back: string
+  readonly back?: string
   readonly first?: Shown
-  readonly onBack: () => void
+  readonly onBack?: () => void
   readonly onEdit: (draft: ShortcutDraft) => void
 }): React.JSX.Element {
   const { view, take, loading, loadError, reload } = useEmployees()
@@ -71,7 +72,7 @@ export function PhoneTeam({ chat, back, first, onBack, onEdit }: {
   </>
 
   return <>
-    <Page title="Team" back={back} onBack={onBack} actions={<button type="button" className="phone-icon" aria-label="New employee" onClick={make}><Icon name="plus" size={24} /></button>}>
+    <Page title="Team" {...(back === undefined ? {} : { back })} {...(onBack === undefined ? {} : { onBack })} actions={<button type="button" className="phone-icon" aria-label="New employee" onClick={make}><Icon name="plus" size={24} /></button>}>
       {alert}
       <div className="phone-group phone-team-group"><Cell label={<span className="phone-team-person"><EmployeeAvatar employee={managerFace(chat.settings)} size="medium" /><span><b>Manager</b><small>{managerStand(manager).short}</small></span></span>} value={managerStand(manager).tone === 'working' ? <span className="team-live" title="Working now" /> : undefined} onPress={() => setShown('manager')} /></div>
       {loadError ? <div className="phone-group phone-team-group"><Cell label="Could not load employees." /><Cell label="Retry" accent onPress={reload} /></div> : null}
@@ -143,6 +144,7 @@ function PhoneEmployee({ employee, chat, onBack, onEdit, onChange, take }: {
 }
 
 function PhoneShortcutRows({ shortcuts, chat, archived, onEdit }: { readonly shortcuts: readonly Shortcut[]; readonly chat: PhoneTeamChat; readonly archived: boolean; readonly onEdit: (draft: ShortcutDraft) => void }): React.JSX.Element {
+  const lastRuns = useShortcutRuns(chat.settings)
   const [now, setNow] = useState(Date.now)
   const [running, setRunning] = useState<string>()
   const [failed, setFailed] = useState<string>()
@@ -163,9 +165,11 @@ function PhoneShortcutRows({ shortcuts, chat, archived, onEdit }: { readonly sho
         <button type="button" className="phone-shortcut-text" onClick={() => onEdit(one)}>
           <span className="phone-row-title">{one.name}</span>
           <span className="phone-shortcut-when"><b style={{ color: `var(--project-${String(projectColor(one.root, chat.settings))})` }}>{projectLabel(one.root)}</b> {shortcutWhen(one, chat.settings, now, archived)}</span>
+          {one.destination === undefined ? null : <span className="shortcut-destination-summary">{destinationSummary(one.destination)}</span>}
           {failed === one.id ? <span className="recurrence-error" role="alert">Could not run. Check the assistant and folder.</span> : null}
         </button>
         <div className="phone-shortcut-side">
+          <ShortcutDelivery run={lastRuns.get(one.id)} />
           <button type="button" className="phone-pill" disabled={busy || archived} onClick={() => run(one)}>{running === one.id ? <Icon name="spinner" size={14} /> : shortcutRunning(chat.everyone, one) ? 'Running' : 'Run'}</button>
           {scheduled(one) ? <Switch on={one.on && !archived} disabled={archived} label={`Timetable for ${one.name}`} onChange={(on) => { tap('light'); void saveShortcut(window.geckit.shortcuts, chat.settings, { ...shortcutDraft(one), on }).catch(() => setFailed(one.id)) }} /> : null}
         </div>

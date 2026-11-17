@@ -121,3 +121,44 @@ func TestCleanerUsesActiveValues(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestUpdateKeepsValueAndChangesPlaces(t *testing.T) {
+	m, now := newManager(t)
+	save(t, m, Meta{Name: "k1", Kind: "http", Places: []string{"api.openai.com"}, Lifetime: "keep"}, "value-123456")
+	meta, err := m.Update("k1", []string{"api.example.com"}, "rotated", "alex@example.com", "1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.User != "" {
+		t.Fatalf("an http secret kept a user: %+v", meta)
+	}
+	if meta.Note != "rotated" || meta.ExpiresAt != now.Add(time.Hour).UnixMilli() {
+		t.Fatalf("meta %+v", meta)
+	}
+	l, err := m.Acquire("k1", Use{Kind: "http", Place: "api.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Value.String() != "value-123456" || len(l.Places) != 1 || l.Places[0] != "api.example.com" {
+		t.Fatalf("lease %v %s", l.Places, l.Value.String())
+	}
+	l.Done(true, "")
+	if _, err := m.Update("k1", []string{"api.example.com"}, "", "", "task"); code(err) != "task" {
+		t.Fatalf("task: %v", err)
+	}
+	if _, err := m.Update("nope", []string{"x"}, "", "", "keep"); code(err) != "unknown" {
+		t.Fatalf("missing: %v", err)
+	}
+}
+
+func TestWebsiteSecretKeepsItsUser(t *testing.T) {
+	m, _ := newManager(t)
+	save(t, m, Meta{Name: "gh", Kind: "website", Places: []string{"https://github.com"}, User: "alex@example.com", Lifetime: "keep"}, "password-123")
+	if x, _ := m.Peek("gh"); x.User != "alex@example.com" {
+		t.Fatalf("user %q", x.User)
+	}
+	meta, err := m.Update("gh", []string{"https://github.com"}, "", "alex-work", "keep")
+	if err != nil || meta.User != "alex-work" {
+		t.Fatalf("update %+v %v", meta, err)
+	}
+}

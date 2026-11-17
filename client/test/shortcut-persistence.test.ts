@@ -111,3 +111,30 @@ it('preserves a Manager target and explicit paused timetable through disk reload
     expect(restored.getSettings().managerShortcutsVersion).toBe(1)
   } finally { rmSync(state.folder, { recursive: true, force: true }) }
 })
+
+it('persists stable destinations without retiming an existing random start window and preserves legacy omission', async () => {
+  state.folder = mkdtempSync(join(tmpdir(), 'geckit-destination-save-'))
+  writeFileSync(join(state.folder, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, phoneKey: 'fixture' }))
+  vi.resetModules()
+  try {
+    const store = await import('../src/main/store')
+    const main = await import('../src/main/shortcuts')
+    const legacy = main.saveShortcut({ name: 'Result', root: '/fixture', prompt: 'Inspect', mode: 'auto', on: true, cron: '0 9 * * *', startWindowMinutes: 60 })
+    const destination: NonNullable<ShortcutDraft['destination']> = { channel: 'channel:discord', destination: '123', label: '#general' }
+    const saved = main.saveShortcut({ ...legacy, destination })
+    expect(saved.since).toBe(legacy.since)
+    expect(nextTimed(saved, saved.since)).toBe(nextTimed(legacy, legacy.since))
+    expect(saved.destination).toEqual(destination)
+    expect(store.getSettings().shortcutDestinationsVersion).toBe(1)
+    const disk = readPreferences(state.folder, false) as Settings
+    expect(disk.shortcutDestinationsVersion).toBeUndefined()
+    expect(disk.shortcuts[0]?.destination).toEqual(destination)
+    vi.resetModules()
+    const reloaded = await import('../src/main/store')
+    expect(reloaded.getSettings().shortcuts[0]?.destination).toEqual(destination)
+    const { destination: _destination, ...without } = saved
+    const nextMain = await import('../src/main/shortcuts')
+    expect(nextMain.saveShortcut(without).destination).toBeUndefined()
+    expect(() => nextMain.saveShortcut({ ...saved, destination: { channel: 'channel:discord', destination: '' } })).toThrow('valid result channel')
+  } finally { rmSync(state.folder, { recursive: true, force: true }) }
+})

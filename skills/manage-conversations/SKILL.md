@@ -20,7 +20,7 @@ Select projects from `{{said}} sessions` output. When the project or requested w
 - Inspect `sessions --today`, `sessions --since 2d`, or `show <id> --last 10` for the requested evidence. Read older messages when the last ten do not resolve it.
 - Read `linked` and the linked conversation before starting duplicate work or reporting its state.
 - Request another conversation for independent work the person requested, an out-of-scope defect, or a part that can proceed separately. Keep personal reminders and day-plan records in their designated tools.
-- Send at most 20 requests in one background command. Each request names the project, a title, self-contained instructions with evidence and paths, and an optional observable goal.
+- Send at most 20 requests in one background command. Each request names the project, a title, self-contained instructions with evidence and paths, and an optional observable goal: a goal, a saved checklist by name, or items written for this task. Run `{{said}} checklists list --project <name>` first and use a saved checklist that fits.
 - Requests wait for the person's answer. Report started, queued and refused results separately. Follow a refusal; do not resend it to evade the answer.
 - Before developing GeckIt, run `{{said}} instructions app`; for provider libraries, run `{{said}} instructions providers`.
 

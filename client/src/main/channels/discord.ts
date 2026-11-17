@@ -1,3 +1,4 @@
+import { discordSettings } from './discord-settings'
 import { channelDownload } from './channel-files'
 import type { ChannelFileSender } from './channel-files'
 import { createHash } from 'node:crypto'
@@ -5,22 +6,21 @@ import { createHash } from 'node:crypto'
 import type { ChannelInfo } from '../../shared/channels'
 import type { DiscordInspect, DiscordPerson, DiscordServer, DiscordSetupView } from '../../shared/discord'
 import { DISCORD_INVITE_PERMISSIONS } from '../../shared/discord'
-import type { Channel, ChannelContext, ChannelEvent, ChannelModule, ChannelSetupContext, Json } from './channel-api'
+import type { Channel, ChannelContext, ChannelEvent, ChannelModule, ChannelSetupContext, Json, ManagerQuotedReply, ManagerReplyOrigin } from './channel-api'
 import { StatusMessage } from '../manager-status'
+import { ChannelShortcutError } from './channel-api'
 import { heard as speechOf, localeSpeech, say } from '../manager-voice'
-import { containsSecret } from './slack'
+import { containsSecret } from '../../shared/channel-safety'
 
 export const DISCORD_INFO: ChannelInfo = {
   id: 'channel:discord',
   name: 'Discord',
   icon: 'discord',
   description: 'Each Discord thread or direct message with the bot is a Manager thread of its own.',
+  capabilities: ['conversations', 'manager', 'replies', 'delivery', 'files'],
   fields: [
     { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'From the Discord Developer Portal, Bot, Reset Token. Turn on Message Content Intent there too.' },
     { key: 'allow', label: 'People who may write', type: 'list', required: true, help: 'Discord user IDs. Nobody else is answered.' },
-    { key: 'places', label: 'Channels it answers in', type: 'list', help: 'Channel IDs. Empty means every channel the bot can see.' },
-    { key: 'directMessages', label: 'Answer direct messages', type: 'boolean', default: true },
-    { key: 'checkSecrets', label: 'Refuse messages that contain a token or key', type: 'boolean', default: true },
   ],
 }
 
@@ -89,6 +89,7 @@ export interface DiscordMessage {
   readonly mentions?: readonly DiscordUser[]
   readonly attachments?: readonly DiscordAttachment[]
   readonly webhook_id?: string
+  readonly message_reference?: { readonly message_id?: string }
 }
 
 export interface DiscordInteraction {
@@ -241,7 +242,19 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     void next.finally(() => { if (queues.get(channel) === next) queues.delete(channel) }).catch(() => undefined)
     return next
   }
-  const posted = (channel: string, text: string): Promise<unknown> => { const sent = post(channel, text); sent.catch(warn('discord.post.failed')); return sent }
+  const posted = (channel: string, text: string): Promise<string | undefined> => { const sent = post(channel, text); sent.catch(warn('discord.post.failed')); return sent }
+  // Each answer Manager posted keeps its reply reference, so a person replying to it reaches the work it was about.
+  type Answered = { readonly message: string; readonly reply: ManagerReplyOrigin; readonly text: string }
+  const answered = (): readonly Answered[] => { const value = context.store.get('answers'); return Array.isArray(value) ? value as unknown as readonly Answered[] : [] }
+  const remember = (message: string | undefined, reply: ManagerReplyOrigin | undefined, text: string): void => {
+    if (message === undefined || reply === undefined || context.capabilities?.has('replies') !== true) return
+    context.store.set('answers', [...answered().filter((one) => one.message !== message), { message, reply, text: text.slice(0, 4_000) }].slice(-500) as unknown as Json)
+  }
+  const repliedTo = (message: DiscordMessage): ManagerQuotedReply | undefined => {
+    const id = message.message_reference?.message_id
+    const found = id === undefined || context.capabilities?.has('replies') !== true ? undefined : answered().find((one) => one.message === id)
+    return found === undefined || context.conversations.current?.(found.reply) === false ? undefined : { ...found.reply, text: found.text, message: found.message }
+  }
   // A 👀 reaction on each message Manager took, until it answers or finishes, so the conversation shows the bot is on it.
   const marked = new Map<string, { readonly channel: string; readonly id: string }[]>()
   const react = (method: 'PUT' | 'DELETE', channel: string, id: string): void => { api(method, `/channels/${channel}/messages/${id}/reactions/${encodeURIComponent('👀')}/@me`).catch(warn('discord.reaction.failed')) }
@@ -263,7 +276,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
   const strings = (value: Json | undefined): readonly string[] => Array.isArray(value) ? value.filter((one): one is string => typeof one === 'string') : []
   const pending = (key: string): readonly Pending[] => list(`decisions:${key}`, (one) => typeof one['id'] === 'string' ? { id: one['id'], title: typeof one['title'] === 'string' ? one['title'] : '', values: strings(one['values']), labels: strings(one['labels']) } : undefined)
   const prompts = (key: string): readonly Prompt[] => list(`prompts:${key}`, (one) => typeof one['decision'] === 'string' && typeof one['message'] === 'string' ? { decision: one['decision'], message: one['message'], title: typeof one['title'] === 'string' ? one['title'] : 'Question' } : undefined)
-  const places = (): readonly Place[] => list('threads', (one) => typeof one['key'] === 'string' && typeof one['channel'] === 'string' ? { key: one['key'], channel: one['channel'] } : undefined)
+  const places = (): readonly Place[] => [...new Map(['threads', 'shortcut-threads'].flatMap((storage) => list(storage, (one) => typeof one['key'] === 'string' && typeof one['channel'] === 'string' ? { key: one['key'], channel: one['channel'] } : undefined)).map((one) => [one.key, one] as const)).values()]
   const boundary = (key: string): string | undefined => context.conversations.historyBoundary?.(key)?.revision
   const cutoff = (key: string): string | undefined => { const at = context.conversations.historyBoundary?.(key)?.at; return at === undefined ? undefined : snowflakeOf(at) }
 
@@ -307,14 +320,10 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     let busy = false
     const upload: ChannelFileSender = async (bytes, name, media, caption, _format, _origin, beforeSend) => {
       const validate = async (): Promise<void> => {
-        const info = await channelInfo(channel)
         const recheck = (): void => {
           const writer = context.store.get(`writer:${key}`)
           if (!current() || typeof writer !== 'string' || !allowed(writer)) throw new Error('The originating Discord conversation is no longer authorized.')
-          const direct = key.startsWith('dm:')
-          const chosen = strings(context.config()['places'] as Json | undefined)
-          if (direct && context.config()['directMessages'] === false || !direct && chosen.length > 0 && !chosen.includes(channel) && !(info?.parent_id != null && chosen.includes(info.parent_id))) throw new Error('Discord no longer answers in this conversation.')
-          if (context.config()['checkSecrets'] !== false && (containsSecret(caption) || containsSecret(bytes.toString('utf8')))) throw new Error('The selected file or caption appears to contain a token or key.')
+          if (containsSecret(caption) || containsSecret(bytes.toString('utf8'))) throw new Error('The selected file or caption appears to contain a token or key.')
         }
         recheck()
         await beforeSend?.()
@@ -359,6 +368,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         watching.get(thread)?.(); watching.delete(thread)
         if (event.change.action === 'delete') {
           context.store.set('threads', places().filter((one) => one.key !== key))
+          context.store.set('shortcut-threads', places().filter((one) => one.key !== key))
           context.store.set(`thread:${key}`, undefined)
         } else follow(thread, channel, key)
         return
@@ -369,7 +379,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         else if (busy) { busy = false; unmark(thread) }
         status.update(event.activity)
       }
-      if (event.kind === 'answer') { unmark(thread); status.after(posted(channel, event.text)) }
+      if (event.kind === 'answer') { unmark(thread); const sent = posted(channel, event.text); void sent.then((id) => remember(id, event.reply, event.text), () => undefined); status.after(sent) }
       if (event.kind === 'decisions') {
         context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, title: one.title.slice(0, 1_500), values: one.choices.map((choice) => choice.value), labels: one.choices.map((choice) => choice.label) })))
         const open = new Set(event.decisions.map((one) => one.id))
@@ -413,22 +423,13 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       if (mention || direct) await post(reply, say(speechOf(message.content ?? '')).notAllowed, { message_reference: { message_id: message.id, fail_if_not_exists: false } })
       return
     }
-    if (direct && context.config()['directMessages'] === false) { await post(reply, say(speechOf(message.content ?? '')).dmOff); return }
-    const placesAllowed = strings(context.config()['places'] as Json | undefined)
-    if (!direct && placesAllowed.length > 0 && !placesAllowed.includes(message.channel_id) && !(inThread && info?.parent_id != null && placesAllowed.includes(info.parent_id))) {
-      if (mention) await post(reply, say(speechOf(message.content ?? '')).wrongPlace, { message_reference: { message_id: message.id, fail_if_not_exists: false } })
-      return
-    }
     const text = named(message)
     const attached = files(message)
     if (text === '' && attached === '' && !mention) return
-    if (context.config()['checkSecrets'] !== false && containsSecret(text)) { await post(reply, say(speechOf(text)).secret, { message_reference: { message_id: message.id, fail_if_not_exists: false } }); return }
+    if (containsSecret(text)) { await post(reply, say(speechOf(text)).secret, { message_reference: { message_id: message.id, fail_if_not_exists: false } }); return }
     const from = nameOf(message.author, message.member?.nick)
     const revision = boundary(key)
-    const current = (): boolean => {
-      const chosen = strings(context.config()['places'] as Json | undefined)
-      return revision === boundary(key) && !stopped && allowed(user) && (direct ? context.config()['directMessages'] !== false : chosen.length === 0 || chosen.includes(message.channel_id) || inThread && info?.parent_id != null && chosen.includes(info.parent_id))
-    }
+    const current = (): boolean => revision === boundary(key) && !stopped && allowed(user)
     let channel = reply
     if (!direct && !inThread) {
       const title = (text.split('\n')[0] ?? '').slice(0, 90) || `Request from ${from}`
@@ -465,14 +466,15 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         if (!current() || !allowed(user)) throw new Error('The originating Discord conversation changed.')
         const bytes = await channelDownload(transport.fetch, file.url, (location) => location.hostname === 'cdn.discordapp.com' && location.pathname.startsWith(`/attachments/${message.channel_id}/${file.id}/`), file.size)
         if (!current() || !allowed(user)) throw new Error('The originating Discord conversation changed.')
-        if (context.config()['checkSecrets'] !== false && containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
+        if (containsSecret(bytes.toString('utf8'))) throw new Error('This attachment appears to contain a token or key. Remove the secret before resending.')
         if (context.files === undefined) throw new Error('Attachment storage is unavailable.')
         attachments.push(context.files.keep(thread, bytes, file.filename ?? 'attachment', file.content_type ?? 'application/octet-stream'))
       }
     } catch (error) { await post(channel, `Could not receive this attachment: ${said(error)}. Correct the issue and resend.`); return }
     const request = `${text === '' ? attached === '' ? 'They mentioned you without a message. Read the thread above and help with it.' : 'They sent only files.' : text}${attached}`
     mark(thread, message.channel_id, message.id)
-    await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from, ...(attachments.length === 0 ? {} : { attachments, authorized: current }) })
+    const replyTo = repliedTo(message)
+    await context.conversations.send(thread, { text: before === '' ? request : `${before}\n\nMessage to you:\n${request}`, from, ...(replyTo === undefined ? {} : { replyTo }), ...(attachments.length === 0 ? {} : { attachments, authorized: current }) })
     context.store.set(`seen:${key}`, message.id)
 
   }
@@ -490,12 +492,6 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const channel = interaction.channel_id ?? ''
     const direct = interaction.guild_id === undefined
     const key = direct ? `dm:${channel}` : channel
-    if (direct && context.config()['directMessages'] === false) { await ephemeral(interaction, words.dmOff); return }
-    const placesAllowed = strings(context.config()['places'] as Json | undefined)
-    if (!direct && placesAllowed.length > 0 && !placesAllowed.includes(channel)) {
-      const info = await channelInfo(channel)
-      if (info?.parent_id == null || !placesAllowed.includes(info.parent_id)) { await ephemeral(interaction, words.wrongPlace); return }
-    }
     const [, hash = '', index = ''] = custom.split(':')
     const decision = pending(key).find((one) => buttonId(one.id, Number(index)) === `gk:${hash}:${index}`)
     const prompt = prompts(key).find((one) => one.decision === decision?.id)
@@ -601,7 +597,54 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     })
   }
 
+  const native = async <T>(path: string, body: object, beforeSend?: () => void): Promise<T> => {
+    beforeSend?.()
+    if (stopped) throw new ChannelShortcutError(false, 'Discord is stopped.')
+    let response: Response
+    try { response = await transport.fetch(`${API}${path}`, { method: 'POST', headers: { authorization: `Bot ${token()}`, 'content-type': 'application/json' }, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(30_000) }) } catch { throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: connection failed after submitting a write.') }
+    if (response.status >= 500) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: server failed after submitting a write.')
+    if (!response.ok) throw new ChannelShortcutError(false, `Discord refused result delivery (${String(response.status)}).`)
+    try { return await response.json() as T } catch { throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: no native receipt.') }
+  }
+
   return {
+    destinations: async () => {
+      const guilds: Pick<DiscordServer, 'id' | 'name'>[] = []
+      let after: string | undefined
+      do {
+        const page = await api<readonly Pick<DiscordServer, 'id' | 'name'>[]>('GET', `/users/@me/guilds?limit=200${after === undefined ? '' : `&after=${after}`}`)
+        guilds.push(...page)
+        const next = page.length === 200 ? page.at(-1)?.id : undefined
+        if (next !== undefined && next === after) throw new Error('Discord destination discovery did not advance.')
+        after = next
+      } while (after !== undefined)
+      const choices = await Promise.all(guilds.map(async (guild) => {
+        const available = await api<readonly DiscordChannelInfo[]>('GET', `/guilds/${guild.id}/channels`)
+        return available.filter((one) => one.type === 0).map((one) => ({ id: one.id, name: `${guild.name} / #${one.name ?? one.id} (${one.id})`, model: 'thread' as const }))
+      }))
+      return choices.flat()
+    },
+    publishShortcut: async (input) => {
+      const parent = await api<DiscordChannelInfo>('GET', `/channels/${input.destination}`).catch((error: Error) => { throw new ChannelShortcutError(false, said(error)) })
+      if (parent.id !== input.destination || parent.type !== 0 || parent.guild_id === undefined) throw new ChannelShortcutError(false, 'Discord destination must be an accessible server text channel.')
+      const opened = await native<DiscordChannelInfo>(`/channels/${parent.id}/threads`, { name: (input.title?.trim() || 'Scheduled result').slice(0, 100), type: 11, auto_archive_duration: 1440 }, input.beforeSend)
+      if (typeof opened.id !== 'string' || !/^\d+$/.test(opened.id) || opened.parent_id !== parent.id || opened.type !== 11) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: thread receipt does not match destination.')
+      channels.set(opened.id, opened)
+      const link = `https://discord.com/channels/${parent.guild_id}/${opened.id}`
+      const thread = input.bind({ key: opened.id, ...(input.title === undefined ? {} : { title: input.title }), link, labels: { guild: parent.guild_id, channel: parent.id, thread: opened.id } })
+      context.store.set(`thread:${opened.id}`, true)
+      context.store.set('shortcut-threads', [...places().filter((one) => one.key !== opened.id), { key: opened.id, channel: opened.id }])
+      follow(thread, opened.id, opened.id)
+      let message: string | undefined
+      for (const content of chunks(input.text)) {
+        const receipt = await native<DiscordMessage>(`/channels/${opened.id}/messages`, { content, allowed_mentions: { parse: [] } }, input.beforeSend)
+        if (typeof receipt.id !== 'string' || receipt.id === '' || receipt.channel_id !== opened.id) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: message receipt does not match thread.')
+        message = receipt.id
+        context.store.set(`seen:${opened.id}`, receipt.id)
+      }
+      if (message === undefined) throw new ChannelShortcutError(true, 'Discord result delivery is uncertain: result was empty.')
+      return { destination: parent.id, thread: opened.id, message, link }
+    },
     start: async () => {
       context.status('starting', 'Connecting to Discord')
       const bot = await api<DiscordUser>('GET', '/users/@me')
@@ -635,6 +678,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
 }
 
 export const DISCORD_MODULE: ChannelModule = {
+  settings: discordSettings,
   create: (context) => createDiscord(context),
   inspect: (setup, request) => inspectDiscord(setup, request as DiscordInspect) as unknown as Promise<Json>,
 }

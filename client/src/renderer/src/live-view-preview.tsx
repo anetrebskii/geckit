@@ -29,7 +29,12 @@ const draw = (): string => {
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
 const api: LiveViewApi = {
   start: async () => { await wait(600); if (query.has('fail')) throw new Error('Chrome for Testing did not download: the computer has no network.'); return { width: 1280, height: 800 } },
-  frame: async (): Promise<ViewFrame> => ({ jpeg: draw(), width: 1280, height: 800, url: page.url, title: 'Sign in to GitHub' }),
+  frame: async (): Promise<ViewFrame> => {
+    const jpeg = draw()
+    const ink = canvas.getContext('2d') as CanvasRenderingContext2D
+    ink.font = '15px sans-serif'
+    return { jpeg, width: 1280, height: 800, url: page.url, title: 'Sign in to GitHub', fields: [{ x: 520, y: 292, width: 240, height: 34 }, { x: 520, y: 372, width: 240, height: 34 }], ...(page.focused ? { caret: { x: Math.round(528 + ink.measureText(page.typed).width), y: 299, height: 20, color: 'rgb(31, 35, 40)' } } : {}) }
+  },
   input: async (_name: string, input: ViewInput) => {
     if (input.type === 'click') page.focused = input.x > 520 && input.x < 760 && input.y > 292 && input.y < 326
     if (input.type === 'text' && page.focused) page.typed += input.text

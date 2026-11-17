@@ -1,4 +1,4 @@
-import { telegramText } from './telegram-text'
+import { plainText } from './channel-text'
 import type { SessionItem } from '../shared/api'
 import { fill, PROMPTS } from '../prompts/prompts'
 
@@ -22,7 +22,7 @@ export function managerCommands(text: string): ManagerCommand[] {
 }
 
 export function managerMessage(text: string): string {
-  return telegramText(text.replace(/```(?:geckit|status)[^\S\n]*\n[\s\S]*?(?:```|$)/g, ''))
+  return plainText(text.replace(/```(?:geckit|status)[^\S\n]*\n[\s\S]*?(?:```|$)/g, ''))
 }
 
 /** The last status line Manager wrote for the people in a thread, from a finished fenced status block. */

@@ -9,9 +9,10 @@ export interface SecretsAnswer { readonly ok: boolean; readonly said: string; re
 
 export const SECRETS_HELP = `geckit secrets: keys and passwords a conversation uses without ever seeing them.
 
-  request <name> --use website|http|command|ssh --for <places> --note "<what for>" [--field "<element>"] [--replace]
+  request <name> --use website|http|command|ssh --for <places> --note "<what for>" [--user <account>] [--field "<element>"] [--replace]
                                 sends the person a link to enter the secret; give the link to them as it is printed.
                                 places: website https://github.com; http api.openai.com or *.stripe.com; command psql; ssh github.com
+                                --user: for website, the username or email it signs in as; not secret, shown in list
   wait <name>                   waits up to 15 minutes until the person has saved it
   list                          the secrets here: use, places, how long each is kept, last use. Never a value.
   show <name>                   one secret and its last 20 uses
@@ -54,19 +55,19 @@ const refused = (error: string | undefined): SecretsAnswer => {
   return { ok: false, said, code: /not reachable|not available|unavailable|locked|did not answer/i.test(said) ? 3 : /expired|not allowed|is for |not a |Name the|Say where/i.test(said) ? 2 : 1 }
 }
 
-interface Listed { readonly name: string; readonly kind: string; readonly places: readonly string[]; readonly lifetime: string; readonly kept: string; readonly lastUsedAt?: number; readonly cleaned: boolean }
-const line = (one: Listed): string => `${one.name}  ${one.kind}  ${one.places.join(', ')}  ${one.kept}${one.lastUsedAt === undefined ? '' : `  used ${new Date(one.lastUsedAt).toLocaleString()}`}${one.kind === 'command' ? '  given to a program' : ''}${one.cleaned ? '' : '  not cleaned from output'}`
+interface Listed { readonly name: string; readonly kind: string; readonly places: readonly string[]; readonly user?: string; readonly lifetime: string; readonly kept: string; readonly lastUsedAt?: number; readonly cleaned: boolean }
+const line = (one: Listed): string => `${one.name}  ${one.kind}  ${one.places.join(', ')}${one.user === undefined || one.user === '' ? '' : `  as ${one.user}`}  ${one.kept}${one.lastUsedAt === undefined ? '' : `  used ${new Date(one.lastUsedAt).toLocaleString()}`}${one.kind === 'command' ? '  given to a program' : ''}${one.cleaned ? '' : '  not cleaned from output'}`
 
 export async function secrets(rest: readonly string[]): Promise<SecretsAnswer> {
   const [what, ...more] = rest
-  const words = more.filter((one, at) => !one.startsWith('--') && !['--use', '--for', '--note', '--field', '--secret', '--env'].includes(more[at - 1] ?? ''))
+  const words = more.filter((one, at) => !one.startsWith('--') && !['--use', '--for', '--note', '--user', '--field', '--secret', '--env'].includes(more[at - 1] ?? ''))
   switch (what) {
     case 'request': {
       const name = words[0]
       const kind = option(more, '--use')
       const places = (option(more, '--for') ?? '').split(',').map((one) => one.trim()).filter((one) => one !== '')
       if (name === undefined || kind === undefined) return { ok: false, said: 'Use geckit secrets request <name> --use website|http|command|ssh --for <places> --note "<what for>".', code: 1 }
-      const told = await askSecrets({ op: 'request', name, kind, places, note: option(more, '--note') ?? '', ...(option(more, '--field') === undefined ? {} : { field: option(more, '--field') }), replace: more.includes('--replace') })
+      const told = await askSecrets({ op: 'request', name, kind, places, note: option(more, '--note') ?? '', user: option(more, '--user') ?? '', ...(option(more, '--field') === undefined ? {} : { field: option(more, '--field') }), replace: more.includes('--replace') })
       if (!told.ok) return refused(told.error)
       if (typeof told['link'] !== 'string') return { ok: true, said: `${name} is already saved (${String(told['kept'])}); nothing was sent. Add --replace to send a link anyway.` }
       const minutes = Math.max(1, Math.round((Number(told['expiresAt']) - Date.now()) / 60_000))

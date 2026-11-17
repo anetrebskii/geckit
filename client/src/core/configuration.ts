@@ -41,6 +41,7 @@ function sections(settings: Partial<Settings>): Configuration {
     ...(settings.hosts === undefined ? {} : { hosts: settings.hosts }),
     ...(settings.shortcuts === undefined ? {} : { shortcuts: settings.shortcuts.map(({ since: _since, lastRun: _lastRun, lastSession: _lastSession, ...shortcut }) => shortcut) }),
     ...(settings.phrases === undefined ? {} : { phrases: settings.phrases }),
+    ...(settings.checklists === undefined ? {} : { checklists: settings.checklists }),
   }
 }
 
@@ -58,7 +59,7 @@ function validate(config: Configuration): void {
     const value = config[section]
     if (value !== undefined && !object(value)) throw new Error(ERROR)
   }
-  for (const section of ['hosts', 'shortcuts', 'phrases'] as const) if (config[section] !== undefined && !Array.isArray(config[section])) throw new Error(ERROR)
+  for (const section of ['hosts', 'shortcuts', 'phrases', 'checklists'] as const) if (config[section] !== undefined && !Array.isArray(config[section])) throw new Error(ERROR)
   if (config.manager !== undefined && !object(config.manager)) throw new Error(ERROR)
   if (config.employees !== undefined) validateEmployees(config.employees)
 }
@@ -132,6 +133,7 @@ export function readPreferences(directory: string, migrate = true): Partial<Sett
     ...local,
     ...(found.hosts === undefined ? {} : { hosts: found.hosts }),
     ...(found.phrases === undefined ? {} : { phrases: found.phrases }),
+    ...(found.checklists === undefined ? {} : { checklists: found.checklists }),
     ...(found.shortcuts === undefined ? {} : { shortcuts: found.shortcuts.map((shortcut) => ({ ...shortcut, ...state.shortcutHistory?.find((one) => one.id === shortcut.id), since: state.shortcutHistory?.find((one) => one.id === shortcut.id)?.since ?? Date.now() })) }),
   }
 }
