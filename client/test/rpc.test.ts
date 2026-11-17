@@ -5,12 +5,13 @@ import type { Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
-import { serialize } from 'node:v8'
+import { deserialize, serialize } from 'node:v8'
 
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { connectRpc, listenRpc, rpcEndpoint } from '../src/core/rpc'
 import type { RpcEvent } from '../src/core/rpc'
+import type { SessionItems } from '../src/shared/api'
 
 interface Methods {
   echo(value: { bytes: Buffer; view: Uint8Array; absent: undefined }): Promise<{ bytes: Buffer; view: Uint8Array; absent: undefined }>
@@ -192,4 +193,95 @@ it('rejects malformed and oversized frames and accepts split frames on another c
   expect(await client.call('increment')).toBe(1)
   client.close()
   await client.closed
+})
+
+it('delivers the final large streamed message without disconnecting a slow reader', async () => {
+  const path = await directory()
+  interface StreamingEvents { 'chat:items'(value: { id: string; items: { id: string; kind: string; text: string }[] }): void }
+  const server = listenRpc<Methods, StreamingEvents>(path, 'secret', methods())
+  cleanup.push(server.close)
+  await server.ready
+  const socket = connect(rpcEndpoint(path))
+  socket.on('error', () => undefined)
+  cleanup.push(async () => { socket.destroy() })
+  await once(socket, 'connect')
+  send(socket, { kind: 'hello', version: 1, token: 'secret' })
+  await once(socket, 'data')
+  socket.pause()
+  const messages: { kind: string; args?: { items: { text: string }[] }[]; value?: number }[] = []
+  let rest: Buffer = Buffer.alloc(0)
+  socket.on('data', (part: Buffer) => {
+    rest = Buffer.concat([rest, part])
+    while (rest.length >= 4 && rest.length >= rest.readUInt32BE() + 4) {
+      const length = rest.readUInt32BE()
+      messages.push(deserialize(rest.subarray(4, length + 4)) as typeof messages[number])
+      rest = rest.subarray(length + 4)
+    }
+  })
+  const text = 'x'.repeat(100_000)
+  for (let i = 0; i < 1000; i++) server.broadcast('chat:items', { id: 'session-a', items: [{ id: 'message-a', kind: 'theirs', text: `${text}${i}` }] })
+  // The reply must stay behind the final snapshot and remain callable on the same connection.
+  send(socket, { kind: 'request', id: 1, name: 'increment', args: [] })
+  socket.resume()
+  await expect.poll(() => messages.some((message) => message.kind === 'result' && message.value === 1)).toBe(true)
+  expect(socket.destroyed).toBe(false)
+  const events = messages.filter((message) => message.kind === 'event')
+  expect(events.length).toBeLessThan(10)
+  expect(events.at(-1)?.args?.[0]?.items[0]?.text).toBe(`${text}999`)
+  expect(messages.at(-1)).toMatchObject({ kind: 'result', value: 1 })
+})
+
+it('preserves deletions, permission cards, independent sessions and payload snapshots while coalescing', async () => {
+  const path = await directory()
+  interface Updates {
+    'chat:items'(value: { id: string; items: { id: string; kind: string; text: string }[]; gone?: string[] }): void
+  }
+  const server = listenRpc<Methods, Updates>(path, 'secret', methods())
+  cleanup.push(server.close)
+  await server.ready
+  const events: RpcEvent<Updates>[] = []
+  const client = await connectRpc<Methods, Updates>(path, 'secret', (event) => events.push(event))
+  cleanup.push(async () => { client.close(); await client.closed })
+  const update = (session: string, text: string): Parameters<Updates['chat:items']>[0] => ({ id: session, items: [{ id: 'same-message-id', kind: 'thought', text }] })
+  // Large enough to fill the socket buffer on every platform, so the following snapshots queue behind it.
+  const large = 'x'.repeat(8_000_000)
+  server.broadcast('chat:items', update('a', large))
+  server.broadcast('chat:items', update('a', 'old'))
+  server.broadcast('chat:items', update('b', 'other session'))
+  server.broadcast('chat:items', update('a', 'before deletion'))
+  server.broadcast('chat:items', { id: 'a', items: [], gone: ['same-message-id'] })
+  server.broadcast('chat:items', { id: 'a', items: [{ id: 'permission', kind: 'card', text: 'ask' }] })
+  server.broadcast('chat:items', { id: 'a', items: [{ id: 'permission', kind: 'card', text: 'answered' }] })
+  const mutable = update('a', 'after deletion')
+  server.broadcast('chat:items', mutable)
+  mutable.items[0]!.text = 'mutated after broadcast'
+  await expect.poll(() => events.length).toBe(7)
+  expect(events.map((event) => event.args[0])).toEqual([
+    update('a', large), update('a', 'before deletion'), update('b', 'other session'),
+    { id: 'a', items: [], gone: ['same-message-id'] },
+    { id: 'a', items: [{ id: 'permission', kind: 'card', text: 'ask' }] },
+    { id: 'a', items: [{ id: 'permission', kind: 'card', text: 'answered' }] },
+    update('a', 'after deletion'),
+  ])
+  expect(await client.call('increment')).toBe(1)
+})
+
+it.each(['chat:items', 'manager:items'] as const)('keeps the latest item when its display kind changes on %s', async (channel) => {
+  const path = await directory()
+  interface Updates {
+    'chat:items'(value: SessionItems): void
+    'manager:items'(value: SessionItems): void
+  }
+  const server = listenRpc<Methods, Updates>(path, 'secret', methods())
+  cleanup.push(server.close)
+  await server.ready
+  const events: RpcEvent<Updates>[] = []
+  const client = await connectRpc<Methods, Updates>(path, 'secret', (event) => events.push(event))
+  cleanup.push(async () => { client.close(); await client.closed })
+  server.broadcast(channel, { id: 'session', items: [{ id: 'item', kind: 'theirs', text: 'x'.repeat(100_000) }] })
+  server.broadcast(channel, { id: 'session', items: [{ id: 'item', kind: 'thought', text: 'old' }] })
+  server.broadcast(channel, { id: 'session', items: [{ id: 'item', kind: 'did', what: 'intermediate' }] })
+  server.broadcast(channel, { id: 'session', items: [{ id: 'item', kind: 'thought', text: 'latest' }] })
+  await expect.poll(() => events.at(-1)?.args[0].items[0]).toEqual({ id: 'item', kind: 'thought', text: 'latest' })
+  expect(await client.call('increment')).toBe(1)
 })

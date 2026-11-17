@@ -6,10 +6,12 @@ import { join } from 'node:path'
 import { deserialize, serialize } from 'node:v8'
 
 import { askedEndpoint } from '../cli/endpoint'
+import { RpcOutput } from './rpc-output'
 
 const VERSION = 1
 const MAX_FRAME = 64 * 1024 * 1024
 const HANDSHAKE_TIMEOUT = 5_000
+const outputs = new WeakMap<Socket, RpcOutput>()
 
 type MethodsOf<T> = { [K in keyof T]: (...args: never[]) => void }
 type Value = object | string | number | boolean | bigint | null | undefined
@@ -62,14 +64,31 @@ function frame(bytes: Buffer): Frame {
   throw new Error('Invalid GeckIt service frame.')
 }
 
+function updateKey(value: Frame): string | undefined {
+  if (value.kind !== 'event' || (value.name !== 'chat:items' && value.name !== 'manager:items') || value.args.length !== 1) return undefined
+  const update = value.args[0]
+  if (update === null || typeof update !== 'object' || !('id' in update) || typeof update.id !== 'string' || !('items' in update) || !Array.isArray(update.items) || update.items.length !== 1) return undefined
+  if ('gone' in update && update.gone !== undefined && (!Array.isArray(update.gone) || update.gone.length > 0)) return undefined
+  const item: unknown = update.items[0]
+  if (item === null || typeof item !== 'object' || !('id' in item) || typeof item.id !== 'string' || !('kind' in item) || typeof item.kind !== 'string' || !['theirs', 'thought', 'did'].includes(item.kind)) return undefined
+  return JSON.stringify([value.name, update.id, item.id])
+}
+
 function send(socket: Socket, value: Frame, flushed?: () => void): boolean {
   if (socket.destroyed || !socket.writable) return false
   try {
     const body = serialize(value)
-    if (body.length > MAX_FRAME || socket.writableLength > MAX_FRAME) throw new Error('GeckIt service frame is too large.')
+    if (body.length > MAX_FRAME) throw new Error('GeckIt service frame is too large.')
     const size = Buffer.allocUnsafe(4)
     size.writeUInt32BE(body.length)
-    socket.write(Buffer.concat([size, body]), (error) => { if (error === undefined || error === null) flushed?.() })
+    let output = outputs.get(socket)
+    if (output === undefined) {
+      output = new RpcOutput(socket, (error) => {
+        socket.destroy(error instanceof Error ? error : new Error(String(error)))
+      })
+      outputs.set(socket, output)
+    }
+    output.send(Buffer.concat([size, body]), updateKey(value), flushed)
     return true
   } catch (error) {
     socket.destroy(error instanceof Error ? error : new Error(String(error)))

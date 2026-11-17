@@ -106,7 +106,7 @@ jobs:
           path: client/llama/bin/${{ matrix.os }}-${{ matrix.arch }}
           if-no-files-found: error
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: broker/go.mod
           cache-dependency-path: broker/go.sum
