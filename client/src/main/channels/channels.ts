@@ -185,12 +185,12 @@ export class Channels {
   }
 
   async shortcutDestinations(): Promise<readonly ShortcutDestinationChannel[]> {
-    return Promise.all(this.#deps.settings().channels.map(async (setting) => {
+    return Promise.all(this.#deps.settings().channels.filter((setting) => setting.enabled).map(async (setting) => {
       const running = this.#running.get(setting.info.id)
       const instance = running?.instance
       const supported = instance?.destinations !== undefined && instance.publishShortcut !== undefined
       const base = { id: setting.info.id, name: setting.info.name, supported, destinations: [] }
-      if (!setting.enabled || running?.state !== 'connected' || !this.#deps.manager.enabled()) return { ...base, error: 'Channel or Manager is unavailable.' }
+      if (running?.state !== 'connected' || !this.#deps.manager.enabled()) return { ...base, error: 'Channel or Manager is unavailable.' }
       if (instance?.destinations === undefined || instance.publishShortcut === undefined) return base
       try {
         const destinations = await instance.destinations()

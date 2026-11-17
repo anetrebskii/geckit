@@ -61,7 +61,7 @@ it('generic hub validates available destinations, scoped binding, receipts and c
     await channels.configure(info.id, { enabled: false })
     releaseDiscovery?.()
     expect((await discovering).find((one) => one.id === info.id)).toMatchObject({ destinations: [], error: 'Channel connection changed.' })
-    expect((await channels.shortcutDestinations()).find((one) => one.id === info.id)).toEqual({ id: info.id, name: info.name, supported: false, destinations: [], error: 'Channel or Manager is unavailable.' })
+    expect((await channels.shortcutDestinations()).find((one) => one.id === info.id)).toBeUndefined()
     await expect(channels.publishShortcut({ channel: info.id, destination: 'place' }, input)).rejects.toMatchObject({ uncertain: false })
     expect(() => retained?.({ key: 'stale-thread' })).toThrow('unavailable')
   } finally { await channels.dispose(); await rm(directory, { recursive: true, force: true }) }
