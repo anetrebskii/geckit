@@ -114,7 +114,7 @@ export function Servers({ onClose, onWorkspace, scan, invitation = '', initialSe
   const feedback = (here: boolean): React.JSX.Element | null => here && (failed || (view.state === 'reconnecting' && (view.steps ?? []).length === 0)) ? <p className={`remote-feedback${failed ? ' failed' : ''}`} role="status">{view.message}</p> : null
   if (shownServer !== undefined && workspace !== undefined) return <main className="remote-clients">
     {view.state !== 'reconnecting' && view.state !== 'connecting' ? null : <Dropped key={view.state} head={`${view.state === 'connecting' ? 'Connecting' : 'Reconnecting'} to ${computerName(labelled(shownServer).name)}`} step={pillStep(shownServer.name)} />}
-    <Workspace key={round} quick={snapshot === undefined} connection={workspace} server={shownServer} steps={view.steps ?? []} source={{ server: labelled(shownServer), state: view.state, choices: (saved ?? []).map((one) => ({ server: labelled(one.server) })), onChoose: choose }} onClose={leave} />
+    <Workspace key={round} quick={snapshot === undefined} connection={workspace} server={shownServer} steps={view.steps ?? []} onCancel={ON_PHONE() ? () => choose(':manage') : leave} source={{ server: labelled(shownServer), state: view.state, choices: (saved ?? []).map((one) => ({ server: labelled(one.server) })), onChoose: choose }} onClose={leave} />
     {signing === undefined || signing.computer !== shownServer.id ? null : <LiveView
       name={signing.profile}
       token={signing.token}

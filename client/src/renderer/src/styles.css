@@ -17049,4 +17049,5 @@ html input.phone-field.computer-code {
 .remote-dropped small { overflow: hidden; color: var(--text-dim); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes remote-dropped-in { from { opacity: 0; transform: translate(-50%, -6px); } }
 @media (prefers-reduced-motion: reduce) { .remote-dropped { animation: none; } }
-.remote-opening.quick { flex-direction: row; gap: 10px; color: var(--text-dim); font-size: 13px; }
+.remote-opening.quick { gap: 16px; color: var(--text-dim); font-size: 13px; }
+.remote-opening-line { display: flex; align-items: center; gap: 10px; }

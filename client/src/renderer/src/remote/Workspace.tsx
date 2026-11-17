@@ -21,9 +21,9 @@ declare global {
   }
 }
 
-type WorkspaceProps = Omit<WorkspaceMount, 'phone'> & { readonly steps: ConnectSteps; readonly quick?: boolean }
+type WorkspaceProps = Omit<WorkspaceMount, 'phone'> & { readonly steps: ConnectSteps; readonly quick?: boolean; readonly onCancel?: () => void }
 
-export function Workspace({ connection, server, onClose, source, steps, quick = false }: WorkspaceProps): React.JSX.Element {
+export function Workspace({ connection, server, onClose, onCancel, source, steps, quick = false }: WorkspaceProps): React.JSX.Element {
   const frame = useRef<HTMLIFrameElement>(null)
   const [trouble, setTrouble] = useState('')
   const [mounted, setMounted] = useState(false)
@@ -47,10 +47,11 @@ export function Workspace({ connection, server, onClose, source, steps, quick = 
     return () => clearTimeout(wait)
   }, [mounted])
   useEffect(() => { if (source !== undefined) frame.current?.contentWindow?.updateRemoteComputer?.(source) }, [source])
+  const cancel = onCancel === undefined ? null : <button type="button" className="quiet" onClick={onCancel}>Cancel</button>
   return <section className="remote-full-workspace" aria-label={`${server.name} workspace`}>
     {trouble === '' ? null : <p className="remote-feedback failed" role="alert">{trouble}</p>}
-    {opening && trouble === '' && !quick ? <div className="remote-opening" role="status"><h2>Opening {source?.server.name ?? server.name}</h2><ConnectProgress name={source?.server.name ?? server.name} steps={steps} /></div> : null}
-    {opening && trouble === '' && quick && slow ? <div className="remote-opening quick" role="status"><span className="phone-spin" aria-hidden="true" /><span>Opening {computerName(source?.server.name ?? server.name)}…</span></div> : null}
+    {opening && trouble === '' && !quick ? <div className="remote-opening" role="status"><h2>Opening {source?.server.name ?? server.name}</h2><ConnectProgress name={source?.server.name ?? server.name} steps={steps} />{cancel}</div> : null}
+    {opening && trouble === '' && quick && slow ? <div className="remote-opening quick" role="status"><span className="remote-opening-line"><span className="phone-spin" aria-hidden="true" /><span>Opening {computerName(source?.server.name ?? server.name)}…</span></span>{cancel}</div> : null}
     <iframe
       ref={frame}
       className={opening ? 'opening' : undefined}
