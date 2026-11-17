@@ -60,16 +60,28 @@ function keep(key: string, tokens: readonly string[]): void {
 }
 
 export function keepToken(key: string, said: string): void {
-  // iOS hands the token over in capitals, and the signal function takes it in lower case.
-  const token = said.toLowerCase()
-  if (!/^[0-9a-f]{64,200}$/.test(token)) return
+  const token = tokenOf(said)
+  if (token === undefined) return
   const tokens = kept(key)
   if (!tokens.includes(token)) keep(key, [...tokens, token])
 }
 
+/** A push token as the signal function takes it, or undefined for anything else. */
+export function tokenOf(said: string): string | undefined {
+  // iOS hands the token over in capitals, and the signal function takes it in lower case.
+  const token = said.toLowerCase()
+  return /^[0-9a-f]{64,200}$/.test(token) ? token : undefined
+}
+
 export async function pushTo(key: string, notice: SessionNotice): Promise<void> {
-  const tokens = kept(key)
-  if (tokens.length === 0) return
+  const gone = await pushWith(key, kept(key), notice)
+  if (gone.length > 0) keep(key, kept(key).filter((one) => !gone.includes(one)))
+}
+
+/** Sends the notice to each phone sealed with this key, and says which phones are gone. */
+export async function pushWith(key: string, tokens: readonly string[], notice: SessionNotice): Promise<readonly string[]> {
+  if (tokens.length === 0) return []
+  const gone: string[] = []
   const { room, box } = await boxFor(key, notice)
   for (const token of tokens) {
     try {
@@ -80,10 +92,11 @@ export async function pushTo(key: string, notice: SessionNotice): Promise<void> 
         signal: AbortSignal.timeout(15_000),
       })
       // A phone that removed the app, or turned notifications off for good.
-      if (answer.status === 410) keep(key, kept(key).filter((one) => one !== token))
+      if (answer.status === 410) gone.push(token)
       else if (!answer.ok) log.warn(`A push was not sent: ${String(answer.status)} ${await answer.text()}`)
     } catch (error) {
       log.warn(`A push was not sent: ${String(error)}`)
     }
   }
+  return gone
 }

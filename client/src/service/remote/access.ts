@@ -18,14 +18,15 @@ import { disposeTransport, nodeListen } from './transport'
 import { coalesceEvents } from '../../shared/remote/coalesce'
 import { CAN, clientView } from '../../core/client-view'
 import type { ClientView } from '../../core/client-view'
-import type { SessionImage } from '../../shared/api'
-interface Device { readonly id: string; readonly name: string; readonly publicKey: string; readonly key: string; readonly projects: readonly string[]; readonly manager: boolean; readonly created: number; readonly revoked?: number; readonly full?: true }
+import type { SessionImage, SessionNotice } from '../../shared/api'
+import { pushWith, tokenOf } from '../../main/push'
+interface Device { readonly id: string; readonly name: string; readonly publicKey: string; readonly key: string; readonly projects: readonly string[]; readonly manager: boolean; readonly created: number; readonly revoked?: number; readonly full?: true; readonly push?: readonly string[] }
 interface AccessRecord { readonly server: RemoteServer; readonly identity: RemoteIdentity; readonly enabled: boolean; readonly signal: string; readonly devices: readonly Device[] }
 interface Invitation { readonly id: string; readonly key: string; readonly expires: number; readonly projects: readonly string[]; readonly manager: boolean; readonly full?: true; consumed: string | undefined; readonly stop: () => void }
 interface Pending { readonly id: string; readonly name: string; readonly publicKey: string; readonly phrase: string; readonly invitation: Invitation; readonly approve: (device: Device) => Promise<void>; readonly close: () => void }
 /** Scales a picture to the width a client draws it, where something on this computer can. */
 export type PictureScaler = (image: SessionImage, width: number) => Promise<SessionImage>
-export async function remoteAccess(runtime: ObservationRuntime, directory: string, security: ServiceSecurity, core?: Partial<CoreMethods>, scale?: PictureScaler) {
+export async function remoteAccess(runtime: ObservationRuntime, directory: string, security: ServiceSecurity, core?: Partial<CoreMethods>, scale?: PictureScaler, idle?: () => Promise<boolean>) {
   const path = join(directory, 'remote-access.sealed')
   let record: AccessRecord | undefined
   if (existsSync(path)) {
@@ -43,6 +44,22 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     writeFileSync(`${path}.new`, security.vault.encrypt(JSON.stringify(record)), { mode: 0o600 })
     renameSync(`${path}.new`, path)
   }
+  // A phone open on this server is told what happens there; one that is not, or is in the background, gets a push when nobody is at this computer.
+  const away = new Set<RemoteChannel>()
+  const present = (id: string): boolean => [...(channels.get(id) ?? [])].some((one) => !away.has(one))
+  const pushNotice = async (notice: SessionNotice): Promise<void> => {
+    if (notice.session === '' || record?.enabled !== true) return
+    const wanted = record.devices.filter((one) => one.full === true && one.revoked === undefined && (one.push?.length ?? 0) > 0 && !present(one.id))
+    if (wanted.length === 0 || !(await (idle?.() ?? Promise.resolve(true)))) return
+    for (const one of wanted) {
+      const gone = await pushWith(one.key, one.push ?? [], notice)
+      const current: AccessRecord | undefined = record
+      if (gone.length === 0 || current === undefined) continue
+      record = { ...current, devices: current.devices.map((device) => (device.id === one.id ? { ...device, push: (device.push ?? []).filter((token) => !gone.includes(token)) } : device)) }
+      save()
+    }
+  }
+  const stopNotices = runtime.subscribe((event: CoreEvent) => { if (event.name === 'chat:notice') void pushNotice(event.args[0]).catch((error: unknown) => console.warn(`A push was not sent: ${String(error)}`)) })
   const active = (): AccessRecord => { if (record === undefined || !record.enabled) throw new Error('Enable remote access first.'); return record }
   const send = (channel: RemoteChannel, message: RemoteResponse): void => channel.send(stringifyRemote(message))
   const refuse = (channel: RemoteChannel, code: Extract<RemoteResponse, { type: 'error' }>['code'], message: string): void => { console.warn(`Remote client refused (${code}): ${message}`); send(channel, { type: 'error', code, message }); setTimeout(() => channel.close(), 100) }
@@ -64,7 +81,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     // Events go out in batches, so a streaming conversation sends its latest state rather than every step of it.
     const flush = (): void => { flushTimer = undefined; const batch = coalesceEvents(queued); queued = []; if (!ended) for (const event of batch) send(channel, { type: 'core-event', event }) }
     const timeout = setTimeout(() => { if (device === undefined) refuse(channel, 'expired', 'Code expired. Create a new code on the server.') }, invitation === undefined ? 15_000 : Math.max(1, invitation.expires - Date.now()))
-    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); clearTimeout(flushTimer); queued = []; stopChanges?.(); stopEvents?.(); view?.dispose(); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
+    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); clearTimeout(flushTimer); queued = []; stopChanges?.(); stopEvents?.(); view?.dispose(); away.delete(channel); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
     channel.onClose(end)
     const establish = async (one: Device, text: string): Promise<void> => {
       if (ended) return
@@ -148,6 +165,18 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
             try {
               if (!current.full || core === undefined) throw new Error('Pair again with geckit pair to control this server.')
               const { method, args } = request.call
+              if ((method as string) === 'push:here' || (method as string) === 'push:token') {
+                const said: unknown = args[0]
+                if ((method as string) === 'push:here') { if (said === true) away.add(channel); else away.delete(channel) }
+                const token = typeof said === 'string' ? tokenOf(said) : undefined
+                const now = record
+                if ((method as string) === 'push:token' && token !== undefined && now !== undefined && !(now.devices.find((one) => one.id === current.id)?.push ?? []).includes(token)) {
+                  record = { ...now, devices: now.devices.map((one) => (one.id === current.id ? { ...one, push: [...(one.push ?? []), token] } : one)) }
+                  save()
+                }
+                if (!ended) send(channel, { type: 'core-result', id: request.id, value: null })
+                return
+              }
               const owned = view?.call(method, args)
               if (owned !== undefined) {
                 const value = await owned as RemoteResult
@@ -255,7 +284,7 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       // Keep a deny-only listener so this device gets an explicit revoked state rather than a timeout.
       return { revoked: id }
     },
-    dispose: () => { disposed = true; clearInterval(sweep); stop(); disposeTransport() },
+    dispose: () => { disposed = true; clearInterval(sweep); stopNotices(); stop(); disposeTransport() },
   }
 }
 export type RemoteAccess = Awaited<ReturnType<typeof remoteAccess>>

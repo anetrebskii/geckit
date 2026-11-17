@@ -32,5 +32,4 @@ export interface PhoneCalls {
 
 export const phoneCalls = (): PhoneCalls | undefined => (window as { geckitPhone?: PhoneCalls }).geckitPhone
 
-/** What the phone keeps for itself rather than the Mac: how it looks, which projects it shows, and what it sends. */
-export const OWN = ['theme', 'profile', 'chatProjects', 'chatAll', 'analytics', 'analyticsAsked', 'sendErrors', 'client'] as const
+export { OWN } from '../../shared/client-own'

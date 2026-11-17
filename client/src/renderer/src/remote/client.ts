@@ -17,7 +17,6 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
   let channel: RemoteChannel | undefined
   let trust = saved
   let next = 0
-  let selected: string | undefined
   let epoch = ''
   let seq = -1
   let stopped = false
@@ -115,11 +114,9 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
             if (resync) { resync = false; catchUp(); for (const again of readyAgain) again() }
             for (const one of held.splice(0)) one.go()
             change({ state: 'connected', message: trust.full ? 'Connected' : 'Connected · Read only', snapshot: response.snapshot, trust })
-            if (selected !== undefined) send({ type: 'history', id: ++next, session: selected, before: 0 })
             if (dirty) { dirty = false; snapshot() }; return
           }
           if (response.type === 'changed') { if (trust.full) return; if (refresh === undefined) refresh = setTimeout(() => { refresh = undefined; snapshot() }, 300); return }
-          if (response.type === 'history' && response.history.session === selected) change({ state: 'connected', message: 'Connected · Read only', history: response.history })
         })().catch((error: Error) => { if (channel === link) retry(error.message) })
       })
       link.onClose(() => {
@@ -164,6 +161,5 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     on: (heard: (event: CoreEvent) => void): (() => void) => { events.add(heard); return () => { events.delete(heard) } },
     /** The link was made again and the workspace has fresh state. */
     onReconnected: (again: () => void): (() => void) => { readyAgain.add(again); return () => { readyAgain.delete(again) } },
-    history: (session: string, before = 0) => { selected = session; send({ type: 'history', id: ++next, session, before }) },
   }
 }

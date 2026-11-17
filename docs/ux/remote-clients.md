@@ -19,7 +19,7 @@ The existing Servers form contains a command with Copy, followed by Connection c
 | idle | Connect to a server | Paste code / choose saved server |
 | connecting | Connecting… | Wait or Cancel |
 | connected | Connected | Use workspace / Switch computer |
-| reconnecting | Reconnecting… | Wait or Disconnect; writes disabled |
+| reconnecting | Reconnecting… | Wait or Disconnect; an action taken now waits up to a minute for the link, then fails with "The link to the computer is down. Try again when it is back." |
 | expired | Code expired. Create a new code on the server. | Run geckit pair again |
 | reused | Code already used. Create a new code on the server. | Run geckit pair again |
 | revoked | Device access revoked. Pair again with a new code. | Obtain new code |
@@ -48,7 +48,7 @@ Connection automatically advances to the workspace when fresh authenticated serv
 Service startup, enabling access, SDP, ICE and internal RPC. No project scope ceremony or separate approval confirmation. Do not announce every streamed event.
 
 ## Time and limits
-Codes last five minutes, enough to copy between devices. Single use means only the enrolling device may recover a lost acknowledgement. Reconnect uses existing 2/5/10/30 second backoff. On disconnect pending writes fail explicitly and are never queued for replay. Observation compatibility keeps 300ms snapshot coalescing. Full workspaces load an authenticated snapshot on connect/reconnect, then receive normal typed events without repeating board snapshot queries.
+Codes last five minutes, enough to copy between devices. Single use means only the enrolling device may recover a lost acknowledgement. Reconnect uses existing 2/5/10/30 second backoff. On disconnect, writes already sent fail explicitly and are never replayed; a write made while the link is down waits for it, up to a minute, and is sent once. Observation compatibility keeps 300ms snapshot coalescing. Full workspaces load an authenticated snapshot on connect/reconnect, then receive normal typed events without repeating board snapshot queries.
 
 ## Edges
 Empty server connects and can add projects. Empty code disables Connect. Enter submits; Tab and focus work; Escape returns Local when outside a child workspace dialog. Long names truncate and workspaces scroll at desktop and phone sizes. Two servers with the same paths and IDs live in isolated renderer contexts. Revocation stops current and future calls. Failed calls display failure and leave the connection usable. Copy/open-link use the client's native capability; server folder navigation and all core mutations target the server.
@@ -57,7 +57,7 @@ Empty server connects and can add projects. Empty code disables Connect. Enter s
 Alex explicitly replaced the initial read-only scope on 2026-11-06. Code possession now suffices to enroll with full control; a second phrase/approval and project restrictions contradict the requested workflow. Existing scoped grants do not silently gain control. Cryptographic identities, encrypted trust, expiry, single use and per-device revoke remain.
 
 ## Requirements
-FR-001/002: single command and immediate enrollment. FR-003: shared clients and preserved legacy phone entry. FR-004/005: isolated normal workspace and full core API. FR-006: states above. FR-007: existing encrypted direct/relay transport. Verification: docs/reports/simple-remote-control.md.
+FR-001/002: single command and immediate enrollment. FR-003: shared clients; a phone paired the old way reads only and is asked to pair again (docs/ux/unified-client-interface.md, section 3). FR-004/005: isolated normal workspace and full core API. FR-006: states above. FR-007: existing encrypted direct/relay transport. Verification: docs/reports/simple-remote-control.md.
 
 ## Computer switching, 2026-11-06 correction
 Alex rejected a separate server UI. Keep the existing board, list, conversations, Manager and settings. One compact toolbar selector shows the computer name, chevron and connection dot; its menu marks the current computer. The selector stays reachable above the conversation backdrop, so switching does not require closing a chat. Local work stays mounted in its controller; remote drafts and the selected conversation are stored under the server identity. During reconnection the current computer remains identified and offers This computer. Pairing is the only separate setup screen. Escape closes a menu or dialog first; it must not unexpectedly switch computers while composing.

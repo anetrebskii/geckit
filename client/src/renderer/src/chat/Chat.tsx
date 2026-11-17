@@ -48,6 +48,7 @@ import type { FileHow } from './Prose'
 import { Transcript } from './Transcript'
 import { Welcome } from './Welcome'
 import { ON_PHONE } from '../on-phone'
+import { PairAgain } from './PairAgain'
 import { Consent } from '../ui/Consent'
 import { EmployeeAssignment, TEAM_EVENT } from '../employees/Employees'
 import { Team } from '../employees/Team'
@@ -1001,6 +1002,7 @@ export function Chat(): React.JSX.Element {
 
       <Status chat={chat} />
 
+      {ON_PHONE ? <PairAgain /> : null}
       <Notices chat={chat} />
       {/* On the phone a host's question is a sheet over whatever is open, one at a time, the oldest first; what stands in the way of a host is on its page in Settings, since only the computer can fix it. */}
       {ON_PHONE ? (

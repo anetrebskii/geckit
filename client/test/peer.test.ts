@@ -89,6 +89,18 @@ describe('what the peer window tells phones', () => {
     expect(shareCalls).toEqual([['link-1', 'share.about', []]])
   })
 
+  it('lets a phone paired the old way read, and tells it to pair again for anything else', async () => {
+    const one = phone()
+    joined(one.link)
+    one.say({ t: 'call', id: 1, name: 'link.can', args: [['steps']] })
+    one.say({ t: 'call', id: 2, name: 'chat.send', args: [{ text: 'hi' }] })
+    one.say({ t: 'call', id: 3, name: 'settings.get', args: [] })
+    await vi.runAllTimersAsync()
+    expect(one.sent).toContainEqual({ t: 'reply', id: 1, value: { deflate: true, pairAgain: true } })
+    expect(one.sent).toContainEqual({ t: 'reply', id: 2, error: 'Pair this phone again.' })
+    expect(one.sent).toContainEqual({ t: 'reply', id: 3, value: null })
+  })
+
   it('sends a growing reply once per beat, as it last was', () => {
     const one = phone()
     joined(one.link)

@@ -14,6 +14,9 @@ import { dial } from '../../client/src/renderer/src/link'
 import type { Dialing, Link } from '../../client/src/renderer/src/link'
 import { installGeckit, sayDropped, showDropped } from '../../client/src/renderer/src/phone'
 import { phoneCalls } from '../../client/src/renderer/src/phone-calls'
+import type { PhoneCalls } from '../../client/src/renderer/src/phone-calls'
+import { savedServers } from '../../client/src/renderer/src/remote/storage'
+import { PAIR_AGAIN_KEY } from '../../client/src/renderer/src/pair-again'
 import type { Boot, Installed } from '../../client/src/renderer/src/phone'
 import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
@@ -216,8 +219,19 @@ interface PushKeys {
 const pushKeys = registerPlugin<PushKeys>('PushKeys')
 
 // A push is sealed on the Mac with the key in its QR code; the extension that opens it before iOS shows it reads the keys from where the app leaves them.
-const keepKeys = (): Promise<void> =>
-  pushKeys.keep({ keys: keptMacs().flatMap((mac) => readPairing(mac.link)?.key ?? []) }).catch(() => undefined)
+// A server seals with the key it gave this phone when it was paired.
+const keepKeys = async (): Promise<void> => {
+  const servers = await savedServers().catch(() => [])
+  await pushKeys.keep({ keys: [...keptMacs().flatMap((mac) => readPairing(mac.link)?.key ?? []), ...servers.map((one) => one.key)] }).catch(() => undefined)
+}
+
+// The Mac this phone is joined to answers in this window; a server's workspace answers in its own frame.
+const everyPhone = (): PhoneCalls[] => [
+  ...[phoneCalls()].flatMap((one) => (one === undefined ? [] : [one])),
+  ...[...document.querySelectorAll('iframe')].flatMap((frame) => {
+    try { return (frame.contentWindow as { geckitPhone?: PhoneCalls } | null)?.geckitPhone ?? [] } catch { return [] }
+  }),
+]
 
 async function startPush(): Promise<void> {
   // Android's pushes come through Firebase Cloud Messaging, which this app is not set up with yet.
@@ -229,7 +243,11 @@ async function startPush(): Promise<void> {
 }
 
 // Each Mac is told where Apple reaches this phone as it is joined; iOS says it again on every register.
-void PushNotifications.addListener('registration', ({ value }) => phoneCalls()?.pushToken(value)).catch(() => undefined)
+void PushNotifications.addListener('registration', ({ value }) => {
+  // Kept for a server's workspace that is opened after iOS said it.
+  ;(window as { geckitPushToken?: string }).geckitPushToken = value
+  for (const phone of everyPhone()) phone.pushToken(value)
+}).catch(() => undefined)
 
 // A conversation to open once the Chat window is up, or after switching to the Mac it is on.
 const SHOW = 'show'
@@ -638,9 +656,10 @@ async function refreshBoot(pairing: Pairing, link: Link): Promise<void> {
 
 // Back from the background, a link iOS froze may look open and carry nothing; one that does not answer in a few seconds is closed, which starts the mending.
 const SILENT = 3000
-void App.addListener('pause', () => phoneCalls()?.away(true))
+void App.addListener('pause', () => { for (const phone of everyPhone()) phone.away(true) })
 
 void App.addListener('resume', () => {
+  for (const phone of everyPhone()) if (phone !== phoneCalls()) phone.away(false)
   const link = current
   if (link === undefined || !started) return
   phoneCalls()?.away(false)
@@ -676,5 +695,14 @@ async function serverView(invitation = ''): Promise<void> {
   const [{ createRoot }, { createElement }, { Servers }] = await Promise.all([import('react-dom/client'), import('react'), import('../../client/src/renderer/src/remote/Servers')])
   const root = createRoot(document.getElementById('root') as HTMLElement)
   const signIn = readSignIn(invitation)
-  root.render(createElement(Servers, { ...(signIn === undefined ? { invitation } : { signIn }), onClose: () => { sessionStorage.setItem(SERVER_VIEW, 'local'); root.unmount(); location.reload() }, scan: async () => { try { return (await CapacitorBarcodeScanner.scanBarcode({ hint: CapacitorBarcodeScannerTypeHint.QR_CODE })).ScanResult } catch { return undefined } } }))
+  void startPush()
+  // Paired again through a server: the old pairing that could only read is forgotten.
+  const forgetOld = (open: boolean): void => {
+    if (!open || localStorage.getItem(PAIR_AGAIN_KEY) !== '1') return
+    localStorage.removeItem(PAIR_AGAIN_KEY)
+    localStorage.removeItem(MACS)
+    localStorage.removeItem(KEPT)
+    void keepKeys()
+  }
+  root.render(createElement(Servers, { ...(signIn === undefined ? { invitation } : { signIn }), onWorkspace: forgetOld, onClose: () => { sessionStorage.setItem(SERVER_VIEW, 'local'); root.unmount(); location.reload() }, scan: async () => { try { return (await CapacitorBarcodeScanner.scanBarcode({ hint: CapacitorBarcodeScannerTypeHint.QR_CODE })).ScanResult } catch { return undefined } } }))
 }

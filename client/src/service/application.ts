@@ -15,7 +15,7 @@ import type { Secrets } from '../main/hosts/secrets'
 import type { HostConfig, HostDraft } from '../shared/hosts'
 import type { SessionImage } from '../shared/api'
 
-export type ServiceEvents = CoreEvents & { 'core:trash': (id: string, path: string) => void; 'core:scale': (id: string, image: SessionImage, width: number) => void }
+export type ServiceEvents = CoreEvents & { 'core:trash': (id: string, path: string) => void; 'core:scale': (id: string, image: SessionImage, width: number) => void; 'core:idle': (id: string) => void }
 export type MigratedHostSecret = Pick<HostConfig, 'id'> & Required<Pick<HostDraft, 'password'>>
 export interface SecretMigration {
   readonly hosts: readonly MigratedHostSecret[]
@@ -91,6 +91,26 @@ export function nativeScaler(emit: (id: string, image: SessionImage, width: numb
   }
 }
 
+/** Whether nobody is at this computer, asked of the desktop app; a computer without it, or one that does not answer, counts as nobody there. */
+export function nativeIdle(emit: (id: string) => boolean) {
+  const pending = new Map<string, (idle: boolean) => void>()
+  return {
+    idle: (): Promise<boolean> => new Promise((resolve) => {
+      const id = randomUUID()
+      const timer = setTimeout(() => finish(true), 2_000)
+      const finish = (idle: boolean): void => {
+        if (!pending.delete(id)) return
+        clearTimeout(timer)
+        resolve(idle)
+      }
+      pending.set(id, finish)
+      if (!emit(id)) finish(true)
+    }),
+    answered: (id: string, idle: boolean): void => { pending.get(id)?.(idle) },
+    dispose: (): void => { for (const finish of [...pending.values()]) finish(true) },
+  }
+}
+
 function hostSecrets(path: string): Map<string, string> {
   if (!existsSync(path)) return new Map()
   const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
@@ -160,7 +180,7 @@ export function migrateSecrets(directory: string, security: ServiceSecurity, req
   return migrationState(directory, security, legacy)
 }
 
-export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess, computers?: RemoteComputers, scaler?: ReturnType<typeof nativeScaler>) {
+export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess, computers?: RemoteComputers, scaler?: ReturnType<typeof nativeScaler>, idler?: ReturnType<typeof nativeIdle>) {
   const core = application(runtime)
   const desktop = {
     'remote:pair': () => { if (remote === undefined) throw new Error('Remote access unavailable.'); return remote.pair() },
@@ -190,6 +210,7 @@ export function serviceApplication(runtime: CoreRuntime, directory: string, secu
     'desktop:hello': () => ({ protocol: 1, version, methods: [...Object.keys(core), ...Object.keys(desktop)], migration: migrationState(directory, security, runtime.channels.legacySealed()) }),
     'desktop:completeNative': (id: string, error?: string) => native.complete(id, error),
     'desktop:scaled': (id: string, image?: SessionImage) => scaler?.scaled(id, image),
+    'desktop:idle': (id: string, idle: boolean) => idler?.answered(id, idle),
     'desktop:migrateSecrets': async (request: SecretMigration) => {
       const legacy = runtime.channels.legacySealed()
       const before = migrationState(directory, security, legacy)

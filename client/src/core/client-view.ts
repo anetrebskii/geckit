@@ -81,6 +81,7 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
   // A client that never said what it can is from before this, and is sent everything as it was.
   let can: Set<string> | undefined
   const viewed = new Set<string>()
+  let watched = false
   const sentRows = new Map<string, Row[]>()
   let sentList: Map<string, string> | undefined
   const whole = new Map<string, Map<string, SessionItem>>()
@@ -123,6 +124,8 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
     if (ended) { gathered.clear(); return }
     for (const [id, held] of gathered) {
       if (can === undefined) {
+        // A client from before it said what it can, that said which conversation it has open, is sent that one.
+        if (watched && !viewed.has(id)) continue
         send({ name: 'chat:items', args: [{ id, items: [...held.items.values()], ...(held.gone.size > 0 ? { gone: [...held.gone] } : {}) } satisfies SessionItems] })
         continue
       }
@@ -202,35 +205,36 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
       return { can: [...can] }
     },
     'chat:watch': (ids: readonly string[]): void => {
+      watched = true
       viewed.clear()
       for (const id of ids) viewed.add(id)
       for (const id of sentRows.keys()) if (!viewed.has(id)) sentRows.delete(id)
     },
     'chat:turns': async (id: string, count: number = TURNS): Promise<Piece> => {
-      await guard(id)
+      if (source.allowed !== undefined) await guard(id)
       const folded = fold(id, await wholeOf(id, true))
       viewed.add(id)
       sentRows.set(id, rowsOf(folded))
       return turnsOf(folded, count)
     },
     'chat:turnsBefore': async (id: string, before: string, count: number = EARLIER): Promise<Piece> => {
-      await guard(id)
+      if (source.allowed !== undefined) await guard(id)
       return pieceOf(fold(id, await wholeOf(id)), before, count)
     },
     'chat:steps': async (id: string, ids: readonly string[]): Promise<SessionItem[]> => {
-      await guard(id)
+      if (source.allowed !== undefined) await guard(id)
       const wanted = new Set(ids)
       return (await wholeOf(id)).filter((item) => wanted.has(item.id)).map((item) => (can?.has('pictures') === true ? withoutPictures(id, item) : item))
     },
     'chat:picture': async (ref: string, width: number): Promise<SessionImage | null> => (await pictureFor(ref, width)) ?? null,
     'chat:queuedPicture': async (id: string, queued: string, index: number, width?: number): Promise<SessionImage | null> => {
-      await guard(id)
+      if (source.allowed !== undefined) await guard(id)
       const image = await source.queuedPicture(id, queued, index)
       if (image === undefined) return null
       return width === undefined || source.scale === undefined ? image : source.scale(image, width).catch(() => image)
     },
     'chat:find': async (id: string, words: string): Promise<Found> => {
-      await guard(id)
+      if (source.allowed !== undefined) await guard(id)
       return findIn(await wholeOf(id), words)
     },
   }
@@ -241,7 +245,8 @@ export function clientView(source: ViewSource, offered: readonly Can[], send: (e
     call: (name: string, args: readonly unknown[]): Promise<unknown> | undefined => {
       if (!isViewMethod(name)) return undefined
       const run = methods[name] as (...given: readonly unknown[]) => unknown
-      return Promise.resolve().then(() => run(...args))
+      // Started at once, so what is told right after a call lands after what the call set up.
+      try { return Promise.resolve(run(...args)) } catch (error) { return Promise.reject(error instanceof Error ? error : new Error(String(error))) }
     },
     /** Takes in what happened; true when the view sends it on itself, as it should go to this client. */
     event: (event: ViewEvent): boolean => {

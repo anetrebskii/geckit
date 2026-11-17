@@ -86,17 +86,25 @@ export function clientData(link: DataLink) {
     })
   }
 
-  const tail = async (id: string): Promise<Piece> => {
-    if (await pages()) return link.call<Piece>('chat:turns', id, TAIL)
-    const folded = pendingLast(collapse(await link.call<SessionItem[]>('chat:items', id)))
-    return pieceOf(folded, undefined, Math.max(TAIL, folded.filter(isPending).length))
+  /** Asked in pages; a side that says what it can but has no such call is asked as before, from then on. */
+  const paging = async <T,>(asked: () => Promise<T>, before: () => Promise<T>): Promise<T> => {
+    if (!(await pages())) return before()
+    try { return await asked() } catch (error) {
+      if (!unknown(error)) throw error
+      paged = Promise.resolve(false)
+      return before()
+    }
   }
 
-  const stepsOf = async (id: string, ids: readonly string[]): Promise<SessionItem[]> => {
-    if (await pages()) return link.call<SessionItem[]>('chat:steps', id, ids)
+  const tail = (id: string): Promise<Piece> => paging(() => link.call<Piece>('chat:turns', id, TAIL), async () => {
+    const folded = pendingLast(collapse(await link.call<SessionItem[]>('chat:items', id)))
+    return pieceOf(folded, undefined, Math.max(TAIL, folded.filter(isPending).length))
+  })
+
+  const stepsOf = (id: string, ids: readonly string[]): Promise<SessionItem[]> => paging(() => link.call<SessionItem[]>('chat:steps', id, ids), async () => {
     const wanted = new Set(ids)
     return (await link.call<SessionItem[]>('chat:items', id)).filter((item) => wanted.has(item.id))
-  }
+  })
 
   /** Items with each run that is open put back as its steps, the ones the page has not got asked for. */
   const filled = async (id: string, items: readonly SessionItem[]): Promise<SessionItem[]> => {
@@ -218,9 +226,10 @@ export function clientData(link: DataLink) {
       return piece.items
     },
     before: async (id: string, before: string): Promise<Piece> => {
-      const piece = (await pages())
-        ? await link.call<Piece>('chat:turnsBefore', id, before, EARLIER)
-        : pieceOf(pendingLast(collapse(await link.call<SessionItem[]>('chat:items', id))), before, EARLIER)
+      const piece = await paging(
+        () => link.call<Piece>('chat:turnsBefore', id, before, EARLIER),
+        async () => pieceOf(pendingLast(collapse(await link.call<SessionItem[]>('chat:items', id))), before, EARLIER),
+      )
       const now = shown
       if (now?.id === id) {
         now.items = new Map([...piece.items.map((item): [string, SessionItem] => [item.id, item]), ...now.items])
@@ -248,7 +257,6 @@ export function clientData(link: DataLink) {
     find: async (id: string, words: string): Promise<Found | undefined> => ((await pages()) ? link.call<Found>('chat:find', id, words) : undefined),
     /** The link is made again: the list and the end of the conversation on screen as the other side has them now. */
     reconnected: (): void => {
-      if (paged === undefined && rows === undefined && shown === undefined) return
       paged = undefined
       void pages().then((yes) => (yes && opened !== undefined ? link.call('chat:watch', [opened]) : undefined)).catch(() => undefined)
       void link.call<ChatSession[]>('chat:list', undefined).then((all) => { settled.add('list'); rows = all; told('chat:sessions', all) }).catch(() => undefined)

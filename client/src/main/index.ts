@@ -492,6 +492,7 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
       else peer.webContents.send('peer:scale', id, image, width)
       return
     }
+    case 'core:idle': void invoke('desktop:idle', event.args[0], powerMonitor.getSystemIdleState(AWAY_AFTER) !== 'active').catch(report); return
     case 'core:trash': {
       const [id, path] = event.args
       void shell.trashItem(path).then(() => invoke('desktop:completeNative', id), (error: Error) => invoke('desktop:completeNative', id, error.message)).catch(report)

@@ -5,7 +5,11 @@ import type { Settings, UpdateView } from '../../../shared/api'
 import { createRendererApi } from '../../../shared/renderer-api'
 import type { RendererArgument, RendererTransport } from '../../../shared/renderer-api'
 import type { RemoteServer } from '../../../shared/remote/protocol'
-import { OWN } from '../phone-calls'
+import { clientOwn } from '../../../shared/client-own'
+import { phoneErrors } from '../phone-errors'
+import { countEvent } from '../../../shared/counting'
+import type { EventName } from '../../../shared/counting'
+import { LINK_DOWN } from './client'
 import type { PhoneCalls } from '../phone-calls'
 import type { WorkspaceConnection } from './Workspace'
 import { clientData } from '../../../shared/client-data'
@@ -57,14 +61,13 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     switch (channel) {
       case 'chat:addProject': return chooseFolder()
       case 'settings:accessibility': return true
-      case 'errors:question': return undefined
       case 'phone:state': return { count: 0, trouble: 'Use geckit pair on the server to connect another device.' }
       case 'update:view': return { state: 'off', version: '', offered: '', channel: 'stable', percent: 0, message: 'Update the GeckIt service on the server.', waitingFor: [] } satisfies UpdateView
       default: throw new Error('This action requires a desktop on the server.')
     }
   }
   const quiet = new Set(['chat:listStatus'])
-  const ownCalls = new Set(['chat:addProject', 'settings:accessibility', 'errors:question', 'phone:state', 'update:view', 'settings:pickApp', 'configuration:reveal', 'configuration:export', 'configuration:import', 'update:check'])
+  const ownCalls = new Set(['chat:addProject', 'settings:accessibility', 'phone:state', 'update:view', 'settings:pickApp', 'configuration:reveal', 'configuration:export', 'configuration:import', 'update:check'])
   const transport: RendererTransport = {
     invoke: async <Result,>(channel: string, ...args: readonly RendererArgument[]): Promise<Result> => {
       try {
@@ -121,36 +124,34 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     pathFor: () => { const error = new Error('Choose an attachment on the server. Local file paths cannot be used there.'); report(error); throw error },
   }, data)
   // How this client looks, which projects it shows and whether it counts or sends errors are its own, whatever the server has.
-  const ownKey = `server:${server.id}:own`
-  const readOwn = (): Partial<Settings> => {
-    try { return JSON.parse(localStorage.getItem(ownKey) ?? '{}') as Partial<Settings> } catch { return {} }
+  const owned = clientOwn(`server:${server.id}:own`)
+  const errors = phoneErrors(() => owned.mine().sendErrors === true, () => void settings.set({ sendErrors: true }))
+  const counting = (name: EventName): void => {
+    if (owned.mine().analytics !== true || owned.mine().analyticsAsked !== true) return
+    void countEvent(owned.client(), name, onPhone ? 'phone server' : 'remote desktop')
   }
-  let mine = readOwn()
-  let last: Settings | undefined
-  const own = (settings: Settings): Settings => {
-    last = settings
-    const kept = { ...settings, analytics: false, analyticsAsked: false, sendErrors: false, client: '', ...mine }
-    const gone = mine.profile !== undefined && mine.profile !== '' && !settings.profiles.some((one) => one.id === mine.profile)
-    return gone ? { ...kept, profile: '', chatProjects: [], chatAll: true } : kept
-  }
-  const isOwn = (key: string): boolean => (OWN as readonly string[]).includes(key)
   const settings = {
     ...api.settings,
-    get: async (): Promise<Settings> => own(await api.settings.get()),
+    get: async (): Promise<Settings> => owned.own(await api.settings.get()),
     set: async (change: Partial<Settings>): Promise<Settings> => {
-      const here = Object.fromEntries(Object.entries(change).filter(([key]) => isOwn(key)))
-      const there = Object.fromEntries(Object.entries(change).filter(([key]) => !isOwn(key)))
-      if (Object.keys(here).length > 0) {
-        mine = { ...mine, ...here, ...(change.analytics === false ? { client: '' } : {}) }
-        try { localStorage.setItem(ownKey, JSON.stringify(mine)) } catch { /* kept for this launch only */ }
-      }
-      if (Object.keys(there).length > 0) return own(await api.settings.set(there))
-      const now = own(last ?? (await api.settings.get()))
+      const { here, there } = owned.take(change)
+      if (change.sendErrors !== undefined) errors.follow(change.sendErrors)
+      if (change.analytics === true) counting('phoneOpened')
+      if (Object.keys(here).length === 0 || Object.keys(there).length > 0) return owned.own(await api.settings.set(there))
+      const now = owned.own(owned.last() ?? (await api.settings.get()))
       window.dispatchEvent(new CustomEvent('remote:settings:changed', { detail: now }))
       return now
     },
-    on: (said: (settings: Settings) => void): (() => void) => api.settings.on((settings) => said(own(settings))),
+    on: (said: (settings: Settings) => void): (() => void) => api.settings.on((settings) => said(owned.own(settings))),
   }
+  // This client's errors are held here and sent from here, under its own answer.
+  const clientErrors = {
+    question: errors.question,
+    onQuestion: errors.onQuestion,
+    answer: errors.answer,
+    hold: (name: string, message: string, stack: string): void => { if (message !== LINK_DOWN) errors.hold(name, message, stack) },
+  }
+  counting('phoneOpened')
   const hosts = {
     ...api.hosts,
     folders: (id: string, path?: string) => id === folderHost.id ? connection.call('chat:folders', path) : api.hosts.folders(id, path),
@@ -175,9 +176,14 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     recorded: (recording) => { window.dispatchEvent(new CustomEvent('remote:chat:recorded', { detail: recording })) },
     localFetch: (request) => connection.call('local:fetch', request),
     forwardLink: (root, href) => connection.call('hosts:forwardLink', root, href),
-    pushToken: () => undefined,
-    away: () => undefined,
+    pushToken: (token) => { void connection.call('push:token', token).catch(() => undefined) },
+    away: (on) => { void connection.call('push:here' as keyof CoreMethods, ...([on] as unknown as Parameters<CoreMethods[keyof CoreMethods]>)).catch(() => undefined) },
   }
-  if (onPhone) Object.defineProperty(window, 'geckitPhone', { value: phone })
-  return { ...api, settings, hosts }
+  if (onPhone) {
+    Object.defineProperty(window, 'geckitPhone', { value: phone })
+    // Where Apple reaches this phone, said by iOS before this workspace was opened.
+    const token = (window.parent as { geckitPushToken?: string }).geckitPushToken
+    if (token !== undefined) phone.pushToken(token)
+  }
+  return { ...api, settings, errors: clientErrors, hosts }
 }

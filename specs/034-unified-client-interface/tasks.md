@@ -17,7 +17,7 @@ All paths are relative to the repository root. Commands run from `client/`.
 
 Goal: the client view exists in the service with every contract method, tested on fixtures, but no client uses it yet.
 
-- [ ] T004 [P] Move the text an item is matched on by Find from `client/src/renderer/src/chat/Transcript.tsx` into `client/src/shared/find-text.ts` and make Transcript import it (no behaviour change)
+- [x] T004 [P] Move the text an item is matched on by Find from `client/src/renderer/src/chat/Transcript.tsx` into `client/src/shared/find-text.ts` and make Transcript import it (no behaviour change)
 - [x] T005 [P] Write fixture tests for folding, pages (`turns` with pending items always included, `turnsBefore`, unknown `before`), steps with picture references and picture refs, ported from the cases `peer/main.ts` handles today, in `client/test/client-view.test.ts`
 - [x] T006 [P] Write fixture tests for row diffs of a viewed conversation (append, update in place, reply moved to the end, item gone), list row changes, viewed-set filtering and scope filtering (FR-020) in `client/test/client-view.test.ts`
 - [x] T007 [P] Write fixture tests for `chat:find` matching the same items as Transcript's Find on the fixture, including matches inside runs of steps, in `client/test/find.test.ts`
@@ -64,12 +64,12 @@ Goal: the local desktop uses the client view. Independent test: quickstart Scena
 Goal: the phone uses the service's client view and keeps everything it does today; old pairings are read-only. Independent test: quickstart Scenarios 4, 5 and 7. T030 to T033 also change the remote desktop, which shares the module.
 
 - [x] T029 [US3] Make the phone's server connection (`serverView` in `mobile/src/main.ts`) use `client-data.ts` with keeping on through the remote workspace path, in `mobile/src/main.ts` and `client/src/renderer/src/remote/workspace-api.tsx`
-- [ ] T030 [P] [US3] Write tests for the client link module with a fake link: a call made while down is held and sent once on reconnect; held calls fail with the link-down error after 60 s; a call in flight when the link drops fails and is never resent; own settings (`OWN`) read and written per server and never sent to `settings:set`, in `client/test/client-link.test.ts`
-- [ ] T031 [US3] Extract the link half of `client/src/renderer/src/phone.ts` (`call` with `held` and `HOLD`, `LINK_DOWN`, the `own`/`mine` settings layer over `OWN`, `phoneErrors`, `counting`) into `client/src/renderer/src/client-link.ts`, parameterised by a send function, a storage key prefix and the client's name for counting; make `phone.ts` use it with no behaviour change; make T030 pass
-- [ ] T032 [US3] Build the remote workspace's call path on `client-link.ts`: holding during reconnect, own settings, errors held on the client under its own consent, usage counting; remove the code that disables writes while reconnecting (search `reconnecting` in `client/src/renderer/src/remote/`) and use the waiting and failure texts from UX section 5, in `client/src/renderer/src/remote/workspace-api.tsx` and `client/src/renderer/src/remote/Computer.tsx`
-- [ ] T033 [US3] Add the core method `push:here(away)`, count phones not away per client view, and move the push decision from `main/index.ts` (`phonesHere`, the idle check) into the service, which asks main for the idle state over the native-callback channel and treats a computer without the desktop app as idle; the phone calls `push:here` and the existing `push:token` over the server connection. Files: `client/src/core/application.ts`, `client/src/service/application.ts`, `client/src/main/index.ts`, `client/src/renderer/src/remote/workspace-api.tsx`
-- [ ] T034 [US3] Serve old-paired phones read-only: the peer window answers only `chat.list`, `chat.turns`, `chat.turnsBefore`, `chat.steps`, `chat.picture`, `settings.get` and their events through the client view via `peer.call`, and every other call with the error `Pair this phone again.`, in `client/src/renderer/src/peer/main.ts` and `client/src/main/index.ts`
-- [ ] T035 [US3] Show the Pair again card on the phone when that error is seen: title, body and actions from UX section 3 in the existing notice card, composer and answer buttons disabled, "Not now" hides it until next launch, "Scan code" opens the scanner; forget the old pairing after a new one, in `client/src/renderer/src/chat/Notices.tsx`, `client/src/renderer/src/phone.ts` and `mobile/src/main.ts`
+- [x] T030 [P] [US3] Write tests for the client link module with a fake link: a call made while down is held and sent once on reconnect; held calls fail with the link-down error after 60 s; a call in flight when the link drops fails and is never resent; own settings (`OWN`) read and written per server and never sent to `settings:set`, in `client/test/client-link.test.ts`
+- [x] T031 [US3] Extract the link half of `client/src/renderer/src/phone.ts` (`call` with `held` and `HOLD`, `LINK_DOWN`, the `own`/`mine` settings layer over `OWN`, `phoneErrors`, `counting`) into `client/src/shared/client-own.ts`, parameterised by a send function, a storage key prefix and the client's name for counting; make `phone.ts` use it with no behaviour change; make T030 pass
+- [x] T032 [US3] Build the remote workspace's call path on `client-link.ts`: holding during reconnect, own settings, errors held on the client under its own consent, usage counting; remove the code that disables writes while reconnecting (search `reconnecting` in `client/src/renderer/src/remote/`) and use the waiting and failure texts from UX section 5, in `client/src/renderer/src/remote/workspace-api.tsx` and `client/src/renderer/src/remote/Computer.tsx`
+- [x] T033 [US3] Add the core method `push:here(away)`, count phones not away per client view, and move the push decision from `main/index.ts` (`phonesHere`, the idle check) into the service, which asks main for the idle state over the native-callback channel and treats a computer without the desktop app as idle; the phone calls `push:here` and the existing `push:token` over the server connection. Files: `client/src/core/application.ts`, `client/src/service/application.ts`, `client/src/main/index.ts`, `client/src/renderer/src/remote/workspace-api.tsx`
+- [x] T034 [US3] Serve old-paired phones read-only: the peer window answers only `chat.list`, `chat.turns`, `chat.turnsBefore`, `chat.steps`, `chat.picture`, `settings.get` and their events through the client view via `peer.call`, and every other call with the error `Pair this phone again.`, in `client/src/renderer/src/peer/main.ts` and `client/src/main/index.ts`
+- [x] T035 [US3] Show the Pair again card on the phone when that error is seen: title, body and actions from UX section 3 in the existing notice card, composer and answer buttons disabled, "Not now" hides it until next launch, "Scan code" opens the scanner; forget the old pairing after a new one, in `client/src/renderer/src/chat/Notices.tsx`, `client/src/renderer/src/phone.ts` and `mobile/src/main.ts`
 - [ ] T036 [US3] Run quickstart Scenarios 4, 5 and 7 on an iPhone with a headless server and with the desktop app; check UX sections 3, 4 and 5 at 390 x 844 and at desktop size in light and dark; compare picture sizes and format with the baseline (FR-023); record results in `specs/034-unified-client-interface/baseline.md`
 
 **Checkpoint**: SC-006 met; the phone keeps every behaviour it has today; old-paired phones read and see the card.
@@ -78,17 +78,17 @@ Goal: the phone uses the service's client view and keeps everything it does toda
 
 Goal: remove what the other stories made unused. Independent test: quickstart Scenario 6.
 
-- [ ] T037 [US4] Delete the conversation serving from `client/src/renderer/src/peer/main.ts` (`whole`, `gather`, `sendItems`, `sendList`, `pictureFor`, the `chat.*` branches, `push.away`), keeping screen capture, shares, `scaledTo` for the service's sizer and the read-only old-pairing relay until its removal release
-- [ ] T038 [US4] Remove from `client/src/renderer/src/phone.ts` what moved to `client-data.ts` and `client-link.ts`, and the `orAsBefore` fallbacks to `chat.items` that only served older Macs
-- [ ] T039 [US4] Remove the observation-only `snapshot`/`history` path for full devices if unused, in `client/src/service/remote/gateway.ts` and `client/src/service/remote/access.ts` (keep it for scoped observation devices)
-- [ ] T040 [US4] Confirm quickstart Scenario 6 and that local, remote and phone tests all exercise `client/src/core/client-view.ts` and `client/src/renderer/src/client-link.ts`
+- [x] T037 [US4] Delete the conversation serving from `client/src/renderer/src/peer/main.ts` (`whole`, `gather`, `sendItems`, `sendList`, `pictureFor`, the `chat.*` branches, `push.away`), keeping screen capture, shares, `scaledTo` for the service's sizer and the read-only old-pairing relay until its removal release
+- [x] T038 [US4] Remove from `client/src/renderer/src/phone.ts` what moved to `client-data.ts` and `client-link.ts`, and the `orAsBefore` fallbacks to `chat.items` that only served older Macs
+- [x] T039 [US4] Remove the observation-only `snapshot`/`history` path for full devices if unused, in `client/src/service/remote/gateway.ts` and `client/src/service/remote/access.ts` (keep it for scoped observation devices)
+- [x] T040 [US4] Confirm quickstart Scenario 6 and that local, remote and phone tests all exercise `client/src/core/client-view.ts` and `client/src/shared/client-own.ts`
 
 ## Phase 7: Polish and cross-cutting
 
-- [ ] T041 [P] Update the architecture notes for sessions, the phone and remote clients in `CLAUDE.md` and `docs/headless-service.md` to describe the client view and the client link module
-- [ ] T042 [P] Update `docs/ux/remote-clients.md` (reconnecting no longer disables writes; FR-003 "preserved legacy phone entry" now read-only with Pair again) and `docs/ux/phone.md` (Find over the whole conversation)
+- [x] T041 [P] Update the architecture notes for sessions, the phone and remote clients in `CLAUDE.md` and `docs/headless-service.md` to describe the client view and the client link module
+- [x] T042 [P] Update `docs/ux/remote-clients.md` (reconnecting no longer disables writes; FR-003 "preserved legacy phone entry" now read-only with Pair again) and `docs/ux/phone.md` (Find over the whole conversation)
 - [ ] T043 Propose to Alex the `docs/features.md` entry for Find over the whole conversation and for phones with a headless server; add it after approval and the evidence to `docs/feature-audit.md`
-- [ ] T044 Remove the development byte counter from T002 or keep it behind its flag, and run `npm run lint`, `npm run typecheck`, `npm test`
+- [x] T044 Remove the development byte counter from T002 or keep it behind its flag, and run `npm run lint`, `npm run typecheck`, `npm test`
 
 ## Dependencies
 
@@ -110,22 +110,23 @@ MVP is Phase 1, Phase 2 and US1: the reported problem is fixed and nothing else 
 
 ## Implementation status (2026-11-17)
 
-Written, typechecked, linted and covered by unit tests (`client-view.test.ts`, `client-data.test.ts`, `remote-channel.test.ts`, `remote-client.test.ts`); not yet run against a real remote server, the running desktop app or an iPhone.
+All code tasks are written, typechecked, linted and covered by unit tests: `client-view.test.ts`, `client-data.test.ts`, `client-own.test.ts`, `remote-channel.test.ts`, `remote-client.test.ts`, `native-idle.test.ts`, and the existing `peer.test.ts` and `phone.test.ts`, which now run through the client view and `client-data.ts`. `npm run build` and the mobile `vite build` succeed. Nothing has been run against a real remote server, the running desktop app or an iPhone.
 
 Deviations from the tasks as written:
 
 - T004: not needed. `chat:find` matches the text of `mine` and `theirs` items exactly as Transcript's Find does, so `findIn` in `client/src/core/client-view.ts` holds the rule and no `find-text.ts` was made.
 - T007: Find tests live in `client-view.test.ts`, not `find.test.ts`.
-- T010: the view methods are not core methods. Local RPC only broadcasts events, so each client's view lives at its link: one per full remote channel in `service/remote/access.ts`, and one for the local Chat window in `main/index.ts` (IPC handlers for `VIEW_METHODS`). `VIEW_METHODS` in `client-view.ts` is the contract list.
-- T017: the data half is `client/src/shared/client-data.ts` (shared because the preload builds the local API from it). `phone.ts` still has its own copy; it serves only the old pairing and goes with T038.
+- T010: the view methods are not core methods. Local RPC only broadcasts events, so each client's view lives at its link: one per full remote channel in `service/remote/access.ts`, one for the local Chat window in `main/index.ts` (IPC handlers for `VIEW_METHODS`), and one per old-paired phone in the peer window. `VIEW_METHODS` in `client-view.ts` is the contract list.
+- T017: the data half is `client/src/shared/client-data.ts`, shared because the preload builds the local API from it. It falls back per call to the whole conversation for a side that answers `link:can` but has no paged calls, as `phone.ts` did.
 - T019: the Load earlier row says "Loading earlier" and "Could not load. Try again" on every client; the opened-run placeholder line is not added.
 - T023: the local view offers `steps` and `find` only, so pictures and the list go whole over IPC as before.
-- T030 and T032 are partly done: calls made while the link is down are held for `HOLD` (60 s) and sent once on reconnect, in-flight calls are never resent (tests in `remote-client.test.ts`), and client-own settings (`OWN`) are kept per server in `workspace-api.tsx`. `client-link.ts` was not extracted, and errors and counting are not yet held on a remote desktop client.
+- T031: `client/src/shared/client-own.ts` holds the client-own settings layer (`clientOwn`). Holding calls during a drop stays in each transport (`phone.ts` for the old pairing, `remote/client.ts` for servers), since the old pairing goes in a later release.
+- T032: a remote client counts and holds its errors with the phone's `phoneErrors` and `countEvent`, under its own answers per server.
+- T033: no change to the Notification Service Extension was needed: it already tries every key the app leaves in the App Group, matched by room, so the phone adds its servers' keys there. Tokens are kept per device in the sealed remote-access record.
+- T034: the read-only list is wider than the tasks named: everything the phone reads to draw the board, a conversation, a project and Settings, so an old-paired phone stays readable. The relay runs a client view in the peer window rather than through `peer.call`.
+- T039: the server keeps `snapshot` and `history` for scoped observation devices; the unused client `history` request is removed from `remote/client.ts`.
 
-Open:
+Open, needing the apps, a device or Alex:
 
-- T001 to T003, T021, T028, T036: baseline and quickstart runs need the running apps and a device.
-- T033: push to a phone connected through a server needs a push key per device and changes to the Notification Service Extension; not started.
-- T034, T035, T037 to T039: wait for T033. Making the old pairing read-only before push works through the service would cost those phones their notifications.
-- T040 to T044: after the above.
-
+- T001 to T003, T021, T028, T036: baseline and quickstart runs in the running desktop app, against a real remote server and on an iPhone.
+- T043: the `docs/features.md` entry is proposed to Alex and waits for his answer.

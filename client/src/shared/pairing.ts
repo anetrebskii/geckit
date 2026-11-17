@@ -11,6 +11,8 @@ import type { SessionItem } from './api'
  */
 
 // Where the relay's keys are asked for; the rooms themselves are in Firestore.
+/** What a computer answers a phone paired the old way that asks it to do something. */
+export const PAIR_AGAIN = 'Pair this phone again.'
 export const SIGNAL = 'https://europe-west1-geckit-signal.cloudfunctions.net'
 
 export interface Pairing {

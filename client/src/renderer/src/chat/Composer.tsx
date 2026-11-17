@@ -9,6 +9,7 @@ import { mentionAt, pathsFor } from '../../../shared/paths'
 import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
 import type { Unheard } from '../dictate'
 import { ON_PHONE } from '../on-phone'
+import { usePairAgain } from './PairAgain'
 import { BARS, time, toHear, useRecorder } from '../recorder'
 import { downloading, useSpeechModel } from '../speech'
 import { tap } from '../tap'
@@ -377,7 +378,9 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
   // The phone has no room in the field for the words, so there the buttons stay, held, and the words go on a line over it.
   const held = ON_PHONE && away !== undefined
   const shownAway = held ? undefined : away
+  const { needed: readOnly } = usePairAgain()
   const cannot =
+    readOnly ||
     (isCodexProvider(chat.provider) && chat.root !== undefined && isRemote(chat.root)) ||
     held ||
     chat.uploading ||

@@ -1,8 +1,9 @@
 import { listen } from '../link'
 import type { Link } from '../link'
-import type { ChatSession, SessionImage, SessionItem, SessionItems } from '../../../shared/api'
-import { pieceOf, SIGNAL } from '../../../shared/pairing'
-import { collapse, isPending, pendingLast, readPictureRef, withoutPictures } from '../../../shared/steps'
+import type { SessionImage, SessionItem } from '../../../shared/api'
+import { PAIR_AGAIN, pieceOf, SIGNAL } from '../../../shared/pairing'
+import { CAN, clientView } from '../../../core/client-view'
+import type { ClientView } from '../../../core/client-view'
 
 /**
  * The hidden window the phones are answered in: main has no WebRTC, a window
@@ -66,42 +67,10 @@ const said = (): void => window.geckit.peer.state(links.size, trouble)
 const away = new Set<Link>()
 const here = (): void => void window.geckit.peer.call('push.here', [[...links].filter((one) => !away.has(one)).length]).catch(() => undefined)
 
-// The conversation each phone has open; a phone from before it said so is sent every one.
-const shows = new Map<Link, string>()
-
-// A reply grows a word at a time and each step carries all of it, so what a phone is told is gathered and sent a few times a second, the latest of each.
-const ITEMS_EVERY = 100
-const LIST_EVERY = 300
-interface ItemChanges {
-  readonly items: Map<SessionItem['id'], SessionItem>
-  readonly gone: Set<SessionItem['id']>
-}
-const gathered = new Map<string, ItemChanges>()
-let list: unknown
-let itemsTimer: number | undefined
-let listTimer: number | undefined
-
-// A phone that can take them is sent a conversation as its messages and replies, each run of steps one line, and the steps when it opens the line.
-// For that the whole of each conversation a phone has open is held here, as main tells it, and what each phone was last sent of it.
-const whole = new Map<string, Map<string, SessionItem>>()
-const reading = new Map<string, ItemChanges & { readonly promise: Promise<SessionItem[]> }>()
-const views = new Map<Link, { readonly id: string; rows: (readonly [string, string])[] }>()
-const WHOLE_KEPT = 8
-
-const rowsOf = (items: readonly SessionItem[]): (readonly [string, string])[] => items.map((item) => [item.id, JSON.stringify(item)])
-
-/** A conversation as a phone that can take it is sent it: each run of steps one line, and its pictures named rather than carried. */
-// A phone from before it could ask for pictures by name is sent them whole.
-const byName = new Set<Link>()
-// A phone that folds steps asks for the end of what it opens, and lines sent unfolded before that would land after it.
-const folding = new Set<Link>()
-const forPhone = (link: Link, id: string, all: readonly SessionItem[]): SessionItem[] =>
-  pendingLast(collapse(byName.has(link) ? all.map((item) => withoutPictures(id, item)) : all))
+// Each phone reads conversations as every client does, through a client view of its own: the end first, runs of steps as one line, pictures by name, the list as the rows that changed.
+const views = new Map<Link, ClientView>()
 
 // A picture is drawn 220 points wide in the conversation and fills the screen when pressed, so it is sent at the width asked for, and no wider than it is.
-const scaled = new Map<string, Promise<SessionImage>>()
-const SCALED_KEPT = 60
-
 async function scaledTo(image: SessionImage, width: number): Promise<SessionImage> {
   const raw = atob(image.data)
   const bitmap = await createImageBitmap(new Blob([Uint8Array.from(raw, (one) => one.charCodeAt(0))], { type: image.media }))
@@ -117,152 +86,45 @@ async function scaledTo(image: SessionImage, width: number): Promise<SessionImag
   return data.length < image.data.length ? { media: 'image/webp', data } : image
 }
 
-async function pictureFor(ref: string, width: number): Promise<SessionImage | undefined> {
-  const named = readPictureRef(ref)
-  if (named === undefined) return undefined
-  const key = `${ref}\n${String(width)}`
-  let held = scaled.get(key)
-  if (held === undefined) {
-    const item = (await wholeOf(named.session)).find((one) => one.id === named.item)
-    const image = item?.kind === 'mine' || item?.kind === 'did' ? item.images?.[named.index] : undefined
-    if (image === undefined) return undefined
-    held = scaledTo(image, width).catch(() => image)
-    scaled.set(key, held)
-    if (scaled.size > SCALED_KEPT) scaled.delete(scaled.keys().next().value ?? '')
-  }
-  return held
-}
-
-/** Read again from main when a phone opens it: one continued in a terminal changes on disk without main saying so. */
-async function wholeOf(id: string, again = false): Promise<SessionItem[]> {
-  const pending = reading.get(id)
-  if (pending !== undefined) return pending.promise
-  const held = whole.get(id)
-  if (held !== undefined && !again) return [...held.values()]
-  const changes: ItemChanges = { items: new Map(), gone: new Set() }
-  const promise = window.geckit.peer.call('chat.items', [id]).then((value) => {
-    const all = new Map((value as SessionItem[]).map((item) => [item.id, item]))
-    for (const gone of changes.gone) all.delete(gone)
-    for (const item of changes.items.values()) all.set(item.id, item)
-    whole.delete(id)
-    whole.set(id, all)
-    if (whole.size > WHOLE_KEPT) whole.delete(whole.keys().next().value ?? '')
-    return [...all.values()]
-  }).finally(() => reading.delete(id))
-  reading.set(id, { ...changes, promise })
-  return promise
-}
-
-function sendItems(): void {
-  itemsTimer = undefined
-  for (const [id, held] of gathered) {
-    const value: SessionItems = { id, items: [...held.items.values()], ...(held.gone.size > 0 ? { gone: [...held.gone] } : {}) }
-    const all = whole.get(id)
-    for (const link of links) {
-      const shown = shows.get(link)
-      if (shown !== undefined && shown !== id) continue
-      const view = views.get(link)
-      const folded = all === undefined ? undefined : rowsOf(forPhone(link, id, [...all.values()]))
-      if (folded === undefined || view?.id !== id) {
-        if (folding.has(link) && view?.id !== id) continue
-        link.send({ t: 'tell', channel: 'chat:items', value })
-        continue
-      }
-      // A reply is put back at the end under its own id once it is whole, so the order moves as well as the lines: from the first place
-      // the phone's copy differs, all of it is sent again in order, and what it had from there is taken out first.
-      let from = 0
-      while (from < folded.length && from < view.rows.length && folded[from]?.[0] === view.rows[from]?.[0] && folded[from]?.[1] === view.rows[from]?.[1]) from++
-      const gone = view.rows.slice(from).map(([key]) => key)
-      const items = folded.slice(from).map(([, row]) => JSON.parse(row) as SessionItem)
-      view.rows = folded
-      if (items.length > 0 || gone.length > 0) {
-        link.send({ t: 'tell', channel: 'chat:items', value: { id, items, ...(gone.length > 0 ? { gone } : {}) } })
-      }
-    }
-  }
-  gathered.clear()
-}
-
-function gather(said: SessionItems): void {
-  const pending = reading.get(said.id)
-  if (pending !== undefined) {
-    for (const id of said.gone ?? []) {
-      pending.items.delete(id)
-      pending.gone.add(id)
-    }
-    for (const item of said.items) pending.items.set(item.id, item)
-  }
-  const all = whole.get(said.id)
-  if (all !== undefined) {
-    for (const id of said.gone ?? []) all.delete(id)
-    for (const item of said.items) all.set(item.id, item)
-  }
-  let held = gathered.get(said.id)
-  if (held === undefined) {
-    held = { items: new Map(), gone: new Set() }
-    gathered.set(said.id, held)
-  }
-  for (const id of said.gone ?? []) {
-    held.items.delete(id)
-    held.gone.add(id)
-  }
-  for (const item of said.items) {
-    held.items.delete(item.id)
-    held.items.set(item.id, item)
-  }
-  itemsTimer ??= window.setTimeout(sendItems, ITEMS_EVERY)
-}
-
-// The list runs to a hundred kilobytes and one row moves at a time, so a phone that can take them is sent the rows that changed.
-const understood = new Set<Link>()
-const sentRows = new Map<Link, Map<string, string>>()
-
-function sendList(): void {
-  listTimer = undefined
-  const rows = new Map((list as readonly ChatSession[]).map((row) => [row.id, JSON.stringify(row)]))
-  for (const link of links) {
-    const sent = sentRows.get(link)
-    if (!understood.has(link) || sent === undefined) {
-      link.send({ t: 'tell', channel: 'chat:sessions', value: list })
-      if (understood.has(link)) sentRows.set(link, rows)
-      continue
-    }
-    const changed = (list as readonly ChatSession[]).filter((row) => sent.get(row.id) !== rows.get(row.id))
-    const gone = [...sent.keys()].filter((id) => !rows.has(id))
-    if (changed.length > 0 || gone.length > 0) link.send({ t: 'tell', channel: 'chat:sessionsChanged', value: { changed, gone } })
-    sentRows.set(link, rows)
-  }
-}
+const viewFor = (link: Link): ClientView =>
+  clientView(
+    {
+      items: async (id) => (await window.geckit.peer.call('chat.items', [id])) as SessionItem[],
+      queuedPicture: async (id, queued, index) => ((await window.geckit.peer.call('chat.queuedPicture', [id, queued, index])) as SessionImage | null) ?? undefined,
+      scale: scaledTo,
+    },
+    CAN,
+    (event) => link.send({ t: 'tell', channel: event.name, value: event.args[0] }),
+  )
 
 window.geckit.peer.onTell((channel, value) => {
-  if (channel === 'chat:items') return gather(value as SessionItems)
-  if (channel === 'chat:sessions') {
-    list = value
-    listTimer ??= window.setTimeout(sendList, LIST_EVERY)
-    return
-  }
+  const owned = [...views.values()].map((view) => view.event({ name: channel, args: [value] })).includes(true)
+  if (owned) return
   for (const link of links) link.send({ t: 'tell', channel, value })
 })
 
 const joined = (link: Link): void => {
   links.add(link)
+  const view = viewFor(link)
+  views.set(link, view)
   said()
   here()
   link.onClose(() => {
     links.delete(link)
     away.delete(link)
     here()
-    shows.delete(link)
+    views.get(link)?.dispose()
     views.delete(link)
-    byName.delete(link)
-    folding.delete(link)
-    understood.delete(link)
-    sentRows.delete(link)
     unwatch(link)
     said()
   })
   link.onMessage((message) => {
     if (message.t !== 'call') return
+    // A phone paired here the old way reads what this computer has; doing anything is for a phone paired again with geckit pair.
+    if (!READ_ONLY.has(message.name)) {
+      link.send({ t: 'reply', id: message.id, error: PAIR_AGAIN })
+      return
+    }
     // The screen is this window's to capture, not main's.
     if (message.name === 'screen.start') {
       void watch(link).then((error) => link.send({ t: 'reply', id: message.id, value: error ?? null }))
@@ -270,21 +132,15 @@ const joined = (link: Link): void => {
     }
     if (message.name === 'link.can') {
       const can = message.args[0] as readonly string[]
+      void view.call('link:can', [can])
       // Said back first and sent plainly, so the phone knows before anything deflated reaches it.
-      link.send({ t: 'reply', id: message.id, value: { deflate: true } })
+      link.send({ t: 'reply', id: message.id, value: { deflate: true, pairAgain: true } })
       if (can.includes('deflate')) link.compress(true)
-      if (can.includes('pictures')) byName.add(link)
-      if (can.includes('steps')) folding.add(link)
-      if (can.includes('sessionsChanged')) {
-        understood.add(link)
-        // A phone that says what it can also says which conversation it opens, and until then has none open.
-        if (!shows.has(link)) shows.set(link, '')
-      }
       return
     }
     if (message.name === 'chat.watching') {
       const id = message.args[0]
-      if (typeof id === 'string') shows.set(link, id)
+      void view.call('chat:watch', [typeof id === 'string' ? [id] : []])
       link.send({ t: 'reply', id: message.id, value: null })
       return
     }
@@ -309,43 +165,12 @@ const joined = (link: Link): void => {
       )
       return
     }
-    if (message.name === 'chat.picture') {
-      void pictureFor(message.args[0] as string, message.args[1] as number).then(
+    const owned = view.call(message.name.replace('.', ':'), message.args)
+    if (owned !== undefined) {
+      owned.then(
         (value) => link.send({ t: 'reply', id: message.id, value: value ?? null }),
         (error: unknown) => link.send({ t: 'reply', id: message.id, error: error instanceof Error ? error.message : String(error) }),
       )
-      return
-    }
-    if (message.name === 'chat.queuedPicture') {
-      const [id, queued, index, width] = message.args as [string, string, number, number]
-      void window.geckit.peer
-        .call('chat.queuedPicture', [id, queued, index])
-        .then((image) => (image === undefined || image === null ? null : scaledTo(image as SessionImage, width).catch(() => image)))
-        .then(
-          (value) => link.send({ t: 'reply', id: message.id, value }),
-          (error: unknown) => link.send({ t: 'reply', id: message.id, error: error instanceof Error ? error.message : String(error) }),
-        )
-      return
-    }
-    if (message.name === 'chat.turns' || message.name === 'chat.turnsBefore' || message.name === 'chat.steps') {
-      const id = message.args[0] as string
-      void wholeOf(id, message.name === 'chat.turns')
-        .then((all) => {
-          if (message.name === 'chat.steps') {
-            const ids = new Set(message.args[1] as readonly string[])
-            return all.filter((item) => ids.has(item.id)).map((item) => (byName.has(link) ? withoutPictures(id, item) : item))
-          }
-          const folded = forPhone(link, id, all)
-          if (message.name === 'chat.turns') {
-            views.set(link, { id, rows: rowsOf(folded) })
-            return pieceOf(folded, undefined, Math.max(message.args[1] as number, folded.filter(isPending).length))
-          }
-          return pieceOf(folded, message.args[1] as string, message.args[2] as number)
-        })
-        .then(
-          (value) => link.send({ t: 'reply', id: message.id, value }),
-          (error: unknown) => link.send({ t: 'reply', id: message.id, error: error instanceof Error ? error.message : String(error) }),
-        )
       return
     }
     window.geckit.peer.call(message.name, message.args).then(
@@ -354,6 +179,16 @@ const joined = (link: Link): void => {
     )
   })
 }
+
+// What a phone paired the old way may still ask: reading the board, conversations, pictures and settings, and being told when it is away.
+const READ_ONLY = new Set([
+  'link.can', 'chat.watching', 'push.away', 'push.token', 'screen.stop', 'mac.version', 'local.fetch',
+  'chat.watch', 'chat.list', 'chat.listStatus', 'chat.items', 'chat.tail', 'chat.before', 'chat.turns', 'chat.turnsBefore', 'chat.steps', 'chat.picture', 'chat.queuedPicture', 'chat.find',
+  'chat.account', 'chat.models', 'chat.plan', 'chat.plans', 'chat.links', 'chat.waiting', 'chat.firstAsked', 'chat.exists', 'chat.git', 'chat.hidden',
+  'chat.taskOutput', 'chat.search', 'chat.preparedDraft', 'chat.commands', 'chat.file', 'chat.files', 'chat.repo', 'chat.browsers',
+  'settings.get', 'employees.list', 'manager.view', 'manager.history', 'lineup.state', 'speech.model', 'update.view', 'browser.state', 'channels.view',
+  'hosts.list', 'hosts.prompts', 'hosts.running', 'hosts.working', 'hosts.conversations', 'shortcuts.runs', 'shortcuts.destinations',
+])
 
 // Each shared link has a room and key of its own, and a page joined there may ask only about that link.
 const SHARE_CALLS = new Set(['share.about', 'share.fetch', 'share.read'])

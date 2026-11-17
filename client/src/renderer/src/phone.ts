@@ -1,13 +1,13 @@
 import type { Geckit } from '../../preload'
-import type { ChatSession, SessionImage, SessionItem, SessionItems, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
+import type { ChatSession, SessionImage, SessionItem, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
 import { isRemote } from '../../shared/hosts'
-import { pieceOf } from '../../shared/pairing'
-import { collapse, isPending, pendingLast, runKey } from '../../shared/steps'
 import { isLocal, toPhone } from '../../shared/local'
-import type { Piece } from '../../shared/pairing'
 import { countEvent } from '../../shared/counting'
 import type { EventName } from '../../shared/counting'
-import { OWN } from './phone-calls'
+import { clientOwn } from '../../shared/client-own'
+import { pairAgain } from './pair-again'
+import { clientData } from '../../shared/client-data'
+import { PAIR_AGAIN } from '../../shared/pairing'
 import { phoneErrors } from './phone-errors'
 import type { PhoneCalls } from './phone-calls'
 import type { EmployeesView } from '../../shared/employees'
@@ -132,14 +132,6 @@ Object.defineProperty(window, 'geckitStats', {
   },
 })
 
-// Where a conversation is kept; the number moves when what is kept changes shape, and what was kept before is left unread.
-const itemsKey = (id: string): string => `items2:${id}`
-
-// How much of a conversation is asked for when it opens, and how much more each time the person scrolls to its top.
-const TAIL = 60
-const EARLIER = 200
-// Conversations kept on the phone, the ones opened last.
-const KEPT_CHATS = 30
 // What is kept is written this long after it last changed, not on every word of a reply.
 const KEEP_AFTER = 1000
 
@@ -174,37 +166,18 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
   let down = first === undefined
   const held: (() => void)[] = []
 
-  // How this phone looks and which projects it shows are its own, whatever the Mac has; a profile the Mac no longer has is All projects again.
-  const ownKey = 'own'
-  const readOwn = (): Partial<Settings> => {
-    try {
-      return JSON.parse(localStorage.getItem(ownKey) ?? '{}') as Partial<Settings>
-    } catch {
-      return {}
-    }
-  }
-  let mine = readOwn()
-  let last: Settings | undefined
-  // Whether this phone counts and sends its errors is asked on the phone, whatever the Mac answered.
-  const own = (settings: Settings): Settings => {
-    last = settings
-    const kept = { ...settings, analytics: false, analyticsAsked: false, sendErrors: false, client: '', ...mine }
-    const gone = mine.profile !== undefined && mine.profile !== '' && !settings.profiles.some((one) => one.id === mine.profile)
-    return gone ? { ...kept, profile: '', chatProjects: [], chatAll: true } : kept
-  }
+  // How this phone looks, which projects it shows, and whether it counts and sends its errors are its own, whatever the Mac has.
+  const owned = clientOwn('own')
+  const own = owned.own
 
   const errors = phoneErrors(
-    () => mine.sendErrors === true,
+    () => owned.mine().sendErrors === true,
     () => void phone.settings.set({ sendErrors: true }),
   )
   let version: Promise<string> | undefined
   const counting = (name: EventName): void => {
-    if (mine.analytics !== true || mine.analyticsAsked !== true) return
-    if ((mine.client ?? '') === '') {
-      mine = { ...mine, client: crypto.randomUUID() }
-      localStorage.setItem(ownKey, JSON.stringify(mine))
-    }
-    const client = mine.client ?? ''
+    if (owned.mine().analytics !== true || owned.mine().analyticsAsked !== true) return
+    const client = owned.client()
     version ??= call<string>('mac.version')
     void version.then((said) => countEvent(client, name, `phone ${said}`)).catch(() => undefined)
   }
@@ -221,12 +194,14 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         pending.delete(message.id)
         if (waiting !== undefined) count(`call ${waiting.name}`, message.value, performance.now() - waiting.at)
         if (message.error === undefined) waiting?.done(message.value)
-        else waiting?.failed(new Error(message.error))
+        else {
+          if (message.error === PAIR_AGAIN) pairAgain.need()
+          waiting?.failed(new Error(message.error))
+        }
       }
       if (message.t === 'tell') {
         count(`tell ${message.channel}`, message.value)
-        if (message.channel === 'chat:items' && (message.value as SessionItems).id === shown?.id) tellItems(message.value as SessionItems)
-        else told(message.channel, message.value)
+        told(message.channel, message.value)
       }
     })
     one.onClose(() => {
@@ -272,14 +247,15 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
 
   /** What this phone can take, said first on every link; a Mac that can read deflated messages is sent them from then on. */
   const can = (one: Link): void =>
-    void call<{ readonly deflate?: boolean } | null>('link.can', ['sessionsChanged', 'steps', 'deflate', 'pictures'])
+    void call<{ readonly deflate?: boolean; readonly pairAgain?: boolean } | null>('link.can', ['sessionsChanged', 'steps', 'deflate', 'pictures'])
       .then((said) => {
+        if (said?.pairAgain === true) pairAgain.need()
         if (said?.deflate === true && link === one) one.compress(true)
       })
       .catch(() => undefined)
   if (first !== undefined) can(first)
 
-  const listen = <T>(channel: string, said: (value: T) => void): (() => void) => {
+  const rawListen = <T>(channel: string, said: (value: T) => void): (() => void) => {
     let held = heard.get(channel)
     if (held === undefined) {
       held = new Set()
@@ -321,115 +297,17 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     return kept
   }
 
-  // The conversation open on the phone, as the page has it: kept on the phone as it changes, and brought up to date from the Mac.
-  let shown: { readonly id: string; items: Map<string, SessionItem>; left: number } | undefined
-
-  const keepShown = (): void => {
-    const now = shown
-    if (now === undefined) return
-    later(itemsKey(now.id), (): Piece => {
-      const all = pendingLast([...now.items.values()])
-      const items = all.slice(-Math.max(TAIL, all.filter(isPending).length))
-      return { items, left: now.left + all.length - items.length }
-    })
-  }
-
-  // A conversation comes as its messages and replies, each run of steps between them one line; a Mac from before that sends all of it, and it is folded here.
-  const tail = (id: string): Promise<Piece> =>
-    orAsBefore(call<Piece>('chat.turns', id, TAIL), () =>
-      call<SessionItem[]>('chat.items', id).then((all) => {
-        const folded = pendingLast(collapse(all))
-        return pieceOf(folded, undefined, Math.max(TAIL, folded.filter(isPending).length))
-      }),
-    )
-
-  const stepsOf = (id: string, ids: readonly string[]): Promise<SessionItem[]> =>
-    orAsBefore(call<SessionItem[]>('chat.steps', id, ids), () =>
-      call<SessionItem[]>('chat.items', id).then((all) => all.filter((item) => ids.includes(item.id))),
-    )
-
-  // The runs opened in the conversation on screen, which stay open as they grow and after the link is made again.
-  let expanded = new Set<string>()
-
-  /** Items with each run that is open put back as its steps, the ones the page has not got asked for. */
-  const filled = async (id: string, items: readonly SessionItem[]): Promise<SessionItem[]> => {
-    const wanted = items.filter((item) => item.kind === 'steps' && expanded.has(item.id))
-    if (wanted.length === 0) return [...items]
-    const have = shown?.id === id ? shown.items : new Map<string, SessionItem>()
-    const missing = wanted.flatMap((run) => (run.kind === 'steps' ? run.ids.filter((one) => !have.has(one)) : []))
-    const found = new Map((missing.length === 0 ? [] : await stepsOf(id, missing)).map((item) => [item.id, item]))
-    return items.flatMap((item) =>
-      item.kind === 'steps' && expanded.has(item.id)
-        ? item.ids.flatMap((one) => {
-            const step = have.get(one) ?? found.get(one)
-            return step === undefined ? [] : [step]
-          })
-        : [item],
-    )
-  }
-
-  // What is told of the conversation on screen goes in the order it came, each open run filled in on the way.
-  let telling = Promise.resolve()
-  const tellItems = (said: SessionItems): void => {
-    telling = telling
-      .then(async () => {
-        // A run open on the page that is sent again in its place goes back in its place: its steps are taken out with it and put back in order.
-        const moved = said.items.flatMap((item) => (item.kind === 'steps' && expanded.has(item.id) && said.gone?.includes(item.id) === true ? item.ids : []))
-        const gone = said.gone === undefined ? undefined : [...said.gone, ...moved]
-        told('chat:items', { ...said, items: await filled(said.id, said.items), ...(gone === undefined ? {} : { gone }) })
-      })
-      .catch(() => undefined)
-  }
-
-  /** The end of the open conversation as the Mac has it now, put in place of the end the page has, what it had before that left alone. */
-  const bringUp = (id: string): void =>
-    void tail(id)
-      .then(async (said) => ({ ...said, items: await filled(id, said.items) }))
-      .then((piece) => {
-        const now = shown
-        if (now?.id !== id) return
-        const order = [...now.items.keys()]
-        const from = piece.items[0] === undefined ? -1 : order.indexOf(piece.items[0].id)
-        // What the page has out of place is taken out too, so it goes back where the Mac has it.
-        const coming = new Set(piece.items.map((item) => item.id))
-        const waiting = new Set([...now.items.values()].filter(isPending).map((item) => item.id))
-        const staying = (from === -1 ? [] : order.slice(0, from)).filter((one) => !coming.has(one) && !waiting.has(one))
-        const gone = [...new Set([...(from === -1 ? order : order.slice(from)), ...coming, ...waiting])]
-        now.items = new Map([...staying.map((one): [string, SessionItem] => [one, now.items.get(one) as SessionItem]), ...piece.items.map((item): [string, SessionItem] => [item.id, item])])
-        now.left = Math.max(0, piece.left - staying.length)
-        told('chat:items', { id, items: piece.items, gone } satisfies SessionItems)
-        told('chat:earlier', { id, left: now.left })
-        keepShown()
-      })
-      .catch(() => undefined)
-
-  const remembered = async (id: string): Promise<void> => {
-    const recent = (await readKept<string[]>(named('recent'))) ?? []
-    const next = [id, ...recent.filter((one) => one !== id)]
-    for (const gone of next.splice(KEPT_CHATS)) void keep(named(itemsKey(gone)), undefined)
-    await keep(named('recent'), next)
-  }
-
-  listen<SessionItems>('chat:items', (said) => {
-    const now = shown
-    if (now?.id !== said.id) return
-    for (const id of said.gone ?? []) now.items.delete(id)
-    for (const item of said.items) now.items.set(item.id, item)
-    keepShown()
+  // Conversations are read as every client reads them, and kept on the phone so it opens on them while the link is made.
+  const data = clientData({
+    call: (name, ...args) => call(name.replace(':', '.'), ...args),
+    hear: (channel, said) => rawListen(channel, said),
+    keeps: { prefix: mac, read: readKept, keep },
+    down: () => down,
   })
-  // The list as last told, which the rows that changed are put into.
+  const listen = <T>(channel: string, said: (value: T) => void): (() => void) => data.listen(channel, said as (value: never) => void) ?? rawListen(channel, said)
+  // The list as last told, for where a conversation's project is.
   let rows: readonly ChatSession[] | undefined
-  listen<ChatSession[]>('chat:sessions', (all) => {
-    rows = all
-    later('list', () => all)
-  })
-  listen<{ readonly changed: readonly ChatSession[]; readonly gone: readonly string[] }>('chat:sessionsChanged', (said) => {
-    if (rows === undefined) return
-    const next = new Map(rows.map((row) => [row.id, row]))
-    for (const id of said.gone) next.delete(id)
-    for (const row of said.changed) next.set(row.id, row)
-    told('chat:sessions', [...next.values()].sort((one, other) => other.at - one.at))
-  })
+  listen<ChatSession[]>('chat:sessions', (all) => { rows = all })
   listen<Settings>('settings:changed', (settings) => later('settings', () => settings))
 
   const nothing = (): void => undefined
@@ -492,16 +370,13 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     settings: {
       get: () => keptFirst<Settings>('settings', () => call('settings.get'), 'settings:changed').then(own),
       set: async (change) => {
-        const here = Object.fromEntries(Object.entries(change).filter(([key]) => (OWN as readonly string[]).includes(key)))
-        const there = Object.fromEntries(Object.entries(change).filter(([key]) => !(OWN as readonly string[]).includes(key)))
+        const { here, there } = owned.take(change)
         if (Object.keys(here).length > 0) {
-          mine = { ...mine, ...here, ...(change.analytics === false ? { client: '' } : {}) }
-          localStorage.setItem(ownKey, JSON.stringify(mine))
           if (change.sendErrors !== undefined) errors.follow(change.sendErrors)
           if (change.analytics === true) counting('phoneOpened')
         }
         if (Object.keys(there).length > 0) return own(await call<Settings>('settings.set', there))
-        const now = last ?? (await call<Settings>('settings.get'))
+        const now = owned.last() ?? (await call<Settings>('settings.get'))
         told('settings:changed', now)
         return own(now)
       },
@@ -574,72 +449,17 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       rememberProject: (root) => call('chat.rememberProject', root),
       hidden: (older) => call('chat.hidden', older),
       bring: (id) => call('chat.bring', id),
-      list: (root) =>
-        root === undefined
-          ? keptFirst(
-              'list',
-              () =>
-                call<ChatSession[]>('chat.list', root).then((all) => {
-                  rows = all
-                  return all
-                }),
-              'chat:sessions',
-            )
-          : call('chat.list', root),
+      list: data.list,
       listStatus: () => orAsBefore(call('chat.listStatus'), () => Promise.resolve([])),
       onListStatus: (said) => listen('chat:listStatus', said),
-      items: async (id) => {
-        if (shown?.id !== id) expanded = new Set()
-        const kept = await readKept<Piece>(named(itemsKey(id)))
-        void remembered(id)
-        if (kept !== undefined) {
-          shown = { id, items: new Map(kept.items.map((item) => [item.id, item])), left: kept.left }
-          window.setTimeout(() => {
-            told('chat:earlier', { id, left: kept.left })
-            bringUp(id)
-          }, 0)
-          return kept.items
-        }
-        const piece = await tail(id)
-        shown = { id, items: new Map(piece.items.map((item) => [item.id, item])), left: piece.left }
-        keepShown()
-        window.setTimeout(() => told('chat:earlier', { id, left: piece.left }), 0)
-        return piece.items
-      },
-      before: async (id, before) => {
-        const piece = await orAsBefore(call<Piece>('chat.turnsBefore', id, before, EARLIER), () =>
-          call<SessionItem[]>('chat.items', id).then((all) => pieceOf(pendingLast(collapse(all)), before, EARLIER)),
-        )
-        const now = shown
-        if (now?.id === id) {
-          now.items = new Map([...piece.items.map((item): [string, SessionItem] => [item.id, item]), ...now.items])
-          now.left = piece.left
-        }
-        return piece
-      },
+      items: data.items,
+      before: data.before,
       onEarlier: (said) => listen('chat:earlier', said),
-      picture: (ref, width) => call<SessionImage | null>('chat.picture', ref, width).then((one) => one ?? undefined),
-      find: () => Promise.resolve(undefined),
+      picture: data.picture,
+      find: (id, words) => data.find(id, words).catch(() => undefined),
       firstAsked: (id) => call<string>('chat.firstAsked', id),
-      steps: async (id, ids) => {
-        const first = ids[0]
-        if (first !== undefined && shown?.id === id) expanded.add(runKey(first))
-        const found = await stepsOf(id, ids)
-        const now = shown
-        if (now?.id === id && first !== undefined) {
-          const run = runKey(first)
-          now.items = new Map([...now.items].flatMap(([key, item]): [string, SessionItem][] => (key === run ? found.map((one) => [one.id, one]) : [[key, item]])))
-          keepShown()
-        }
-        return found
-      },
-      // A Mac from before it could say only the card is asked for all of it.
-      waiting: (id) =>
-        call<SessionItem | undefined>('chat.waiting', id).catch(() =>
-          call<SessionItem[]>('chat.items', id).then((items) =>
-            items.findLast((item) => item.kind === 'card' && item.card.answered === undefined),
-          ),
-        ),
+      steps: data.steps,
+      waiting: (id) => call<SessionItem | undefined>('chat.waiting', id),
       links: (id) => call('chat.links', id),
       exportConversation: (id) => call('chat.exportConversation', id),
       continueConversation: (request) => call('chat.continueConversation', request),
@@ -690,6 +510,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
         send('chat.read', id)
         if (id === opened) return
         opened = id
+        data.watching(id)
         send('chat.watching', id)
       },
       read: (id) => send('chat.read', id),
@@ -883,11 +704,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     can(next)
     if (opened !== undefined) send('chat.watching', opened)
     for (const later of held.splice(0)) later()
-    // Told again as if the Mac had told it: the list, employees, Manager, plan, count working, settings, and the end of the conversation on screen.
-    void call<ChatSession[]>('chat.list', undefined).then((all) => {
-      settled.add('list')
-      told('chat:sessions', all)
-    })
+    // Told again as if the Mac had told it: the list and the end of the conversation on screen, employees, Manager, plan, count working and settings.
+    data.reconnected()
     void call<EmployeesView>('employees.list').then((view) => told('employees:changed', view)).catch(() => undefined)
     void call<ManagerView>('manager.view').then((view) => told('manager:view', view)).catch(() => undefined)
     void call('chat.plan').then((plan) => told('chat:plan', plan))
@@ -896,7 +714,6 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       settled.add('settings')
       told('settings:changed', settings)
     })
-    if (shown !== undefined) bringUp(shown.id)
   }
   counting('phoneOpened')
   const show = (id: string): void => {
