@@ -4,6 +4,9 @@ import { computerArg } from '../cli/computer'
 import { providerCatalog } from './provider-settings'
 import { formatStatusMove } from '../shared/status-history'
 import { settingsCommand } from './agent-settings'
+import { CHECKLIST_COMMANDS, checklistsCommand } from './checklists-cli'
+import type { TaskChecklist } from '../shared/checklists'
+import { checklistDone, checklistItems, checklistProgress, currentItem, itemCondition, newItem, taskPlan } from '../shared/checklists'
 import { AGENT_SETTINGS_SCHEMA } from '../shared/agent-settings'
 import type { Employees } from './employees'
 import type { Json } from '../shared/elicitation'
@@ -61,6 +64,18 @@ interface OperationDeps {
   readonly authorized?: () => boolean
 }
 
+
+/** What Manager sees of a task's checklist: progress, what it is on now, and each item when asked for detail. */
+function checklistSummary(checklist: TaskChecklist, detail: boolean): object {
+  const now = currentItem(checklist)
+  return {
+    ...checklistProgress(checklist),
+    done: checklistDone(checklist),
+    ...(now === undefined ? {} : { current: now.title, ...(now.state === 'approval' ? { waitsForPerson: true } : {}) }),
+    ...(detail ? { items: checklist.items.map((one, at) => ({ n: at + 1, title: one.title, check: one.check, ...(one.description ? { description: one.description } : {}), ...(one.command ? { command: one.command } : {}), ...(one.final === true ? { final: true } : {}), state: one.state ?? 'open' })) } : {}),
+  }
+}
+
 export const MANAGER_CAPABILITIES = {
   interface: 'GeckIt CLI; arguments are literal strings, never shell syntax',
   commands: [
@@ -87,7 +102,8 @@ export const MANAGER_CAPABILITIES = {
     'sessions assign --id <managed-worker-id> --employee <active-employee-id|none>',
     'sessions list [--managed]',
     'sessions show --id <full-session-id> [--last <1-30>]',
-    'sessions start --project <project> --text <self-contained-assignment> --goal <completion-condition> [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>] [--model <available-model-id>]',
+    'sessions checklist --id <managed-worker-id> --items <JSON array> (replaces the task\'s own checklist copy; an item whose title is unchanged keeps whether it passed; items with check person are approved only by the person, never by Manager)',
+    'sessions start --project <project> --text <self-contained-assignment> (--goal <completion-condition>|--checklist <saved-checklist-id-or-name>|--items <JSON array of results>; one of them, or the folder default checklist applies) [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>] [--model <available-model-id>]',
     'sessions send --id <managed-worker-id> --text <follow-up> (ordinary queue semantics; host receipt, not model consumption)',
     'sessions retry --id <managed-worker-id> (same deliberate Try again as GeckIt; rechecks VPN)',
     'sessions steer --id <managed-worker-id> --text <correction> (active native runtime only; never queues or restarts)',
@@ -99,10 +115,11 @@ export const MANAGER_CAPABILITIES = {
     'sessions unfollow --id <managed-worker-id> (no product confirmation; this thread stops tracking it, and then no thread receives its updates until one follows it)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'employees shortcuts [<employee-id>|none] [--json]',
-    'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
+    'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>|--checklist <id-or-name>|--items <JSON array>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
     'employees shortcut edit <shortcut-id> [same optional fields as add; --every none removes timetable, --goal empty clears goal] (no product confirmation)',
     'employees shortcut pause|resume|remove|run <shortcut-id> (no product confirmation)',
     'employees shortcut give <shortcut-id> <employee-id|none> (no product confirmation)',
+    ...CHECKLIST_COMMANDS.map((one) => `${one}${/^checklists (list|show)/.test(one) ? '' : ' (no product confirmation)'}`),
     'settings schema',
     'settings edit --patch <JSON object> [--expected <JSON object>] (no product confirmation)',
     'settings show',
@@ -137,7 +154,8 @@ const SHAPES: readonly CommandShape[] = [
   ...['list', 'read', 'write', 'mkdir', 'move', 'remove'].map((command) => ({ domain: 'files', command, flags: ['--project', '--path', ...(command === 'write' ? ['--text'] : []), ...(command === 'move' ? ['--to'] : [])] })),
   { domain: 'sessions', command: 'list', flags: ['--managed'] },
   { domain: 'sessions', command: 'show', flags: ['--id', '--last'] },
-  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--title', '--provider', '--employee', '--model'] },
+  { domain: 'sessions', command: 'checklist', flags: ['--id', '--items'] },
+  { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--checklist', '--items', '--title', '--provider', '--employee', '--model'] },
   { domain: 'sessions', command: 'assign', flags: ['--id', '--employee'] },
   { domain: 'sessions', command: 'send', flags: ['--id', '--text'] },
   { domain: 'sessions', command: 'retry', flags: ['--id'] },
@@ -165,7 +183,7 @@ export function managerReadOnly(args: readonly string[]): boolean {
   args = selected.args
   if (args.includes('--help') || args[0] === 'help') return true
   const [domain, command] = args
-  return domain === 'shortcuts' && ['destinations', 'runs', 'schema'].includes(command ?? '') || domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || ['computers', 'devices', 'channels', 'hosts', 'shortcuts'].includes(domain ?? '') && ['list', 'known'].includes(command ?? '') || domain === 'access' && command === 'status' || domain === 'manager' && command === 'view' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager')
+  return domain === 'shortcuts' && ['destinations', 'runs', 'schema'].includes(command ?? '') || domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || ['computers', 'devices', 'channels', 'hosts', 'shortcuts'].includes(domain ?? '') && ['list', 'known'].includes(command ?? '') || domain === 'access' && command === 'status' || domain === 'manager' && command === 'view' || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager') || domain === 'checklists' && (command === 'list' || command === 'show')
 }
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -321,6 +339,7 @@ export class ManagerOperations {
     }
     if (!(domain === 'channels' && command === 'send-file') && (['hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') || domain === 'computers') && this.#deps.product !== undefined) return this.#deps.product(args)
     if (domain === 'sessions' && !SHAPES.some((one) => one.domain === domain && one.command === command) && this.#deps.product !== undefined) return this.#deps.product(args)
+    if (domain === 'checklists') return checklistsCommand(args.slice(1), this.#deps.settings, this.#deps.saveSettings)
     const flags = domain === 'providers' && !['list', 'enable', 'disable', 'models'].includes(command ?? '') ? new Map<string, string>() : values(args)
     const settings = this.#deps.settings()
     if (domain === 'employees' && command === 'rename') {
@@ -495,7 +514,7 @@ export class ManagerOperations {
     if (domain === 'sessions') {
       if (command === 'list') {
         const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)) && (!team || this.#deps.notes.all()[one.id]?.managerThread === this.#deps.managerThread?.()))
-        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0 })))
+        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0, ...(one.checklist === undefined ? {} : { checklist: checklistSummary(one.checklist, false) }) })))
       }
       if (command === 'start') {
         const bindingsAvailable = (): boolean => !team || Object.values(this.#deps.notes.all()).filter((note) => note.managerRequestSource !== undefined).length < 2048
@@ -508,7 +527,10 @@ export class ManagerOperations {
         const employeeId = flags.get('--employee')
         if (employeeId !== undefined) { if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.'); this.#deps.employees.active(employeeId) }
         const text = required(flags, '--text')
-        const goal = required(flags, '--goal')
+        const plan = taskPlan(settings.checklists ?? [], root, { goal: flags.get('--goal'), checklist: flags.get('--checklist'), items: flags.get('--items') })
+        const first = plan.checklist === undefined ? undefined : currentItem(plan.checklist)
+        const goal = plan.goal ?? (first === undefined ? undefined : itemCondition(first))
+        if (goal === undefined) throw new Error('Missing --goal, --checklist or --items, and this folder has no default checklist. Use capabilities for the command format.')
         const model = flags.has('--model') ? required(flags, '--model') : providerModel(settings, resolved.provider)
         if (flags.has('--model')) {
           const session = this.#deps.managerSession()
@@ -518,7 +540,7 @@ export class ManagerOperations {
           if (session !== this.#deps.managerSession() || this.#deps.authorized?.() === false || !managerProjects(current).includes(root) || managerProvider(current, root, provider).provider !== resolved.provider) throw new Error('The Manager, project or provider changed while validating the model. Read current state before retrying.')
           if (employeeId !== undefined) this.#deps.employees?.active(employeeId)
         }
-        const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, goal, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
+        const message: SessionMessage = { root, ...(employeeId === undefined ? {} : { employeeId }), provider: resolved.provider, mode: settings.chatMode, text, checklist: plan.checklist ?? { items: [newItem(goal)] }, ...(model === '' ? {} : { model }), ...(isCodexProvider(resolved.provider) ? { reasoning: settings.codexReasoning } : {}) }
         const manager = this.#deps.managerSession()
         const request = this.#deps.managerRequest?.()
         const ownership = team ? { managerThread: this.#deps.managerThread?.() ?? 'main', ...(request === undefined ? {} : { managerRequestSource: request }), labels: this.#deps.threadLabels?.() ?? {} } : undefined
@@ -526,7 +548,7 @@ export class ManagerOperations {
         this.#own(id)
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)
-        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, model, modelReason: flags.has('--model') ? 'task' : 'default', employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal })
+        return JSON.stringify({ id, provider: resolved.provider, providerReason: resolved.reason, model, modelReason: flags.has('--model') ? 'task' : 'default', employeeId: worker.employeeId, state: worker.waits === true || (worker.queued?.length ?? 0) > 0 ? 'queued' : worker.state, goal, ...(plan.checklist === undefined ? {} : { checklist: { ...checklistProgress(plan.checklist), items: plan.checklist.items.map((one) => one.title) } }) })
       }
       const id = required(flags, '--id')
       const managerSession = this.#deps.managerSession()
@@ -562,7 +584,17 @@ export class ManagerOperations {
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)
         if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error('--last must be an integer from 1 to 30.')
-        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, status: worker.status, history: (worker.moves ?? []).map(formatStatusMove), moves: worker.moves ?? [], delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, status: worker.status, history: (worker.moves ?? []).map(formatStatusMove), moves: worker.moves ?? [], delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, ...(worker.checklist === undefined ? {} : { checklist: checklistSummary(worker.checklist, true) }), items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+      }
+      if (command === 'checklist') {
+        const was = worker.checklist?.items ?? []
+        const items = checklistItems(required(flags, '--items')).map((one) => {
+          const same = was.find((old) => old.title.trim() === one.title && old.check === one.check)
+          return same?.state === undefined ? one : { ...one, id: same.id, state: same.state }
+        })
+        const next: TaskChecklist = { ...(worker.checklist ?? {}), items }
+        this.#deps.sessions.setChecklist(id, next)
+        return JSON.stringify({ id, checklist: checklistSummary(next, true), notice: 'Saved. If the current item changed, its goal is set once the worker rests.' })
       }
       if (command === 'retry' || command === 'steer') {
         if (!settings.chatProviders.includes(providerOf(id))) throw new Error('This worker provider is disabled. No replacement was selected.')

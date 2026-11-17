@@ -4359,6 +4359,17 @@ button.request-open:hover .request-title {
   color: var(--text-faint);
 }
 
+.request-checklist {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.request-checklist li + li {
+  margin-top: 2px;
+}
+
 .request-note-add,
 .request-reply-add {
   display: inline-flex;
@@ -4637,6 +4648,26 @@ html.phone .request-foot .request-reply {
 .phrase.keep {
   padding: 3px 6px;
   border-style: dashed;
+}
+
+.approval-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 6px 6px 6px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+}
+
+.approval-bar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .queued {
@@ -5106,6 +5137,36 @@ html.phone .queued-one .icon-button.queue-inject {
   min-width: 0;
   max-width: 260px;
   color: var(--text);
+}
+
+/* A narrow conversation keeps each control whole: the checklist gives way with an ellipsis, then Model details and the assistant's name, fixed once the conversation started, go, and past that the row scrolls rather than cutting a control. */
+html:not(.phone) .composer-bar {
+  container-type: inline-size;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+html:not(.phone) .composer-bar > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+html:not(.phone) .composer-bar > .goal-picker {
+  flex-shrink: 1;
+  min-width: 96px;
+}
+
+html:not(.phone) .composer-bar > .spacer,
+html:not(.phone) .composer-bar > .composer-hint {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+@container (max-width: 760px) {
+  .composer-bar .model-details-button,
+  .composer-bar > .picker:first-child:disabled {
+    display: none;
+  }
 }
 
 .goal-picker .remote-dot {
@@ -7571,6 +7632,21 @@ html.framed .board-head {
 }
 
 /* How many work against the limit, said as a card says it is working, so it does not read as a second count. */
+/* A narrow column keeps its head on one line: the count drops its word before the name wraps. */
+.board-column {
+  container-type: inline-size;
+}
+
+.board-column-head {
+  white-space: nowrap;
+}
+
+@container (max-width: 200px) {
+  .board-column-head .working-word {
+    display: none;
+  }
+}
+
 .board-column-head .working-count {
   margin-inline-end: 10px;
   font-size: 11px;
@@ -7878,7 +7954,7 @@ html.framed .board-head {
   gap: 14px;
   width: min(820px, calc(100% - 80px));
   max-height: calc(100% - 96px);
-  overflow-y: auto;
+  overflow: hidden;
   padding: 16px 20px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -7899,23 +7975,19 @@ html.framed .board-head {
   font-weight: 600;
 }
 
-.new-task-kinds button {
-  height: 26px;
-  padding: 0 11px 0 9px;
-  font-size: 13px;
-}
-
 .new-task-sub {
   color: var(--text-faint);
   font-size: 12px;
 }
 
+/* The form's middle scrolls on its own, so a long checklist never takes Start out of view. */
 .new-task-body {
   display: grid;
-  flex-shrink: 0;
+  flex-shrink: 1;
   grid-template-columns: minmax(0, 1fr) 248px;
   gap: 18px;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .new-task-main {
@@ -9560,12 +9632,13 @@ html.phone .talk.over {
   }
 }
 
+/* Wide enough for a quick swipe, which often starts a little in from the edge. */
 .phone-edge {
   position: absolute;
   inset-block: 0;
   left: 0;
   z-index: 4;
-  width: 20px;
+  width: 28px;
   touch-action: none;
 }
 
@@ -10271,52 +10344,37 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 }
 
 .phone-screen-bar {
-  display: flex;
+  display: grid;
   flex: none;
+  grid-template-columns: 1fr auto 1fr;
   gap: 8px;
   align-items: center;
-  padding: calc(var(--top) + 2px) max(8px, env(safe-area-inset-right)) 2px max(16px, env(safe-area-inset-left));
+  padding: var(--top) max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left));
 }
 
 .phone-screen-bar.hidden {
   display: none;
 }
 
-.phone-screen-title {
+.phone-screen-middle {
   display: flex;
-  flex: 0 1 auto;
-  gap: 8px;
-  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
   align-items: center;
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.phone-screen-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.phone-screen-live {
-  flex: none;
-  padding: 1px 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--on-solid);
-  background: var(--danger-solid);
-  border-radius: 4px;
+  min-width: 0;
 }
 
 /* Look or Control, drawn light on the black whatever the theme. */
 .phone-screen-seg {
-  flex: none;
-  margin: 0 0 0 4px;
+  width: 200px;
+  margin: 0;
   background: rgb(255 255 255 / 12%);
 }
 
 .phone-screen-seg button {
+  height: 28px;
   padding: 0 12px;
+  font-size: 13px;
 }
 
 .phone-screen-seg .phone-seg-thumb {
@@ -10325,10 +10383,31 @@ body:has(.talk.over:not([hidden])) .phone-offline {
   box-shadow: none;
 }
 
-.phone-screen-done {
+.phone-screen-name {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  max-width: 200px;
+  overflow: hidden;
+  font-size: 11px;
+  color: rgb(255 255 255 / 60%);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-screen-name.live::before {
   flex: none;
+  width: 6px;
+  height: 6px;
+  content: '';
+  background: var(--done-solid);
+  border-radius: 50%;
+}
+
+.phone-screen-done {
+  justify-self: start;
   height: 44px;
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 17px;
   font-weight: 600;
   color: var(--screen-text);
@@ -10336,8 +10415,9 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 
 .phone-screen-done.icon {
   display: grid;
+  justify-self: end;
   place-items: center;
-  width: 40px;
+  width: 44px;
   padding: 0;
 }
 
@@ -10404,8 +10484,8 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 .phone-screen-keys {
   display: flex;
   flex: none;
-  gap: 6px;
-  padding: 6px max(8px, env(safe-area-inset-right)) max(6px, var(--bottom)) max(8px, env(safe-area-inset-left));
+  gap: 5px;
+  padding: 6px max(6px, env(safe-area-inset-right)) max(6px, var(--bottom)) max(6px, env(safe-area-inset-left));
   margin-bottom: var(--keyboard, 0px);
   overflow-x: auto;
   scrollbar-width: none;
@@ -10417,10 +10497,11 @@ body:has(.talk.over:not([hidden])) .phone-offline {
 
 .phone-screen-key {
   display: grid;
-  flex: 1 0 36px;
+  flex: 1 1 0;
   place-items: center;
-  height: 40px;
-  font-size: 16px;
+  min-width: 26px;
+  height: 42px;
+  font-size: 15px;
   color: var(--screen-text);
   background: rgb(255 255 255 / 14%);
   border-radius: 8px;
@@ -12457,6 +12538,13 @@ html.phone .model-details .phone-cell {
   line-height: 1.5;
 }
 
+/* Manager's setup is one grouped list, as a Mac settings pane is: a label on the left, its value on the right, rows split by hairlines. */
+.manager-group {
+  padding-inline: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
 .manager-setting,
 .manager-actions {
   display: flex;
@@ -12466,14 +12554,38 @@ html.phone .model-details .phone-cell {
 
 .manager-setting {
   justify-content: space-between;
-  padding-block: 8px;
-  border-block-end: 1px solid var(--border);
+  min-block-size: 44px;
+  padding-block: 6px;
 }
 
-.manager-setting > span:last-child {
-  text-align: end;
+.manager-setting + .manager-setting {
+  border-block-start: 1px solid var(--border);
+}
+
+.manager-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  min-inline-size: 0;
+}
+
+.manager-status-text {
   color: var(--text-dim);
-  max-inline-size: 60%;
+  text-align: end;
+}
+
+.manager-status button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.manager-settings .manager-note {
+  margin-block: 8px 0;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 .manager-actions {
@@ -12730,135 +12842,6 @@ html.phone .model-details .phone-cell {
   .manager-flow-mark,
   .manager-flow-ring {
     display: none;
-  }
-}
-
-.manager-steps {
-  display: grid;
-  gap: 6px;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.manager-step {
-  min-inline-size: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  transition: border-color var(--settle) var(--ease), opacity var(--settle) var(--ease);
-}
-
-.manager-step.is-open {
-  border-color: var(--border-strong);
-}
-
-.manager-step.is-locked {
-  opacity: 0.55;
-}
-
-.manager-step-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  inline-size: 100%;
-  min-inline-size: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-}
-
-button.manager-step-head {
-  cursor: pointer;
-}
-
-.manager-step-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  inline-size: 22px;
-  block-size: 22px;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  color: var(--text-faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  transition: background-color var(--settle) var(--ease), border-color var(--settle) var(--ease), color var(--settle) var(--ease);
-}
-
-.manager-step.is-open .manager-step-mark {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.manager-step.is-answered .manager-step-mark {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
-  animation: manager-step-done 260ms var(--ease);
-}
-
-@keyframes manager-step-done {
-  from {
-    transform: scale(0.55);
-  }
-}
-
-.manager-step-title {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-  font-size: 13px;
-  font-weight: 600;
-  overflow-wrap: break-word;
-}
-
-.manager-step-value {
-  flex: 0 100 auto;
-  min-inline-size: 0;
-  margin-inline-start: auto;
-  overflow: hidden;
-  color: var(--text-dim);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-button.manager-step-head > svg {
-  flex: none;
-  color: var(--text-faint);
-}
-
-button.manager-step-head:hover > svg {
-  color: var(--text);
-}
-
-/* Named twice for the same reason as `.manager-flow-say`: `.dialog p` would flatten the indent that lines this up under the step's title. */
-.manager-step .manager-step-locked {
-  margin: 6px 0 0 32px;
-  font-size: 12px;
-}
-
-.manager-step-body {
-  display: grid;
-  grid-template-rows: 1fr;
-  animation: manager-step-open var(--settle) var(--ease);
-}
-
-.manager-step-fold {
-  min-block-size: 0;
-  overflow: clip;
-  overflow-clip-margin: 4px;
-}
-
-@keyframes manager-step-open {
-  from {
-    grid-template-rows: 0fr;
-    opacity: 0;
   }
 }
 
@@ -15323,28 +15306,8 @@ html.phone .phone-team-block .employee-section-head h3 {
   min-block-size: 0;
 }
 
-.manager-composer {
-  padding: 12px 16px 16px;
-  border-block-start: 1px solid var(--border);
-}
-
-.manager-composer-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 8px 8px 12px;
-}
-
-.manager-composer-actions > button {
-  flex: none;
-}
-
-.manager-composer-hint {
-  flex: 1;
-  min-inline-size: 0;
-  color: var(--text-faint);
-  font-size: 11px;
-  overflow-wrap: anywhere;
+.manager-composer-hint:empty {
+  display: none;
 }
 
 .manager-send-state,
@@ -15629,19 +15592,48 @@ html.phone .manager-work-stop {
   padding: 2px 9px 8px;
 }
 
+/* Under the bar that names Manager, the open thread is one quiet row, so the screen has one title rather than two. */
 html.phone .manager-toolbar {
+  gap: 4px;
   block-size: auto;
-  padding: 8px 12px;
+  min-block-size: 44px;
+  padding: 0 4px 0 16px;
+  border-block-end: 0;
+  box-shadow: 0 0.5px 0 var(--separator);
+}
+
+html.phone .manager-toolbar-title {
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+html.phone .manager-toolbar-title p {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  font-size: 13px;
+}
+
+html.phone .manager-toolbar-title p > span::before {
+  margin-inline-end: 8px;
+  color: var(--text-faint);
+  content: '·';
+}
+
+html.phone .manager-toolbar-actions .icon-button {
+  inline-size: 44px;
+  block-size: 44px;
 }
 
 /* The phone's thread picker: the open thread's name, a native menu over it. */
 .manager-thread-pick {
   position: relative;
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 4px;
   min-inline-size: 0;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -15759,24 +15751,22 @@ html.phone .manager-phone {
   background: var(--bg);
 }
 
-html.phone .manager-composer {
-  padding: 8px 12px max(12px, env(safe-area-inset-bottom));
-}
-
-html.phone .manager-composer .composer-inner {
-  display: block;
-  border-radius: var(--radius-lg);
+/* As a conversation's: one round field on the glass bar with Send inside it at its last line, not a box with a button on a row of its own. */
+html.phone .manager-field {
+  position: relative;
 }
 
 html.phone .manager-composer textarea {
-  min-block-size: 52px;
+  display: block;
+  inline-size: 100%;
   max-block-size: 180px;
-  padding: 10px 12px 4px;
   font-size: 16px;
 }
 
-html.phone .manager-composer-actions {
-  padding: 4px 8px 8px 12px;
+html.phone .manager-composer-hint {
+  margin: 6px 16px 0;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 .manager-settings > .team-section {
@@ -15787,14 +15777,6 @@ html.phone .manager-composer-actions {
 .configuration-settings p { margin: 0; color: var(--text-faint); font-size: 12px; overflow-wrap: anywhere; }
 .configuration-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .configuration-settings .configuration-error { color: var(--danger); }
-
-.status-history { flex-shrink: 0; margin: 0 20px; color: var(--text-dim); font-size: 12px; }
-.status-history summary { cursor: pointer; padding: 8px 0; }
-.status-history ol { margin: 0 0 8px; padding-left: 20px; max-height: 160px; overflow: auto; list-style-position: inside; }
-.status-history li { padding: 5px 0; overflow-wrap: anywhere; content-visibility: auto; contain-intrinsic-size: auto 36px; }
-.status-history p { margin: 0 0 8px; }
-
-.status-history summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-radius: 4px; }
 
 .remote-clients { display: flex; flex-direction: column; block-size: 100dvh; color: var(--text); background: var(--bg); font-size: 12px; }
 .remote-clients .board-head { flex-shrink: 0; gap: 8px; padding-inline-end: 16px; }
@@ -16683,3 +16665,139 @@ html.phone .secret-form .secret-form-label { text-align: start; }
   min-width: 0;
   flex-shrink: 1;
 }
+
+/* Checklist: the results a task must reach, in order. Edited in place in New task and in Settings. */
+.checklist-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: 2px; }
+.checklist-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; font-size: 12px; color: var(--text-dim); }
+.checklist-head .checklist-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.checklist-head .checklist-label b { color: var(--text); font-weight: 600; }
+.checklist-link { flex: none; padding: 2px 6px; color: var(--text-dim); font-size: 12px; background: none; border: 0; border-radius: var(--radius); }
+.checklist-link:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
+.checklist-items { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.checklist-item { position: relative; min-width: 0; }
+.checklist-item + .checklist-item { border-block-start: 1px solid var(--border); }
+.checklist-item.dragged { opacity: 0.5; }
+.checklist-item.drop-before::before,
+.checklist-item.drop-after::after { position: absolute; inset-inline: 8px; height: 2px; background: var(--accent); border-radius: 1px; content: ''; }
+.checklist-item.drop-before::before { top: -1px; }
+.checklist-item.drop-after::after { bottom: -1px; }
+.checklist-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 6px 3px 4px; }
+.checklist-handle { display: grid; flex: none; place-items: center; width: 20px; height: 24px; color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; border-radius: var(--radius); cursor: grab; user-select: none; }
+.checklist-handle:hover { color: var(--text-dim); background: var(--bg-hover); }
+.checklist-title { flex: 1; min-width: 0; padding: 5px 4px; font: inherit; font-size: 13px; color: var(--text); background: none; border: 0; outline: none; }
+.checklist-title::placeholder { color: var(--text-faint); }
+.checklist-item:focus-within { background: var(--bg-hover); }
+.checklist-items .checklist-item:first-child,
+.checklist-items .checklist-item:first-child .checklist-row { border-start-start-radius: var(--radius-lg); border-start-end-radius: var(--radius-lg); }
+.checklist-items .checklist-item:last-child { border-end-start-radius: var(--radius-lg); border-end-end-radius: var(--radius-lg); }
+.checklist-check { display: inline-flex; flex: none; align-items: center; gap: 4px; padding: 2px 6px 2px 8px; color: var(--text-faint); font-size: 11px; background: none; border: 0; border-radius: var(--radius); }
+.checklist-check:hover:not(:disabled),
+.checklist-check.on { color: var(--text); background: var(--fill); }
+.checklist-check.set { color: var(--text-dim); background: var(--fill); }
+.checklist-remove { flex: none; width: 22px; height: 22px; opacity: .45; }
+.checklist-item:hover .checklist-remove,
+.checklist-item:focus-within .checklist-remove { opacity: 1; }
+.checklist-details { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 10px 30px; }
+.checklist-description,
+.checklist-command { width: 100%; min-width: 0; padding: 6px 8px; font: inherit; font-size: 12px; line-height: 1.45; color: var(--text); background: var(--field); border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
+.checklist-command { font-family: var(--font-code); }
+.checklist-description:focus,
+.checklist-command:focus { border-color: var(--accent); outline: none; }
+.checklist-check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.checklist-check-row .checklist-label { color: var(--text-dim); font-size: 12px; }
+.checklist-checks button { padding: 2px 9px; font-size: 12px; }
+/* The inspector can be as narrow as 280 px: details start under the box, and the Check control takes the row and shares it evenly, so no choice is cut off. */
+.task-checklist-panel .checklist-details { padding-left: 10px; }
+.task-checklist-panel .checklist-checks { display: flex; flex: 1 1 100%; min-width: 0; }
+.task-checklist-panel .checklist-checks button { flex: 1 1 auto; min-width: 0; padding: 0 4px; }
+/* Narrow, each row keeps room for its title: the current goal shows by its highlight alone, and the check chip loses its chevron. */
+.task-checklist-panel { container-type: inline-size; }
+@container (max-width: 340px) {
+  .checklist-now { display: none; }
+  .checklist-check { padding: 2px 5px; }
+  .checklist-check > svg:last-child { display: none; }
+}
+.checklist-hint { color: var(--text-faint); font-size: 11px; }
+.checklist-final { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
+.browser-profiles-form label.checklist-final { text-align: start; }
+.checklist-notes { display: flex; flex-direction: column; gap: 2px; }
+.checklist-notes p { margin: 0; }
+.checklist-warn { color: var(--warning-text); font-size: 11px; }
+.checklist-add { margin-top: 0; }
+
+.checklists-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+.checklists-section p { margin: 0; }
+.checklists-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.checklists-group-title { margin: 6px 0 0; color: var(--text-faint); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+.checklists-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 16px; text-align: center; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.checklist-open { display: flex; flex: 1; min-width: 0; padding: 0; text-align: start; color: inherit; background: none; border: 0; }
+.checklist-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius); }
+.checklist-root { width: 100%; min-width: 0; }
+.checklist-default { margin-top: 2px; }
+.checklist-form-items { gap: 6px; }
+.checklist-form-items .checklist-items { background: var(--bg-raised); }
+.checklist-form-actions .checklist-delete { margin-inline-end: auto; color: var(--danger); }
+
+html.phone .checklist-field { padding: 10px 12px 12px; }
+html.phone .checklist-head { font-size: 15px; }
+html.phone .checklist-link { min-height: 44px; font-size: 15px; }
+html.phone .checklist-row { min-height: 44px; }
+html.phone .checklist-title { font-size: 17px; }
+html.phone .checklist-handle { width: 24px; height: 44px; font-size: 13px; }
+html.phone .checklist-check { min-height: 32px; font-size: 13px; }
+html.phone .checklist-remove { width: 44px; height: 44px; opacity: 1; }
+html.phone .checklist-add { min-height: 44px; font-size: 15px; }
+.browser-profiles-field .checklist-title { width: auto; padding: 5px 4px; background: none; border-radius: 0; }
+.browser-profiles-field .checklist-final input { width: auto; padding: 0; }
+.browser-profiles-field .checklist-final { align-self: flex-start; }
+html.phone .phone-checklist-sheet .checklist-field { padding: 0 0 12px; }
+html.phone .phone-checklist-done { width: 100%; min-height: 50px; font-size: 17px; border-radius: 12px; }
+
+/* A running task's checklist, in chat */
+.checklist-tick { flex: none; width: 14px; height: 14px; margin: 0 2px 0 6px; accent-color: var(--accent); }
+.checklist-item.passed .checklist-title { color: var(--text-faint); text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.checklist-item.current .checklist-handle { color: var(--accent); }
+.checklist-now { flex: none; padding: 1px 6px; color: var(--accent); font-size: 11px; font-weight: 600; }
+.checklist-approve { flex: none; padding: 2px 8px; color: var(--accent); font-size: 11px; font-weight: 600; background: var(--fill); border: 0; border-radius: var(--radius); }
+.checklist-approve:hover:not(:disabled) { color: var(--accent-text); background: var(--accent); }
+.task-checklist-editor { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; }
+.task-checklist-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
+.task-checklist-items { display: contents; }
+.task-checklist-hint { margin: 0; }
+.task-checklist-phone { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 16px; }
+.task-checklist-editor .danger,
+.task-checklist-phone .danger { color: var(--danger); }
+.goal-control.approval .goal-text { color: var(--accent); font-weight: 600; }
+html.phone .checklist-tick { width: 22px; height: 22px; margin-left: 8px; }
+html.phone .checklist-approve,
+html.phone .checklist-now { min-height: 32px; font-size: 13px; }
+html.phone .checklist-now { display: none; }
+html.phone .task-checklist-phone .checklist-check { padding: 2px 6px; font-size: 12px; }
+html.phone .task-checklist-phone .checklist-tick { margin-left: 4px; }
+
+/* The checklist beside the conversation, desktop */
+.talk-main { display: flex; flex: 1; min-height: 0; }
+.talk-column { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.talk-main > .task-checklist-panel,
+.talk-main > .panel-grip { flex: none; }
+.task-checklist-panel { display: flex; flex-direction: column; width: var(--panel, 380px); max-width: calc(100% - 360px); min-width: 280px; min-height: 0; border-left: 1px solid var(--border); background: var(--bg); }
+.task-checklist-panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px 16px; }
+.task-checklist-panel-head h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.task-checklist-panel .task-checklist-body { flex: 1; padding: 0 16px 12px; }
+.task-checklist-panel-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); }
+.task-checklist-panel-actions .danger { color: var(--danger); }
+.checklist-item.current.goal { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.checklist-item.current.goal .checklist-title { font-weight: 600; }
+.checklist-item.current.goal .checklist-handle { color: var(--accent); font-weight: 600; }
+.checklist-item.current:not(.goal) .checklist-handle { color: var(--text-dim); }
+.checklist-now:not(.goal) { color: var(--text-faint); font-weight: 500; }
+.checklist-move { display: flex; gap: 4px; }
+.checklist-move button { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; font-size: 12px; }
+html.phone .checklist-move button { height: 44px; padding: 0 12px; font-size: 14px; }
+.icon-button.inspector-toggle.on { color: var(--accent); background: var(--accent-soft); }
+.panel-grip { position: relative; z-index: 2; flex: none; width: 6px; margin: 0 -3px; cursor: col-resize; -webkit-app-region: no-drag; }
+.panel-grip::after { position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; content: ''; transition: background-color var(--quick) var(--ease); }
+.panel-grip:hover::after { background: var(--accent); transition-delay: 200ms; }
+.panel-grip.on::after { background: var(--accent); }
+.talk-main.sizing, .talk-main.sizing * { cursor: col-resize; user-select: none; }
+.phone-row-tag.asks { color: var(--warning-text); background: var(--warning-bg); font-weight: 600; }

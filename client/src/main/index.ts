@@ -499,7 +499,7 @@ function applySnapshot(next: ServiceSnapshot): void {
   if (watched !== undefined) void invoke('chat:items', watched).then((items) => tellChats('chat:items', { id: watched ?? '', items })).catch(report)
 }
 
-const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "secrets:prepare", "secrets:save", "secrets:update", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "manager:unfollow", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run", "shortcuts:destinations", "shortcuts:runs"] as const satisfies readonly (keyof ServiceMethods)[]
+const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "secrets:prepare", "secrets:save", "secrets:update", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "manager:unfollow", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:setChecklist", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run", "shortcuts:destinations", "shortcuts:runs"] as const satisfies readonly (keyof ServiceMethods)[]
 
 function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void {
   ipcMain.handle(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
@@ -730,6 +730,7 @@ function wire(): void {
     return (run as (...args: never[]) => NativeValue | Promise<NativeValue>)(...args.map((one) => one === null ? undefined : one) as never[])
   })
 
+  const LOCKED = 'The host is locked, and a locked computer shows nobody its screen. Unlock it, then try again.'
   ipcMain.handle('peer:screen', async (event) => {
     if (event.sender !== shownPeer()?.webContents) return { error: 'Not the phone' }
     // Asking for the screens is also what puts GeckIt in the Mac's list to allow, and what asks the first time.
@@ -740,6 +741,7 @@ function wire(): void {
           'The Mac has not allowed GeckIt to record its screen. On the Mac: System Settings, Privacy & Security, Screen & System Audio Recording, turn on GeckIt, then quit and reopen it.',
       }
     }
+    if (powerMonitor.getSystemIdleState(1) === 'locked') return { error: LOCKED }
     // A display that has gone to sleep is not listed at all, so it is woken as a touch of the keyboard would and asked again.
     if (screens.length === 0 && process.platform === 'darwin') {
       execFile('caffeinate', ['-u', '-t', '5'])
@@ -791,6 +793,11 @@ const PHONE_CALLS = {
   'manager.restart': (...args: Parameters<ServiceMethods['manager:restart']>) => invoke('manager:restart', ...args),
   'channels.view': () => invoke('channels:view'),
   'channels.request': (id: ChannelId, request: ChannelJson) => invoke('phone:channelRequest', id, request),
+  'channels.configure': (...args: Parameters<ServiceMethods['channels:configure']>) => invoke('channels:configure', ...args),
+  'secrets.list': () => invoke('secrets:list'),
+  'secrets.history': (...args: Parameters<ServiceMethods['secrets:history']>) => invoke('secrets:history', ...args),
+  'secrets.revoke': (...args: Parameters<ServiceMethods['secrets:revoke']>) => invoke('secrets:revoke', ...args),
+  'secrets.status': () => invoke('secrets:status'),
   'employees.list': (...args: Parameters<ServiceMethods['employees:list']>) => invoke('employees:list', ...args),
   'employees.memory': (...args: Parameters<ServiceMethods['employees:memory']>) => invoke('employees:memory', ...args),
   'employees.save': (...args: Parameters<ServiceMethods['employees:save']>) => invoke('employees:save', ...args),
@@ -861,6 +868,7 @@ const PHONE_CALLS = {
   'chat.mode': (...args: Parameters<ServiceMethods['chat:mode']>) => invoke('chat:mode', ...args),
   'chat.transport': (...args: Parameters<ServiceMethods['chat:transport']>) => invoke('chat:transport', ...args),
   'chat.rename': (...args: Parameters<ServiceMethods['chat:rename']>) => invoke('chat:rename', ...args),
+  'chat.setChecklist': (...args: Parameters<ServiceMethods['chat:setChecklist']>) => invoke('chat:setChecklist', ...args),
   'chat.mark': (id: string, status: Parameters<ServiceMethods['chat:markPhone']>[1]) => invoke('chat:markPhone', id, status),
   'chat.hide': (...args: Parameters<ServiceMethods['chat:hide']>) => invoke('chat:hide', ...args),
   'chat.keep': (...args: Parameters<ServiceMethods['chat:keep']>) => invoke('chat:keep', ...args),

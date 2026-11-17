@@ -16,6 +16,7 @@ import { providerOf } from '../shared/api'
 import { isCodexProvider } from '../shared/providers'
 import { MANAGER_WORKFLOWS } from './guide'
 import { VPN_IP_UNAVAILABLE_ERROR, retryableVpnIpError } from '../shared/vpn-ip'
+import { awaitingApproval } from '../shared/checklists'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_CHAT_GUIDANCE, MANAGER_MAIN_THREAD, managerLabels, managerProjects, managerThreadSaid } from '../shared/manager'
 import type { ManagerActivity, ManagerAnswerRequest, ManagerAnswerResult, ManagerCliAnswered, ManagerCliAsked, ManagerConfig, ManagerDecision, ManagerDecisionOutcome, ManagerView, ManagerReplyOrigin, ManagerRequestReceipt, ManagerSendRequest, ManagerQuotedReply, ManagerThread, ManagerThreadOpen } from '../shared/manager'
 import type { ManagerIntakeDeps } from './manager-intake'
@@ -355,7 +356,7 @@ export class Manager {
       return sessionId === undefined ? [] : this.#record.inbox.flatMap((message) => this.#threadOf(message) === thread && (message.source === 'desktop' || message.source === 'phone' || message.source === 'channel' || message.source === 'operator') && message.completed !== true ? [{ id: message.id, text: message.text, source: message.source, at: message.at, session: sessionId, state: message.state }] : [])
     })
     const workers = this.#sessions.filter((one) => this.manages(one.id))
-    const decisions = [...this.#record.decisions.map(({ command: _command, ...decision }) => decision), ...this.#approvals().map((one) => one.decision)]
+    const decisions = [...this.#record.decisions.map(({ command: _command, ...decision }) => decision), ...this.#approvals().map((one) => one.decision), ...this.#checklistApprovals()]
     const threads = this.#threadIds().map((thread) => this.#threadView(thread, workers, decisions))
     return { ...this.#pendingHistory(MAIN), ...(this.historyBoundary(MAIN) === undefined ? {} : { historyRevision: this.historyBoundary(MAIN)?.revision }), appChat: true, queued: this.#record.inbox.filter((message) => message.state === 'queued').length, requests, config: this.#record.config, state: !this.#record.config.enabled ? 'off' : this.#record.paused ? 'paused' : error !== undefined ? 'blocked' : session?.state === 'working' || this.#l(MAIN).dispatching || threads.some((thread) => thread.id !== MAIN && thread.state === 'working') ? 'working' : 'idle', ...(session === undefined ? {} : { session }), workers, activity: this.#record.operations.slice(-100).toReversed(), providers, decisions, ...(this.#record.threads.length === 0 ? {} : { threads }), ...(error === undefined ? {} : { error }) }
   }
@@ -368,6 +369,17 @@ export class Manager {
         const approval = managerApproval(session, pending, `${this.#state(thread).sessionId ?? ''}:${this.#epoch(thread)}`)
         return thread === MAIN ? approval : { ...approval, decision: { ...approval.decision, thread } }
       })
+    })
+  }
+
+  /** A worker's checklist item only the person approves, shown as a decision in the thread that tracks it so every channel draws an Approve button; Manager itself never answers it. */
+  #checklistApprovals(): readonly ManagerDecision[] {
+    if (!this.#record.config.enabled) return []
+    return this.#sessions.filter((one) => this.#threadOfSession(one.id) !== undefined || this.manages(one.id)).flatMap((session) => {
+      const item = awaitingApproval(session.checklist)
+      if (item === undefined) return []
+      const thread = this.#threadOfSession(session.id) ?? this.#ownerThread(session.id) ?? MAIN
+      return [{ id: `checklist:${session.id}:${item.id}`, session: session.id, title: `Approve "${item.title}" in ${session.title}?`, choices: [{ label: 'Approve', value: 'approve' }], ...(thread === MAIN ? {} : { thread }) }]
     })
   }
 
@@ -1006,6 +1018,13 @@ export class Manager {
     this.#assertEnabled()
     if (!authorized()) throw new Error('This channel connection is no longer authorized.')
     if (id.startsWith('intake:')) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }
+    if (id.startsWith('checklist:')) {
+      const pending = this.#checklistApprovals().find((one) => one.id === id)
+      if (pending?.session === undefined) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }
+      if (choice !== 'approve') throw new ManagerDecisionFailure('choice')
+      if (!this.#deps.sessions.approveItem(pending.session, id.slice(`checklist:${pending.session}:`.length))) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }
+      return { ...this.#snapshot(), answer: 'Answer sent.' }
+    }
     if (id.startsWith('native:')) {
       const pending = this.#approvals().find((one) => one.decision.id === id)
       if (pending === undefined) return { ...await this.view(), answer: 'This request is no longer pending. Use /status to see current requests.' }

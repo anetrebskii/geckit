@@ -9,6 +9,8 @@ import { cronOf, describeCron, describeStartWindow, describeTime, nextRun, nextT
 import type { When } from '../../../shared/schedule'
 import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceError } from '../../../shared/recurrence'
 import { saveShortcut } from '../../../shared/shortcut-save'
+import { shortcutChecklist } from '../../../shared/checklists'
+import { ChecklistField } from './ChecklistField'
 import { CustomRecurrence } from './CustomRecurrence'
 import { destinationSummary, ShortcutDelivery, ShortcutDestinationFields, useShortcutDestination, useShortcutRuns } from './ShortcutDestinations'
 import { Icon } from '../ui/Icon'
@@ -76,6 +78,7 @@ export function ShortcutList({
   only = false,
   onTeam,
   onClose,
+  place = false,
 }: {
   readonly chat: ShortcutChat
   /** The list, `new`, a shortcut's id to edit, or a new one already filled in. */
@@ -84,6 +87,8 @@ export function ShortcutList({
   readonly only?: boolean
   readonly onTeam?: () => void
   readonly onClose: () => void
+  /** Shown as a place of the Chat window, not over it: no scrim, no Done, and Escape leaves it where it is. */
+  readonly place?: boolean
 }): React.JSX.Element {
   // Another profile's shortcuts are kept and run, and listed only where that profile is in use.
   const shortcuts = chat.settings.shortcuts.filter((one) => shownProjects(chat.settings).includes(one.root))
@@ -123,11 +128,11 @@ export function ShortcutList({
 
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape' && !place) onClose()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [onClose])
+  }, [onClose, place])
 
   const run = (one: Shortcut): void => {
     setRunningId(one.id)
@@ -140,15 +145,15 @@ export function ShortcutList({
   }
 
   return (
-    <div className="dialog-scrim" onMouseDown={onClose}>
-      <div className="dialog shortcut-list" onMouseDown={(event) => event.stopPropagation()}>
+    <div className={place ? 'place-dialog' : 'dialog-scrim'} onMouseDown={place ? undefined : onClose}>
+      <div className={`dialog shortcut-list${place ? ' in-place' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
         {editing === undefined ? (
           <>
             <header className="shortcut-list-head">
               <h2>Shortcuts{shortcuts.length === 0 ? null : <span className="employee-count">{shortcuts.length}</span>}</h2>
               <span className="spacer" />
-              {shortcuts.length > 5 ? <label className="employee-find shortcut-find"><Icon name="search" size={11} /><input type="search" aria-label="Search shortcuts" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} /></label> : null}
-              <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={11} />New shortcut</button>
+              {shortcuts.length > 5 ? <label className="employee-find shortcut-find"><Icon name="search" size={13} /><input type="search" aria-label="Search shortcuts" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />{search === '' ? null : <button type="button" className="find-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" size={8} /></button>}</label> : null}
+              <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={12} />New shortcut</button>
             </header>
             <p className="shortcut-list-about">Saved prompts for a new task or Manager: by hand here or from the gecko in the menu bar, or on a timetable while GeckIt is open.</p>
             {shortcuts.length === 0 ? <div className="shortcut-empty"><Icon name="bolt" size={18} /><strong>No shortcuts yet</strong><span>Save a prompt you send often, like a daily plan or a code review.</span><button type="button" className="primary" onClick={() => setEditing(blank())}>New shortcut</button></div> : null}
@@ -219,9 +224,9 @@ export function ShortcutList({
             <div className="dialog-actions">
               {onTeam === undefined ? null : <button type="button" className="quiet" onClick={onTeam}>Manage in Team</button>}
               <span className="spacer" />
-              <button type="button" className="quiet" onClick={onClose}>
+              {place ? null : <button type="button" className="quiet" onClick={onClose}>
                 Done
-              </button>
+              </button>}
             </div>
           </>
         ) : (
@@ -243,7 +248,11 @@ function Editor({
   readonly now: number
   readonly onDone: () => void
 }): React.JSX.Element {
-  const [draft, setDraft] = useState<ShortcutDraft>(given)
+  const [draft, setDraft] = useState<ShortcutDraft>(() => {
+    const { goal: _goal, checklist: _checklist, ...rest } = given
+    const checklist = shortcutChecklist(given)
+    return checklist === undefined ? rest : { ...rest, checklist }
+  })
   const destination = useShortcutDestination(chat.settings, draft.destination, (destination) => {
     const { destination: _destination, ...rest } = draft
     setDraft(destination === undefined ? rest : { ...rest, destination })
@@ -333,9 +342,7 @@ function Editor({
     }
   }
   const scheduled = repeats !== 'never'
-  const [goalOpen, setGoalOpen] = useState(() => (given.goal ?? '').trim() !== '')
   const owner = draft.employeeId === undefined ? undefined : chat.employees.find((one) => one.id === draft.employeeId)
-  const agent = isCodexProvider(provider) ? 'Codex' : 'Claude'
   const summary = [
     manager ? `Sends this prompt to Manager with ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)} as context. Manager uses its configured assistant and approvals.` : `Each run starts a new task in ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)}${owner === undefined ? '' : `, assigned to ${owner.name}`}, with ${assistant}.`,
     !scheduled ? 'It runs when you start it.' : draft.recurrence !== undefined ? ruleError === undefined ? next === undefined ? 'Its timetable has ended.' : draft.on ? `Next run ${describeTime(next, now, zone)}.` : 'Its timetable is paused.' : '' : next === undefined ? '' : !draft.on ? 'Its timetable is paused.' : draft.startWindowMinutes !== undefined && kept === undefined ? `${describeStartWindow(draft)}.` : `Next run ${describeTime(next, now, draft.startWindowMinutes === undefined ? undefined : zone)}.`,
@@ -383,35 +390,14 @@ function Editor({
             placeholder="Look through the pull requests waiting for my review and tell me which ones need me first."
             onChange={(event) => change({ prompt: event.target.value })}
           />
-          {manager ? null : goalOpen ? (
-            <div className="shortcut-goal">
-              <label htmlFor="shortcut-goal" className="shortcut-label">Goal</label>
-              <input
-                id="shortcut-goal"
-                type="text"
-                autoFocus={(given.goal ?? '').trim() === ''}
-                value={draft.goal ?? ''}
-                placeholder="The tests pass and the PR is open"
-                onChange={(event) => change({ goal: event.target.value })}
-              />
-              <span className="shortcut-next">
-                {(draft.goal ?? '').trim() === '' ? `Empty: ${agent} stops when it is done.` : `${agent} keeps working until this holds, then the card shows Goal reached.`}
-              </span>
-            </div>
-          ) : (
-            <button type="button" className="shortcut-add-goal" onClick={() => setGoalOpen(true)}>
-              <Icon name="plus" size={11} />
-              Add a goal
-              <span>keep working until a condition holds</span>
-            </button>
-          )}
+          {manager ? null : <ChecklistField checklists={chat.settings.checklists ?? []} root={draft.root} value={draft.checklist ?? { items: [] }} onChange={(checklist) => change({ checklist })} />}
         </div>
 
         <aside className="shortcut-editor-side" aria-label="Settings">
           <div className="shortcut-setting">
             <span>Target</span>
             <Picker label={manager ? 'Manager' : 'New task'} chosen={manager ? 'manager' : 'task'} choices={[{ value: 'task', label: 'New task' }, { value: 'manager', label: 'Manager' }]} className="select" onPick={(value) => {
-              const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+              const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, checklist: _checklist, ...rest } = draft
               setFailedDraft(undefined)
               setDraft(value === 'manager' ? { ...rest, target: 'manager' } : rest)
             }} />
@@ -454,7 +440,7 @@ function Editor({
               disabled={enabled.length === 1 && enabled.includes(provider)}
               onPick={(value) => {
                 if (value === provider) return
-                const { model: _model, reasoning: _reasoning, goal: _goal, ...rest } = draft
+                const { model: _model, reasoning: _reasoning, ...rest } = draft
                 const nextProvider = value as SessionProvider
                 setDraft({ ...rest, provider: nextProvider, model: providerModel(chat.settings, nextProvider), ...(isCodexProvider(nextProvider) ? { reasoning: chat.settings.codexReasoning } : {}) })
               }}

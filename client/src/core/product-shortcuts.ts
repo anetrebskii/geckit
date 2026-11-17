@@ -5,6 +5,7 @@ import type { CoreMethods } from './application'
 import { getSettings } from '../main/store'
 import { requestedProvider } from '../cli/start'
 import { isCron } from '../shared/schedule'
+import { checklistItems } from '../shared/checklists'
 import { flagsFrom, jsonInput, onlyFields, required } from './product-input'
 
 export const shortcutDraft = ({ since: _since, lastRun: _lastRun, lastSession: _lastSession, ...draft }: Shortcut): ShortcutDraft => draft
@@ -20,9 +21,11 @@ export async function productShortcuts(api: Pick<CoreMethods, 'shortcuts:save' |
   if (command === 'save') {
     const flags = flagsFrom(rest, ['--draft', '--expected'])
     const draft = jsonInput(required(flags, '--draft'))
-    onlyFields(draft, ['id', 'name', 'root', 'prompt', 'mode', 'on', 'provider', 'reasoning', 'target', 'goal', 'model', 'employeeId', 'cron', 'recurrence', 'startWindowMinutes', 'destination'])
+    onlyFields(draft, ['id', 'name', 'root', 'prompt', 'mode', 'on', 'provider', 'reasoning', 'target', 'goal', 'checklist', 'model', 'employeeId', 'cron', 'recurrence', 'startWindowMinutes', 'destination'])
     if (!['name', 'root', 'prompt', 'mode'].every((key) => typeof draft[key] === 'string') || typeof draft.on !== 'boolean' || !['manual', 'auto', 'plan'].includes(String(draft.mode)) || !getSettings().projects.includes(String(draft.root))) throw new Error('Supply name, registered root, prompt, mode and boolean on.')
     if (['id', 'provider', 'reasoning', 'goal', 'model', 'employeeId', 'cron'].some((key) => draft[key] !== undefined && typeof draft[key] !== 'string') || draft.target !== undefined && draft.target !== 'manager') throw new Error('Invalid shortcut fields.')
+    if (draft.checklist !== undefined && !(typeof draft.checklist === 'object' && draft.checklist !== null && Array.isArray((draft.checklist as { items?: unknown }).items))) throw new Error('A checklist is an object with items.')
+    if (draft.checklist !== undefined && (draft.checklist as { items: unknown[] }).items.length > 0) checklistItems((draft.checklist as { items: unknown }).items)
     if (draft.target !== 'manager') {
       const provider = requestedProvider(String(draft.provider ?? 'claude'))
       if (provider === undefined || !getSettings().chatProviders.includes(provider)) throw new Error('Select an enabled shortcut provider explicitly.')

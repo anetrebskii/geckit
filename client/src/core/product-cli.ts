@@ -5,6 +5,7 @@ import { application } from './application'
 import type { CoreRuntime } from './runtime'
 import { getSettings, forgetProject, rememberProject, setSettings } from '../main/store'
 import { settingsCommand } from '../main/agent-settings'
+import { checklistsCommand } from '../main/checklists-cli'
 import { assertProviderUnused, providerSettings } from '../main/provider-settings'
 import { requestedProvider } from '../cli/start'
 import type { HostDraft } from '../shared/hosts'
@@ -30,7 +31,7 @@ export async function dispatchProduct(runtime: CoreRuntime, args: readonly strin
     target, authority,
     commands: authority === 'manager' ? [...PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), 'sessions list|show|search|hidden|status|plans|links|waiting|task-output|draft', 'employees list|show|memory|shortcuts|shortcut|rename'] : PRODUCT_COMMANDS,
     sessions: Object.fromEntries(Object.entries(SESSION_COMMANDS).filter(([name]) => authority === 'operator' || SESSION_READS.includes(name))),
-    schemas: { manager: { patch: ['enabled', 'provider', 'chatModel', 'delegation', 'intake'], intake: 'validated retained source settings; enabled:false only; automatic intake is retired, use Manager shortcuts', instructions: 'settings manager-edit', expected: 'nonempty last-read field subset' }, hosts: { draft: ['name', 'address', 'user', 'port', 'auth', 'keyFile'], native: ['password', 'passphrase', 'code', 'trustNewKey'] }, channels: { patch: ['enabled', 'projects', 'manager', 'config'], fields: getSettings().channels.map((one) => ({ id: one.info.id, fields: one.info.fields, secrets: 'native setup only' })) }, shortcuts: { draft: ['id', 'name', 'root', 'prompt', 'mode', 'on', 'provider', 'reasoning', 'target', 'goal', 'model', 'employeeId', 'cron', 'recurrence', 'startWindowMinutes', 'destination'], destination: { channel: 'channel:<installed-id>', destination: 'stable place ID from shortcuts destinations', label: 'optional display label' }, expected: 'entire previous draft or null for creation' } },
+    schemas: { manager: { patch: ['enabled', 'provider', 'chatModel', 'delegation', 'intake'], intake: 'validated retained source settings; enabled:false only; automatic intake is retired, use Manager shortcuts', instructions: 'settings manager-edit', expected: 'nonempty last-read field subset' }, hosts: { draft: ['name', 'address', 'user', 'port', 'auth', 'keyFile'], native: ['password', 'passphrase', 'code', 'trustNewKey'] }, channels: { patch: ['enabled', 'projects', 'manager', 'config'], fields: getSettings().channels.map((one) => ({ id: one.info.id, fields: one.info.fields, secrets: 'native setup only' })) }, shortcuts: { draft: ['id', 'name', 'root', 'prompt', 'mode', 'on', 'provider', 'reasoning', 'target', 'goal', 'checklist', 'model', 'employeeId', 'cron', 'recurrence', 'startWindowMinutes', 'destination'], destination: { channel: 'channel:<installed-id>', destination: 'stable place ID from shortcuts destinations', label: 'optional display label' }, expected: 'entire previous draft or null for creation' } },
     limitations: authority === 'manager' ? ['Session writes require target Manager ownership and approvals. Send work through manager send.', 'Remote team editing is operator-only except expected-name rename and saved shortcuts.'] : [],
     settings: AGENT_SETTINGS_SCHEMA,
     boundaries: ['Channel deliverable uploads require the originating authenticated Manager session and its channels send-file command; operator channel commands do not select a file destination.', 'Interactive authentication, secret entry, pairing codes and native permission answers require the user-bound native flow.', 'Only full-control paired devices may execute product commands; observation-only devices are refused.', 'SSH hosts run conversations; only paired GeckIt computers support --host configuration.', 'No arbitrary shell or automatic GeckIt restart. Bulk configuration import remains the native restart/backup flow; dedicated commands configure its entities without restarting.'],
@@ -45,6 +46,7 @@ export async function dispatchProduct(runtime: CoreRuntime, args: readonly strin
   }
   if (domain === 'settings' && command === 'schema' && (rest.length === 0 || rest.length === 1 && rest[0] === '--json')) return json({ ...AGENT_SETTINGS_SCHEMA, target, authority })
   if (domain === 'settings') return settingsCommand(args.slice(1), getSettings, setSettings)
+  if (domain === 'checklists') return checklistsCommand(args.slice(1), getSettings, setSettings)
   if (domain === 'providers') {
     if (command === 'models' || command === 'account') {
       const flags = flagsFrom(rest, ['--provider'])

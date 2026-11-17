@@ -641,6 +641,20 @@ Escape closes the inspection view without closing an underlying worker, stops it
 
 No second Manager is created. No ordinary board card, search result, phone navigation, prompt editor, model control or direct message composer is added by default. These choices retain the previous Telegram workflow while satisfying explicit Desktop visibility. Full chat is a separate optional response, not assumed from the desire to inspect. This amendment supersedes only the earlier ban on deliberate Desktop inspection; provider selection, CLI coordination, hidden ordinary discovery and Telegram approvals remain. Implementation and focused runtime/actual-renderer evidence belong to T035-T037 and verification.md.
 
+## Manager always on - 2026-11-16
+
+Supersedes the guided setup below. Alex decided on 2026-11-16 that Manager is always on and always starts work by itself, so "Decide how work starts" and "Turn Manager on" / "Manager is on" are gone. At every start the service turns Manager on with automatic delegation (`core/runtime.ts`); an assistant that cannot run it leaves it off until the next start or until one is picked here.
+
+| Surface | Behavior | When visible |
+| --- | --- | --- |
+| Team > Manager > Setup, note | "Always on. Choose the assistant that runs it." | Always |
+| Setup, picture | You, Manager and Workers all lit, "Write in the app or a connected channel. Manager gives work to employees and brings back the results."; it plays twice when the page opens, then rests | Always |
+| Setup, list | One grouped list, rows split by hairlines, each at least 44 pt: Assistant (picker), Model (picker, "Loading..." while the list loads), Status (state, then Resume while paused, Try again while blocked, Restart while a session exists). No Save, Continue, Pause or Disable | Always |
+| Assistant picked | Saved at once; with a running session it first asks "Change manager assistant?" | On pick |
+| Model picked | Saved at once; a running session shows "<model> from the next turn" beside its status | On pick |
+| Restart | Asks "Restart manager session?" with "Task history is kept. Workers continue." | Session exists |
+| Below the list | Errors and model loading failures, then "Works in all projects, current and future, across every profile. Telegram, Slack and Discord reach Manager from Settings, Channels." | Always |
+
 ## Guided Manager setup - 2026-10-19
 
 ### Purpose and surfaces

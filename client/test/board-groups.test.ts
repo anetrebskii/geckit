@@ -23,7 +23,7 @@ function drawn(phone: boolean, rows: readonly ChatSession[]): string {
     const defaults = useChat()
     const chat = { ...defaults, settings: { ...DEFAULT_SETTINGS, projects: [session.root] }, sessions: rows, everyone: rows, listed: true, lineup: { working: rows.filter((row) => row.state === 'working').length, limit: 6 } }
     return phone
-      ? createElement(PhoneBoard, { chat, onNew: () => undefined, onScreen: () => undefined, onSay: () => undefined, onShortcut: () => undefined, onShortcuts: () => undefined })
+      ? createElement(PhoneBoard, { chat, onNew: () => undefined, onScreen: () => undefined, onSay: () => undefined, onShortcut: () => undefined, onShortcuts: () => undefined, onSearch: () => undefined })
       : createElement(Board, { chat, onShortcutFrom: () => undefined })
   }
   return renderToStaticMarkup(createElement(Fixture))
@@ -47,7 +47,7 @@ for (const phone of [false, true]) {
       expect(inGroup(html, 'Working')).not.toContain('Background command')
       expect(inGroup(html, 'In the background')).toContain('Background command')
       expect(html.match(/Background command/g)).toHaveLength(1)
-      expect(html).toContain(phone ? '3/6' : '3 of 6 working')
+      expect(html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).toContain(phone ? '3/6' : '3 of 6 working')
     })
 
     it('moves an active turn through background work back to its saved order', () => {

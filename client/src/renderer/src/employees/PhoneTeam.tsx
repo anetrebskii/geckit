@@ -28,9 +28,9 @@ const open = (one: ChatSession): boolean => one.status !== 'done' && one.status 
 
 export function PhoneTeam({ chat, back, first, onBack, onEdit }: {
   readonly chat: PhoneTeamChat
-  readonly back: string
+  readonly back?: string
   readonly first?: Shown
-  readonly onBack: () => void
+  readonly onBack?: () => void
   readonly onEdit: (draft: ShortcutDraft) => void
 }): React.JSX.Element {
   const { view, take, loading, loadError, reload } = useEmployees()
@@ -72,7 +72,7 @@ export function PhoneTeam({ chat, back, first, onBack, onEdit }: {
   </>
 
   return <>
-    <Page title="Team" back={back} onBack={onBack} actions={<button type="button" className="phone-icon" aria-label="New employee" onClick={make}><Icon name="plus" size={24} /></button>}>
+    <Page title="Team" {...(back === undefined ? {} : { back })} {...(onBack === undefined ? {} : { onBack })} actions={<button type="button" className="phone-icon" aria-label="New employee" onClick={make}><Icon name="plus" size={24} /></button>}>
       {alert}
       <div className="phone-group phone-team-group"><Cell label={<span className="phone-team-person"><EmployeeAvatar employee={managerFace(chat.settings)} size="medium" /><span><b>Manager</b><small>{managerStand(manager).short}</small></span></span>} value={managerStand(manager).tone === 'working' ? <span className="team-live" title="Working now" /> : undefined} onPress={() => setShown('manager')} /></div>
       {loadError ? <div className="phone-group phone-team-group"><Cell label="Could not load employees." /><Cell label="Retry" accent onPress={reload} /></div> : null}

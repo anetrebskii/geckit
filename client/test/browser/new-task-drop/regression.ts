@@ -51,9 +51,9 @@ export async function runDropRegression(): Promise<readonly DropCheck[]> {
   const backgroundPictures = (): number => document.querySelectorAll('.composer .pending-one img').length
   const picturesBefore = backgroundPictures()
   for (const kind of ['New task', 'Ask a question']) {
-    button('New task').click()
+    if (kind === 'New task') button('New task').click()
+    else window.dispatchEvent(new KeyboardEvent('keydown', { key: 'N', metaKey: true, shiftKey: true, bubbles: true }))
     await settled()
-    if (kind === 'Ask a question') { button('Ask a question').click(); await settled() }
     const field = document.querySelector<HTMLTextAreaElement>('.new-task-text')
     if (field === null) throw new Error('Missing form field')
     const before = field.value
@@ -82,8 +82,9 @@ export async function runDropRegression(): Promise<readonly DropCheck[]> {
     await settled()
     check(`${kind}: cancel does not replay`, draft() === background, draft())
   }
+  const newTask = (): void => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, bubbles: true })) }
   for (let cycle = 0; cycle < 2; cycle++) {
-    button('New task').click()
+    newTask()
     await settled()
     const field = document.querySelector('.new-task-text')
     if (field === null) throw new Error('Missing reopened form')
@@ -94,7 +95,7 @@ export async function runDropRegression(): Promise<readonly DropCheck[]> {
     check(`Repeated reopen/cancel ${String(cycle + 1)}`, draft() === background, draft())
   }
   for (const close of ['Escape', 'backdrop']) {
-    button('New task').click()
+    newTask()
     await settled()
     const field = document.querySelector('.new-task-text')
     if (field === null) throw new Error('Missing form for close check')

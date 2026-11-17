@@ -1454,7 +1454,9 @@ describe('Manager session', () => {
     expect(f.sent[0]?.input).toMatch(/same employee keeps their identity and source memory across separate task sessions/)
     expect(f.sent[0]?.input).toMatch(/Honor the user's explicit direction to continue a specific session/)
     expect(f.sent[0]?.input).not.toContain('Use ordinary Send for separate later work.')
-    expect(f.sent[0]?.input).toContain('A runtime ending, Goal reached badge or worker claim alone is not proof.')
+    expect(f.sent[0]?.input).toContain('A runtime ending, Goal reached badge, ticked checklist or worker claim alone is not proof.')
+    expect(f.sent[0]?.input).toContain('when waitsForPerson is true, tell the user which item needs approval and in which task, then wait; never approve it or work around it')
+    expect(f.sent[0]?.input).toContain('checklists edit changes the saved template and later tasks only, never running ones')
     expect(f.sent[0]?.input).toContain('Once the full goal is confirmed, move that worker to Done yourself')
     expect(f.sent[0]?.input).toContain('keep incomplete or unverified work open')
     expect(f.sent[0]?.input).toContain('Cancellation is not deletion.')
@@ -3178,4 +3180,46 @@ it('does not settle a scheduled context while an observed goal, queue, approval 
   expect(f.manager.shortcutSettled(thread)).toBe(false)
   update({ state: 'asks' })
   expect(f.manager.shortcutSettled(thread)).toBe(false)
+})
+
+describe('Manager and a running task checklist', () => {
+  it('sees progress and edits the task copy, keeping what passed, without approving for the person', async () => {
+    const f = await fixture()
+    const managerId = (await f.manager.configure({ enabled: true })).session?.id
+    if (managerId === undefined) throw new Error('Missing Manager fixture')
+    const checklist = { items: [{ id: 'a', title: 'Design approved', check: 'person' as const, state: 'approval' as const }, { id: 'b', title: 'Tests pass', check: 'none' as const }] }
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Worker', checklist }, 'manager', 'managed')
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: () => true, managerSession: () => managerId })
+    const listed = JSON.parse(await operations.run(['sessions', 'list'], 'list')) as { id: string; checklist?: object }[]
+    expect(listed.find((one) => one.id === worker)?.checklist).toEqual({ passed: 0, all: 2, done: false, current: 'Design approved', waitsForPerson: true })
+    const saved = JSON.parse(await operations.run(['sessions', 'checklist', '--id', worker, '--items', JSON.stringify([{ title: 'Design approved', check: 'person' }, 'Docs updated', 'Tests pass'])], 'edit')) as { checklist: { items: { title: string; state: string }[] } }
+    expect(saved.checklist.items.map((one) => [one.title, one.state])).toEqual([['Design approved', 'approval'], ['Docs updated', 'open'], ['Tests pass', 'open']])
+    expect((await f.sessions.list([f.root])).find((one) => one.id === worker)?.checklist?.items.map((one) => one.title)).toEqual(['Design approved', 'Docs updated', 'Tests pass'])
+    expect(managerReadOnly(['sessions', 'checklist', '--id', worker, '--items', '[]'])).toBe(false)
+  })
+  it('asks the person to approve a checklist item and moves the worker on once they do', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const checklist = { items: [{ id: 'a', title: 'Design approved', check: 'person' as const, state: 'approval' as const }, { id: 'b', title: 'Tests pass', check: 'none' as const }] }
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Worker', checklist }, 'manager', 'managed')
+    await f.sessions.list([f.root])
+    const id = `checklist:${worker}:a`
+    await vi.waitFor(async () => expect((await f.manager.view()).decisions.find((one) => one.id === id)).toMatchObject({ session: worker, choices: [{ label: 'Approve', value: 'approve' }] }))
+    await expect(f.manager.answer(id, 'later')).rejects.toThrow()
+    expect((await f.manager.answer(id, 'approve')).answer).toBe('Answer sent.')
+    expect((await f.sessions.list([f.root])).find((one) => one.id === worker)?.checklist?.items[0]?.state).toBe('passed')
+    expect((await f.manager.view()).decisions.some((one) => one.id === id)).toBe(false)
+    expect((await f.manager.answer(id, 'approve')).answer).toMatch(/no longer pending/)
+  })
+  it('gives a Claude worker started with --goal the goal itself', async () => {
+    const f = await fixture()
+    const managerId = (await f.manager.configure({ enabled: true })).session?.id
+    if (managerId === undefined) throw new Error('Missing Manager fixture')
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => { f.set(change); return f.settings() }, owner: 'manager', managed: () => true, managerSession: () => managerId })
+    const started = JSON.parse(await operations.run(['sessions', 'start', '--project', f.root, '--text', 'Fix the bug', '--goal', 'Tests pass'], 'start')) as { id: string; goal: string }
+    expect(started.goal).toBe('Tests pass')
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === started.id)).toBe(true))
+    f.finish(started.id, 'Started')
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === started.id).map((one) => one.text)).toContain('/goal Tests pass'))
+  })
 })
