@@ -118,6 +118,26 @@ jobs:
           export CSC_IDENTITY_AUTO_DISCOVERY=false
           if [ "${{ matrix.platform }}" = mac ]; then sign=(-c.mac.identity=- -c.mac.hardenedRuntime=false); fi
         fi
+        mkdir -p "$RUNNER_TEMP/geckit-signing"
+        cat > "$RUNNER_TEMP/geckit-signing/codesign" <<'SH'
+        #!/bin/bash
+        errors=$(mktemp)
+        trap 'rm -f "$errors"' EXIT
+        for attempt in 1 2 3 4 5; do
+          /usr/bin/codesign "$@" 2> "$errors"
+          result=$?
+          cat "$errors" >&2
+          if [ "$result" -eq 0 ]; then exit 0; fi
+          if ! /usr/bin/grep -qi timestamp "$errors"; then exit "$result"; fi
+          if [ "$attempt" -lt 5 ]; then
+            echo "Retrying Apple timestamp request ($attempt/5)." >&2
+            sleep 10
+          fi
+        done
+        exit "$result"
+        SH
+        chmod +x "$RUNNER_TEMP/geckit-signing/codesign"
+        export PATH="$RUNNER_TEMP/geckit-signing:$PATH"
         npm exec electron-builder -- --publish always --${{ matrix.platform }} "${sign[@]}"
     - name: Check the Mac signature
       if: matrix.platform == 'mac'
