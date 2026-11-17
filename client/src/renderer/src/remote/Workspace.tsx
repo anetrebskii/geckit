@@ -3,7 +3,7 @@ import type { RemoteServer } from '../../../shared/remote/protocol'
 import type { connectRemote } from './client'
 import type { RemoteComputer } from './Computer'
 
-export type WorkspaceConnection = Pick<ReturnType<typeof connectRemote>, 'call' | 'on'>
+export type WorkspaceConnection = Pick<ReturnType<typeof connectRemote>, 'call' | 'on'> & Partial<Pick<ReturnType<typeof connectRemote>, 'onReconnected'>>
 export interface WorkspaceMount {
   readonly connection: WorkspaceConnection
   readonly server: RemoteServer

@@ -19,7 +19,7 @@ import { application } from '../core/application'
 import { serveLocal } from '../core/socket'
 import { listenRpc } from '../core/rpc'
 import type { RpcServer } from '../core/rpc'
-import { nativeRequests, serviceApplication, serviceSecurity } from './application'
+import { nativeRequests, nativeScaler, serviceApplication, serviceSecurity } from './application'
 import { serveSecrets } from './secrets'
 import type { ServiceEvents, ServiceMethods } from './application'
 
@@ -44,6 +44,7 @@ async function main(): Promise<void> {
   const script = join(import.meta.dirname, 'cli.js')
   let rpc: RpcServer<ServiceEvents> | undefined
   const native = nativeRequests((id, path) => { if (rpc === undefined || rpc.connections === 0) return false; rpc.broadcast('core:trash', id, path); return true })
+  const scaler = nativeScaler((id, image, width) => { if (rpc === undefined || rpc.connections === 0) return false; rpc.broadcast('core:scale', id, image, width); return true })
   const fromSource = appHome === undefined || source
   configureCorePlatform({ directory: () => directory, source: () => fromSource, headless: appHome === undefined, command: () => appHome === undefined ? join(directory, 'bin', 'geckit') : join(homedir(), '.geckit', 'bin', source ? 'geckit-local' : 'geckit'), launcher: () => ({ executable: process.execPath, script }), trash: native.trash })
   process.env['GECKIT_DATA'] = directory
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
     stopComputers?.()
     computers?.dispose()
     native.dispose()
+    scaler.dispose()
     unsubscribe?.()
     try { await Promise.all([listener?.close(), rpc?.close()]); await activation }
     finally { try { await runtime?.dispose() } finally { try { rmSync(tokenPath, { force: true }) } finally { await release() } } }
@@ -83,7 +85,7 @@ async function main(): Promise<void> {
     runtime = await createRuntime(script, { vault: security.vault, secrets: security.secrets })
     rmSync(tokenPath, { force: true })
     writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' })
-    remote = await remoteAccess(runtime, directory, security, application(runtime))
+    remote = await remoteAccess(runtime, directory, security, application(runtime), scaler.scale)
     const access = remote
     setLiveServer(() => access.server())
     computers = remoteComputers(directory, security)
@@ -109,7 +111,7 @@ async function main(): Promise<void> {
       log: (line) => { console.log(line) },
     })
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))
-    rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote, computers), undefined, (method) => {
+    rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote, computers, scaler), undefined, (method) => {
       if ((method === 'service:shutdownForUpdate' || method === 'service:importConfiguration') && runtime?.sessions.working().length === 0) shutdown()
     })
     unsubscribe = runtime.subscribe((event) => {

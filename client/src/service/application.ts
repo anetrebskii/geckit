@@ -13,8 +13,9 @@ import { initializeVault, isVaultEnvelope } from '../core/vault'
 import { secretsAt } from '../main/hosts/secrets'
 import type { Secrets } from '../main/hosts/secrets'
 import type { HostConfig, HostDraft } from '../shared/hosts'
+import type { SessionImage } from '../shared/api'
 
-export type ServiceEvents = CoreEvents & { 'core:trash': (id: string, path: string) => void }
+export type ServiceEvents = CoreEvents & { 'core:trash': (id: string, path: string) => void; 'core:scale': (id: string, image: SessionImage, width: number) => void }
 export type MigratedHostSecret = Pick<HostConfig, 'id'> & Required<Pick<HostDraft, 'password'>>
 export interface SecretMigration {
   readonly hosts: readonly MigratedHostSecret[]
@@ -64,6 +65,29 @@ export function nativeRequests(emit: (id: string, path: string) => boolean | voi
     }),
     complete: (id: string, error?: string): void => { pending.get(id)?.finish(error) },
     dispose: (): void => { stopped = true; for (const one of pending.values()) one.finish('GeckIt service stopped.') },
+  }
+}
+
+/** Pictures scaled by the desktop app, which has a window that can draw them; without one, the picture itself. */
+export function nativeScaler(emit: (id: string, image: SessionImage, width: number) => boolean) {
+  const pending = new Map<string, (image: SessionImage | undefined) => void>()
+  // A desktop that did not answer is not asked again for a minute, so a picture waits for it once at most.
+  let quietUntil = 0
+  return {
+    scale: (image: SessionImage, width: number): Promise<SessionImage> => new Promise((resolve) => {
+      if (Date.now() < quietUntil) { resolve(image); return }
+      const id = randomUUID()
+      const timer = setTimeout(() => { quietUntil = Date.now() + 60_000; finish(undefined) }, 3_000)
+      const finish = (scaled: SessionImage | undefined): void => {
+        if (!pending.delete(id)) return
+        clearTimeout(timer)
+        resolve(scaled ?? image)
+      }
+      pending.set(id, finish)
+      if (!emit(id, image, width)) finish(undefined)
+    }),
+    scaled: (id: string, image?: SessionImage): void => { pending.get(id)?.(image) },
+    dispose: (): void => { for (const finish of [...pending.values()]) finish(undefined) },
   }
 }
 
@@ -136,7 +160,7 @@ export function migrateSecrets(directory: string, security: ServiceSecurity, req
   return migrationState(directory, security, legacy)
 }
 
-export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess, computers?: RemoteComputers) {
+export function serviceApplication(runtime: CoreRuntime, directory: string, security: ServiceSecurity, native: ReturnType<typeof nativeRequests>, remote?: RemoteAccess, computers?: RemoteComputers, scaler?: ReturnType<typeof nativeScaler>) {
   const core = application(runtime)
   const desktop = {
     'remote:pair': () => { if (remote === undefined) throw new Error('Remote access unavailable.'); return remote.pair() },
@@ -165,6 +189,7 @@ export function serviceApplication(runtime: CoreRuntime, directory: string, secu
     },
     'desktop:hello': () => ({ protocol: 1, version, methods: [...Object.keys(core), ...Object.keys(desktop)], migration: migrationState(directory, security, runtime.channels.legacySealed()) }),
     'desktop:completeNative': (id: string, error?: string) => native.complete(id, error),
+    'desktop:scaled': (id: string, image?: SessionImage) => scaler?.scaled(id, image),
     'desktop:migrateSecrets': async (request: SecretMigration) => {
       const legacy = runtime.channels.legacySealed()
       const before = migrationState(directory, security, legacy)

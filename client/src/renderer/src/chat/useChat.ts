@@ -108,7 +108,7 @@ export interface Chat {
   readonly itemsFor: string
   /** How much of the conversation is before its items and still on the Mac: the phone is sent a conversation's end first. */
   readonly earlier: number
-  readonly showEarlier: () => void
+  readonly showEarlier: () => Promise<void>
   /** Puts the steps of a run the phone was sent as one line where the line is. */
   readonly loadSteps: (run: Extract<SessionItem, { kind: 'steps' }>) => void
   readonly draft: string
@@ -933,12 +933,12 @@ export function useChat(): Chat {
       .then(() => undefined)
   }, [])
 
-  const showEarlier = useCallback(() => {
+  const showEarlier = useCallback(async () => {
     const now = shownRef.current
     if (now.kind !== 'session') return
     const first = itemsRef.current[0]
     if (first === undefined) return
-    void window.geckit.chat.before(now.id, first.id).then((piece) => {
+    await window.geckit.chat.before(now.id, first.id).then((piece) => {
       if (shownRef.current.kind !== 'session' || shownRef.current.id !== now.id) return
       setItems((held) => {
         const have = new Set(held.map((one) => one.id))

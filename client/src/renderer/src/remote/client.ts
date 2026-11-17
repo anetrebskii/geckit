@@ -7,6 +7,9 @@ import type { CoreEvent } from '../../../core/events'
 import type { RemoteCall, RemoteChannel, RemoteHistory, RemoteRequest, RemoteResponse, RemoteResult, RemoteSignal, RemoteSnapshot, RemoteTrust } from '../../../shared/remote/protocol'
 import { remoteDial } from './transport'
 import { devicePublicKey, rememberServer, signDevice } from './storage'
+// A call made while the link is down waits this long for it to be back.
+export const HOLD = 60_000
+export const LINK_DOWN = 'The link to the computer is down. Try again when it is back.'
 export type ConnectionState = 'connecting' | 'pending' | 'connected' | 'reconnecting' | 'disconnected' | 'expired' | 'reused' | 'revoked' | 'incompatible' | 'error'
 export interface RemoteView { readonly state: ConnectionState; readonly message: string; readonly snapshot?: RemoteSnapshot; readonly history?: RemoteHistory; readonly trust?: RemoteTrust }
 export function connectRemote(pairing: RemoteSignal, name: string, change: (view: RemoteView) => void, saved?: RemoteTrust) {
@@ -26,11 +29,14 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
   let connectedOnce = false
   let resync = false
   const events = new Set<(event: CoreEvent) => void>()
+  const readyAgain = new Set<() => void>()
+  // What was asked while the link was down goes once it is back, unless it stays away this long; what had already gone out is never sent again.
+  const held: { readonly go: () => void; readonly give: (error: Error) => void }[] = []
   const pending = new Map<number, { readonly resolve: (value: RemoteResult) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
   const rejectPending = (): void => { ready = false; for (const one of pending.values()) { clearTimeout(one.timer); one.reject(new Error('Connection lost. Check the server before retrying this action.')) }; pending.clear() }
   const send = (message: RemoteRequest): void => channel?.send(stringifyRemote(message))
   const snapshot = (): void => { if (snapshotPending) { dirty = true; return }; snapshotPending = true; send({ type: 'snapshot', id: ++next }) }
-  const fail = (state: ConnectionState, message: string): void => { console.warn(`Remote connection stopped (${state}): ${message}`); stopped = true; rejectPending(); abort.abort(); channel?.close(); change({ state, message }) }
+  const fail = (state: ConnectionState, message: string): void => { console.warn(`Remote connection stopped (${state}): ${message}`); stopped = true; rejectPending(); for (const one of held.splice(0)) one.give(new Error(message)); abort.abort(); channel?.close(); change({ state, message }) }
   const later = (): void => { refresh = setTimeout(() => { refresh = undefined; void dial() }, [2000, 5000, 10_000, 30_000][Math.min(tries++, 3)] ?? 30_000) }
   // A saved computer that drops or answers oddly is dialled again; only a first pairing stops.
   const retry = (reason: string): void => {
@@ -106,7 +112,8 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
             epoch = response.snapshot.epoch; seq = response.snapshot.seq
             ready = true
             connectedOnce = true
-            if (resync) { resync = false; catchUp() }
+            if (resync) { resync = false; catchUp(); for (const again of readyAgain) again() }
+            for (const one of held.splice(0)) one.go()
             change({ state: 'connected', message: trust.full ? 'Connected' : 'Connected · Read only', snapshot: response.snapshot, trust })
             if (selected !== undefined) send({ type: 'history', id: ++next, session: selected, before: 0 })
             if (dirty) { dirty = false; snapshot() }; return
@@ -130,17 +137,33 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     }
   }
   const call = <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => new Promise((resolve, reject) => {
+    if ((!ready || channel === undefined) && !stopped && trust?.full === true && connectedOnce) {
+      const one = {
+        go: () => { clearTimeout(expired); void call(method, ...args).then(resolve, reject) },
+        give: (error: Error) => { clearTimeout(expired); reject(error) },
+      }
+      const expired = setTimeout(() => { const at = held.indexOf(one); if (at >= 0) held.splice(at, 1); reject(new Error(LINK_DOWN)) }, HOLD)
+      held.push(one)
+      return
+    }
     if (!ready || !trust?.full || channel === undefined) { reject(new Error('Connect to this server before using its workspace.')); return }
     const id = ++next
+    const sentOn = channel
     const timer = setTimeout(() => { pending.delete(id); reject(new Error('Server did not answer. Check the server before retrying this action.')) }, method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000)
-    pending.set(id, { resolve: (value) => resolve(value as Awaited<ReturnType<CoreMethods[K]>>), reject, timer })
+    pending.set(id, { resolve: (value) => {
+      // Said back plainly; from then on this side sends deflated too.
+      if ((method as string) === 'link:can' && value !== null && typeof value === 'object' && 'can' in value && Array.isArray(value.can) && value.can.includes('deflate')) sentOn.compress?.(true)
+      resolve(value as Awaited<ReturnType<CoreMethods[K]>>)
+    }, reject, timer })
     try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) } catch (error) { clearTimeout(timer); pending.delete(id); reject(error) }
   })
   void dial()
   return {
-    close: () => { stopped = true; rejectPending(); abort.abort(); if (refresh !== undefined) clearTimeout(refresh); channel?.close(); change({ state: 'disconnected', message: 'Disconnected' }) },
+    close: () => { stopped = true; rejectPending(); for (const one of held.splice(0)) one.give(new Error('Disconnected')); abort.abort(); if (refresh !== undefined) clearTimeout(refresh); channel?.close(); change({ state: 'disconnected', message: 'Disconnected' }) },
     call,
     on: (heard: (event: CoreEvent) => void): (() => void) => { events.add(heard); return () => { events.delete(heard) } },
+    /** The link was made again and the workspace has fresh state. */
+    onReconnected: (again: () => void): (() => void) => { readyAgain.add(again); return () => { readyAgain.delete(again) } },
     history: (session: string, before = 0) => { selected = session; send({ type: 'history', id: ++next, session, before }) },
   }
 }

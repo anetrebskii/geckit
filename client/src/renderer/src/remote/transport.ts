@@ -41,6 +41,7 @@ export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal): Pr
       else if (state === 'failed' || state === 'closed') end(`the link ${state}`)
     })
     channel.bufferedAmountLowThreshold = 250_000
-    return remoteChannel({ send: (text) => channel.send(text), hear: (heard) => channel.addEventListener('message', (event: MessageEvent<string>) => { if (typeof event.data === 'string') heard(event.data); else end('the server sent binary data') }), closed: (listener) => closed.push(listener), close: () => end('closed here'), buffered: () => channel.bufferedAmount, drain: (ready) => channel.addEventListener('bufferedamountlow', ready) }, transportBinding(offer, description.sdp))
+    channel.binaryType = 'arraybuffer'
+    return remoteChannel({ send: (text) => channel.send(text), sendBinary: (bytes) => channel.send(bytes), hear: (heard) => channel.addEventListener('message', (event: MessageEvent<string | ArrayBuffer>) => { if (typeof event.data === 'string' || event.data instanceof ArrayBuffer) heard(event.data); else end('the server sent unreadable data') }), closed: (listener) => closed.push(listener), close: () => end('closed here'), buffered: () => channel.bufferedAmount, drain: (ready) => channel.addEventListener('bufferedamountlow', ready) }, transportBinding(offer, description.sdp))
   } catch (error) { peer.close(); throw error }
 }

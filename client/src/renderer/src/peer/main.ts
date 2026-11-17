@@ -399,6 +399,11 @@ function keepShares(rooms: readonly { readonly id: string; readonly key: string 
   }
 }
 
+// The service asks for pictures at the width a client draws them, and only a window can scale one.
+window.geckit.peer.onScale?.((id, image, width) => {
+  void scaledTo(image, width).then((scaled) => window.geckit.peer.scaled(id, scaled), () => window.geckit.peer.scaled(id, undefined))
+})
+
 window.geckit.peer.onShares(keepShares)
 void window.geckit.peer.shares().then(keepShares)
 

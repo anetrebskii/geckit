@@ -3808,6 +3808,14 @@ html.phone .find-bar .icon-button {
   width: 55%;
 }
 
+/* On this computer a conversation is read in a moment, so the placeholder shows only when it is not. */
+html:not(.phone):not(.remote-workspace-page) .transcript[aria-busy='true'] {
+  animation: skeleton-wait 0s linear 150ms both;
+}
+@keyframes skeleton-wait {
+  from { visibility: hidden; }
+  to { visibility: visible; }
+}
 .skeleton-bubble {
   width: 60%;
   height: 38px;

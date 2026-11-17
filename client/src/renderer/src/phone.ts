@@ -619,6 +619,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       },
       onEarlier: (said) => listen('chat:earlier', said),
       picture: (ref, width) => call<SessionImage | null>('chat.picture', ref, width).then((one) => one ?? undefined),
+      find: () => Promise.resolve(undefined),
+      firstAsked: (id) => call<string>('chat.firstAsked', id),
       steps: async (id, ids) => {
         const first = ids[0]
         if (first !== undefined && shown?.id === id) expanded.add(runKey(first))
@@ -822,6 +824,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       shares: () => Promise.resolve([]),
       onShares: never,
       share: () => Promise.resolve(undefined),
+      onScale: never,
+      scaled: nothing,
     },
   }
 

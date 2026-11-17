@@ -592,7 +592,7 @@ export const Transcript = memo(function Transcript({
   readonly seek?: Seek | undefined
   /** How much is before the items and not yet here, and asking for it. */
   readonly earlier?: number
-  readonly onEarlier?: () => void
+  readonly onEarlier?: () => Promise<void> | void
   /** A run of steps opened that is only a line so far: its steps are to be asked for. */
   readonly onSteps?: (run: Extract<SessionItem, { kind: 'steps' }>) => void
   /** When finding in it was last asked for, which puts the field there and in focus; none, and there is no field. */
@@ -712,19 +712,49 @@ export const Transcript = memo(function Transcript({
   )
   // What is found in this conversation: the messages holding the words, oldest first.
   const word = find === undefined ? '' : query.trim().toLowerCase()
-  const hits = useMemo(
+  const loadedHits = useMemo(
     () =>
       word === ''
         ? []
         : items.flatMap((item, index) => ((item.kind === 'mine' || item.kind === 'theirs') && item.text.toLowerCase().includes(word) ? [index] : [])),
     [word, items],
   )
-  const back = hits.length === 0 ? 0 : picked % hits.length
-  const hit = hits[hits.length - 1 - back]
-  const hitId = hit === undefined ? undefined : items[hit]?.id
+  // The whole conversation is searched where it is kept; a GeckIt that cannot do that is searched in what is loaded.
+  const [found, setFound] = useState<{ readonly at: string; readonly word: string; readonly hits: readonly string[] | undefined }>()
+  useEffect(() => {
+    if (word === '') return
+    let gone = false
+    const ask = setTimeout(() => {
+      void window.geckit.chat.find(at, word).then(
+        (said) => { if (!gone) setFound({ at, word, hits: said?.hits }) },
+        () => { if (!gone) setFound({ at, word, hits: undefined }) },
+      )
+    }, 200)
+    return () => { gone = true; clearTimeout(ask) }
+  }, [at, word])
+  const answered = found !== undefined && found.at === at && found.word === word
+  const whole = answered ? found.hits : undefined
+  const searching = word !== '' && !answered
+  const count = whole?.length ?? loadedHits.length
+  const back = count === 0 ? 0 : picked % count
+  const hitId = whole === undefined ? items[loadedHits[loadedHits.length - 1 - back] ?? -1]?.id : whole[whole.length - 1 - back]
+  const hitAt = hitId === undefined ? -1 : items.findIndex((item) => item.id === hitId)
+  const hit = hitAt < 0 ? undefined : hitAt
+  const hits = useMemo(() => {
+    if (whole === undefined) return loadedHits
+    const wanted = new Set(whole)
+    return items.flatMap((item, index) => (wanted.has(item.id) ? [index] : []))
+  }, [whole, loadedHits, items])
   const go = (by: number): void => {
-    if (hits.length > 0) setPicked((back + by + hits.length) % hits.length)
+    if (count > 0) setPicked((back + by + count) % count)
   }
+  // A message found before what is loaded has what is before it loaded until it is there.
+  useEffect(() => {
+    if (hitId !== undefined && hitAt < 0 && earlier > 0) void Promise.resolve(onEarlier?.()).catch(() => undefined)
+  }, [hitId, hitAt, earlier, items.length, onEarlier])
+  useEffect(() => {
+    if (seek !== undefined && seek.id === at && sought < 0 && earlier > 0) void Promise.resolve(onEarlier?.()).catch(() => undefined)
+  }, [seek, at, sought, earlier, items.length, onEarlier])
 
   useEffect(() => {
     if (find === undefined) return
@@ -733,6 +763,10 @@ export const Transcript = memo(function Transcript({
   }, [find])
 
   const page = drawn.at === at ? drawn.count : FIRST
+  // What is before the loaded part is asked for once at a time, and a failure says so on the same row.
+  const [asked, setAsked] = useState<{ readonly at: string; readonly count: number; readonly failed: boolean }>()
+  const loadingEarlier = asked !== undefined && asked.at === at && !asked.failed && asked.count === items.length && earlier > 0
+  const failedEarlier = asked !== undefined && asked.at === at && asked.failed && asked.count === items.length
   useEffect(() => {
     if (page >= PAGE) return
     const more = setTimeout(() => setDrawn({ at, count: PAGE }), 0)
@@ -866,7 +900,8 @@ export const Transcript = memo(function Transcript({
   // The message searched for is shown with what is around it.
   const target = sought < 0 ? undefined : foldOf.get(items[sought]?.id ?? '')
   const openKeys = opened.at === at ? opened.keys : new Set<string>()
-  const isOpen = (key: string): boolean => openKeys.has(key) || key === target
+  const hitFold = hitId === undefined ? undefined : foldOf.get(hitId)
+  const isOpen = (key: string): boolean => openKeys.has(key) || key === target || key === hitFold
   const workingFold = foldOf.get([...shown].reverse().find((item) => current.has(item.id) && foldOf.has(item.id))?.id ?? '')
   const counted = (n: number): string => (n === 1 ? '1 step' : `${String(n)} steps`)
 
@@ -898,16 +933,16 @@ export const Transcript = memo(function Transcript({
             }
           }}
         />
-        <span className="find-count">{word === '' ? '' : hits.length === 0 ? 'Not found' : `${String(hits.length - back)} of ${String(hits.length)}`}</span>
-        {word === '' || earlier === 0 ? null : (
+        <span className="find-count" aria-live="polite">{word === '' ? '' : searching ? 'Searching' : count === 0 ? 'Not found' : `${String(count - back)} of ${String(count)}`}</span>
+        {word === '' || earlier === 0 || !answered || whole !== undefined ? null : (
           <button type="button" className="quiet small" title="Only what is loaded is searched" onClick={onEarlier}>
             Load earlier
           </button>
         )}
-        <button type="button" className="icon-button" title="Earlier (Enter)" aria-label="Earlier" disabled={hits.length < 2} onClick={() => go(1)}>
+        <button type="button" className="icon-button" title="Earlier (Enter)" aria-label="Earlier" disabled={count < 2} onClick={() => go(1)}>
           <Icon name="up" size={13} />
         </button>
-        <button type="button" className="icon-button" title="Later (Shift+Enter)" aria-label="Later" disabled={hits.length < 2} onClick={() => go(-1)}>
+        <button type="button" className="icon-button" title="Later (Shift+Enter)" aria-label="Later" disabled={count < 2} onClick={() => go(-1)}>
           <Icon name="down" size={13} />
         </button>
         <button type="button" className="icon-button" title="Close (Esc)" aria-label="Close" onClick={onFindClose}>
@@ -934,9 +969,15 @@ export const Transcript = memo(function Transcript({
             <button
               type="button"
               className="quiet"
-              onClick={() => (inOrder.length > shown.length ? setDrawn({ at, count: reach + PAGE }) : onEarlier?.())}
+              disabled={loadingEarlier}
+              onClick={() => {
+                if (inOrder.length > shown.length) { setDrawn({ at, count: reach + PAGE }); return }
+                const count = items.length
+                setAsked({ at, count, failed: false })
+                void Promise.resolve(onEarlier?.()).catch(() => setAsked({ at, count, failed: true }))
+              }}
             >
-              Show earlier ({inOrder.length - shown.length + earlier} more)
+              {inOrder.length > shown.length ? `Show earlier (${String(inOrder.length - shown.length + earlier)} more)` : loadingEarlier ? 'Loading earlier' : failedEarlier ? 'Could not load. Try again' : `Show earlier (${String(earlier)} more)`}
             </button>
           </div>
         ) : null}

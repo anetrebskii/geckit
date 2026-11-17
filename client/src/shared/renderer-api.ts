@@ -58,8 +58,9 @@ import type { Link } from './links'
 import type { SecretEntry, SecretLifetime, SecretMetadata, SecretUse } from './secrets'
 import type { SealedValue } from './secret-seal'
 import type { LlmProviderInfo, PluginUpdateResult, ProviderPluginFailure } from './providers'
-import { pieceOf } from './pairing'
 import type { Piece } from './pairing'
+import { clientData } from './client-data'
+import type { ClientData, Found } from './client-data'
 import type { VoiceMemosConnection } from './manager-intake'
 import type { ManagerApi, ManagerAnswerRequest, ManagerAnswerResult, ManagerConfig, ManagerRequestReceipt, ManagerSendRequest, ManagerView } from './manager'
 import type { ChannelScreen, ChannelScreenRequest } from './channel-ui'
@@ -82,7 +83,12 @@ export interface RendererNative {
   readonly pathFor: (file: File) => string
 }
 
-export function createRendererApi(rendererTransport: RendererTransport, native: RendererNative) {
+export function createRendererApi(raw: RendererTransport, native: RendererNative, made?: ClientData) {
+// Conversations are read as every client reads them: the end first, runs of steps as one line, the list as it changes.
+const data = made ?? clientData({ call: (name, ...args) => raw.invoke(name, ...(args as RendererArgument[])), hear: (channel, said) => raw.listen(channel, said) })
+const rendererTransport: RendererTransport = { ...raw, listen: (channel, said) => data.listen(channel, said as (value: never) => void) ?? raw.listen(channel, said) }
+// The service on this computer came back: what is on screen is read again.
+if (made === undefined) raw.listen('chat:reconnected', () => data.reconnected())
 return {
   platform: native.platform,
   /** The home folder, for writing paths under it as ~. */
@@ -241,10 +247,13 @@ return {
     hidden: (older: boolean): Promise<HiddenFolder[]> => rendererTransport.invoke('chat:hidden', older),
     bring: (id: string): Promise<void> => rendererTransport.invoke('chat:bring', id),
     /** Nothing for the project is every conversation, in every project offered. */
-    list: (root: string | undefined): Promise<ChatSession[]> => rendererTransport.invoke('chat:list', root),
+    list: (root: string | undefined): Promise<ChatSession[]> => data.list(root),
     listStatus: (): Promise<readonly SessionListStatus[]> => rendererTransport.invoke('chat:listStatus'),
     onListStatus: (said: (status: readonly SessionListStatus[]) => void): (() => void) => rendererTransport.listen('chat:listStatus', said),
-    items: (id: string): Promise<SessionItem[]> => rendererTransport.invoke('chat:items', id),
+    /** The end of a conversation, each run of steps one line; the rest comes with before and steps. */
+    items: (id: string): Promise<SessionItem[]> => data.items(id),
+    /** The first message of a conversation, however much of it is loaded. */
+    firstAsked: (id: string): Promise<string> => rendererTransport.invoke('chat:firstAsked', id),
     exportConversation: (id: string): Promise<ConversationExport> => rendererTransport.invoke('chat:exportConversation', id),
     continueConversation: (request: ConversationContinuation): Promise<string> => rendererTransport.invoke('chat:continueConversation', request),
     copyConversation: (request: ConversationContinuation): Promise<string> => rendererTransport.invoke('chat:copyConversation', request),
@@ -253,15 +262,15 @@ return {
     preparedDraft: (id: string): Promise<string | undefined> => rendererTransport.invoke('chat:preparedDraft', id),
     savePreparedDraft: (id: string, change: PreparedConversationDraft): Promise<void> => rendererTransport.invoke('chat:savePreparedDraft', id, change),
     waiting: (id: string): Promise<SessionItem | undefined> => rendererTransport.invoke('chat:waiting', id),
-    /** What is before a line of a conversation; the phone is sent a conversation's end first, this window all of it. */
-    before: async (id: string, before: string): Promise<Piece> =>
-      pieceOf((await rendererTransport.invoke('chat:items', id)) as SessionItem[], before, 200),
-    /** A picture the phone was sent by name, at the width it is drawn; this window is sent them whole. */
-    picture: (_ref: string, _width: number): Promise<SessionImage | undefined> => Promise.resolve(undefined),
-    /** Steps of a conversation by their ids, for a run the phone was sent as one line. */
-    steps: async (id: string, ids: readonly string[]): Promise<SessionItem[]> =>
-      ((await rendererTransport.invoke('chat:items', id)) as SessionItem[]).filter((item) => ids.includes(item.id)),
-    /** How much of the open conversation is still on the Mac only, which only the phone is told. */
+    /** What is before a line of a conversation. */
+    before: (id: string, before: string): Promise<Piece> => data.before(id, before),
+    /** A picture sent by name, at the width it is drawn; a client on this computer is sent them whole. */
+    picture: (ref: string, width: number): Promise<SessionImage | undefined> => data.picture(ref, width),
+    /** Steps of a conversation by their ids, for a run sent as one line. */
+    steps: (id: string, ids: readonly string[]): Promise<SessionItem[]> => data.steps(id, ids),
+    /** Every message of the whole conversation holding the words; undefined from a GeckIt that cannot say. */
+    find: (id: string, words: string): Promise<Found | undefined> => data.find(id, words),
+    /** How much of the open conversation is not loaded yet. */
     onEarlier: (said: (earlier: { readonly id: string; readonly left: number }) => void): (() => void) => rendererTransport.listen('chat:earlier', said),
     links: (id: string): Promise<Link[]> => rendererTransport.invoke('chat:links', id),
     /** What closing GeckIt cut off, the first time a window asks after a start, and nothing after that. */
@@ -295,8 +304,8 @@ return {
     unqueue: (id: string, queued: string): Promise<SessionMessage | undefined> => rendererTransport.invoke('chat:unqueue', id, queued),
     injectQueued: (id: string, queued: string): Promise<void> => rendererTransport.invoke('chat:injectQueued', id, queued),
     /** A picture waiting with a queued message; the phone is sent it at the width it is drawn, this window whole. */
-    queuedPicture: (id: string, queued: string, index: number, _width: number): Promise<SessionImage | undefined> =>
-      rendererTransport.invoke('chat:queuedPicture', id, queued, index),
+    queuedPicture: (id: string, queued: string, index: number, width: number): Promise<SessionImage | undefined> =>
+      data.queuedPicture(id, queued, index, width),
     /** A message waiting in the queue, said again in other words; it keeps its place and its pictures. */
     requeue: (id: string, queued: string, text: string): void => rendererTransport.send('chat:requeue', id, queued, text),
     reorderQueued: (id: string, queued: string, target: string, after: boolean): void => rendererTransport.send('chat:reorderQueued', id, queued, target, after),
@@ -316,7 +325,7 @@ return {
     /** Deletes the files the tool keeps them in, and says whose are gone. */
     remove: (ids: readonly string[]): Promise<readonly string[]> => rendererTransport.invoke('chat:delete', ids),
     /** Which session is in front, so an answer that arrives here is not announced. */
-    watching: (id: string | undefined): void => rendererTransport.send('chat:watching', id),
+    watching: (id: string | undefined): void => { data.watching(id); rendererTransport.send('chat:watching', id) },
     /** Takes the answer as read without opening it: the mark on the row is pressed. */
     read: (id: string): void => rendererTransport.send('chat:read', id),
     /** Opens a terminal in the project with `claude --resume` already running. */

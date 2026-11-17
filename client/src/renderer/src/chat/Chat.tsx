@@ -5,7 +5,7 @@ import type { SignInLink } from '../../../shared/live-view'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DEFAULT_SETTINGS, homeOf, inProgress, providerOf, SESSION_STATUSES, shownProjects } from '../../../shared/api'
-import type { ChatSession, CutOff, SessionImage, SessionItem, SessionStatus, ShortcutDraft } from '../../../shared/api'
+import type { ChatSession, CutOff, SessionImage, SessionStatus, ShortcutDraft } from '../../../shared/api'
 import { linksIn, shortUrl } from '../../../shared/links'
 import { llmProviderInfo, registerProviderInfo } from '../../../shared/providers'
 import { Icon } from '../ui/Icon'
@@ -237,13 +237,12 @@ export function Chat(): React.JSX.Element {
   const closeShortcuts = useCallback(() => setManaging(undefined), [])
   const shortcutFrom = useCallback(
     (session: ChatSession) => {
-      const said = (items: readonly SessionItem[]): void => {
-        const first = items.find((item) => item.kind === 'mine')
+      const said = (prompt: string): void => {
         setManaging({
           edit: {
             name: session.title,
             root: session.root,
-            prompt: first?.kind === 'mine' ? first.text : '',
+            prompt,
             mode: session.mode,
             provider: providerOf(session.id),
             ...(session.chosen === undefined ? session.model === undefined ? {} : { model: session.model } : { model: session.chosen }),
@@ -253,10 +252,9 @@ export function Chat(): React.JSX.Element {
           at: Date.now(),
         })
       }
-      if (chat.shown.kind === 'session' && chat.shown.id === session.id) said(chat.items)
-      else void window.geckit.chat.items(session.id).then(said)
+      void window.geckit.chat.firstAsked(session.id).then(said)
     },
-    [chat.shown, chat.items],
+    [],
   )
   const openKeys = useCallback(() => {
     setSetting(undefined)

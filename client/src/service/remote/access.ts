@@ -16,11 +16,16 @@ import type { CoreEvent } from '../../core/events'
 import type { ObservationRuntime } from './gateway'
 import { disposeTransport, nodeListen } from './transport'
 import { coalesceEvents } from '../../shared/remote/coalesce'
+import { CAN, clientView } from '../../core/client-view'
+import type { ClientView } from '../../core/client-view'
+import type { SessionImage } from '../../shared/api'
 interface Device { readonly id: string; readonly name: string; readonly publicKey: string; readonly key: string; readonly projects: readonly string[]; readonly manager: boolean; readonly created: number; readonly revoked?: number; readonly full?: true }
 interface AccessRecord { readonly server: RemoteServer; readonly identity: RemoteIdentity; readonly enabled: boolean; readonly signal: string; readonly devices: readonly Device[] }
 interface Invitation { readonly id: string; readonly key: string; readonly expires: number; readonly projects: readonly string[]; readonly manager: boolean; readonly full?: true; consumed: string | undefined; readonly stop: () => void }
 interface Pending { readonly id: string; readonly name: string; readonly publicKey: string; readonly phrase: string; readonly invitation: Invitation; readonly approve: (device: Device) => Promise<void>; readonly close: () => void }
-export async function remoteAccess(runtime: ObservationRuntime, directory: string, security: ServiceSecurity, core?: Partial<CoreMethods>) {
+/** Scales a picture to the width a client draws it, where something on this computer can. */
+export type PictureScaler = (image: SessionImage, width: number) => Promise<SessionImage>
+export async function remoteAccess(runtime: ObservationRuntime, directory: string, security: ServiceSecurity, core?: Partial<CoreMethods>, scale?: PictureScaler) {
   const path = join(directory, 'remote-access.sealed')
   let record: AccessRecord | undefined
   if (existsSync(path)) {
@@ -55,10 +60,11 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
     let updateTimer: ReturnType<typeof setTimeout> | undefined
     let flushTimer: ReturnType<typeof setTimeout> | undefined
     let queued: CoreEvent[] = []
+    let view: ClientView | undefined
     // Events go out in batches, so a streaming conversation sends its latest state rather than every step of it.
     const flush = (): void => { flushTimer = undefined; const batch = coalesceEvents(queued); queued = []; if (!ended) for (const event of batch) send(channel, { type: 'core-event', event }) }
     const timeout = setTimeout(() => { if (device === undefined) refuse(channel, 'expired', 'Code expired. Create a new code on the server.') }, invitation === undefined ? 15_000 : Math.max(1, invitation.expires - Date.now()))
-    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); clearTimeout(flushTimer); queued = []; stopChanges?.(); stopEvents?.(); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
+    const end = (): void => { if (ended) return; ended = true; clearTimeout(timeout); if (updateTimer !== undefined) clearTimeout(updateTimer); clearTimeout(flushTimer); queued = []; stopChanges?.(); stopEvents?.(); view?.dispose(); if (requestId !== undefined) pending.delete(requestId); if (device !== undefined) channels.get(device.id)?.delete(channel) }
     channel.onClose(end)
     const establish = async (one: Device, text: string): Promise<void> => {
       if (ended) return
@@ -70,8 +76,19 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       const proof = await sign(active().identity, trustProof(text, trust))
       if (ended || !record?.enabled || record.devices.find((device) => device.id === one.id)?.revoked !== undefined) { channel.close(); return }
       send(channel, { type: 'trusted', trust, proof })
+      const live = (): boolean => !ended && record?.enabled === true && record.devices.some((current) => current.id === one.id && current.revoked === undefined)
+      if (one.full && core?.['chat:items'] !== undefined) {
+        const items = core['chat:items']
+        const queuedPicture = core['chat:queuedPicture']
+        view = clientView({
+          items: (id) => items(id),
+          queuedPicture: async (id, message, index) => (await queuedPicture?.(id, message, index)) ?? undefined,
+          ...(scale === undefined ? {} : { scale }),
+        }, CAN, (event) => { if (live()) send(channel, { type: 'core-event', event: event as CoreEvent }) })
+      }
       if (one.full) stopEvents = runtime.subscribe((event: CoreEvent) => {
-        if (!ended && record?.enabled && record.devices.some((current) => current.id === one.id && current.revoked === undefined)) { queued.push(event); flushTimer ??= setTimeout(flush, 50) }
+        if (!live() || view?.event(event) === true) return
+        queued.push(event); flushTimer ??= setTimeout(flush, 50)
       })
       stopChanges = gateway?.changed((seq) => {
         if (updateTimer !== undefined) return
@@ -131,6 +148,14 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
             try {
               if (!current.full || core === undefined) throw new Error('Pair again with geckit pair to control this server.')
               const { method, args } = request.call
+              const owned = view?.call(method, args)
+              if (owned !== undefined) {
+                const value = await owned as RemoteResult
+                if (!ended && record.enabled && record.devices.some((one) => one.id === current.id && one.revoked === undefined)) send(channel, { type: 'core-result', id: request.id, value })
+                // Said back plainly first, so the client knows before anything deflated reaches it.
+                if ((method as string) === 'link:can' && view?.can('deflate') === true) channel.compress?.(true)
+                return
+              }
               if (!Object.hasOwn(core, method) || Object.hasOwn(Object.prototype, method)) throw new Error('Unknown GeckIt method.')
               const operation = core[method] as (...args: never[]) => RemoteResult | Promise<RemoteResult>
               const value = await operation(...args as never[])

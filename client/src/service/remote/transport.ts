@@ -11,6 +11,7 @@ const ice = async (pairing: RemoteSignal): Promise<IceServer[]> => (await iceFor
   return { hostname: found[2], port: Number(found[3] ?? (found[1] === 'turns' ? 5349 : 3478)), ...(found[1] === 'stun' ? {} : { relayType: found[1] === 'turns' ? 'TurnTls' as const : found[4] === 'tcp' ? 'TurnTcp' as const : 'TurnUdp' as const, username: server.username ?? '', password: server.credential ?? '' }) }
 })).filter((one) => one !== undefined)
 export const disposeTransport = (): void => cleanup()
+const bytesOf = (data: Buffer | ArrayBuffer): ArrayBuffer => (data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer)
 export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChannel) => void, failed: (error: Error) => void): () => void {
   const peers = new Set<PeerConnection>()
   const seen = new Set<string>()
@@ -41,7 +42,7 @@ export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChanne
         const listeners: (() => void)[] = []
         channel.onClosed(() => { drop('the data channel closed'); for (const listener of listeners) listener() })
         channel.setBufferedAmountLowThreshold(250_000)
-        joined(remoteChannel({ send: (text) => { channel.sendMessage(text) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else drop('the client sent binary data') }), closed: (closed) => listeners.push(closed), close: () => { channel.close(); drop('closed here'); for (const listener of listeners) listener() }, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, binding))
+        joined(remoteChannel({ send: (text) => { channel.sendMessage(text) }, sendBinary: (bytes) => { channel.sendMessageBinary(Buffer.from(bytes)) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else heard(bytesOf(data)) }), closed: (closed) => listeners.push(closed), close: () => { channel.close(); drop('closed here'); for (const listener of listeners) listener() }, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, binding))
       })
     })
     peer.onGatheringStateChange((state) => {
@@ -109,6 +110,6 @@ export async function nodeDial(pairing: RemoteSignal): Promise<RemoteChannel> {
       else if (state === 'failed' || state === 'closed') end(`the link ${state}`)
     })
     channel.setBufferedAmountLowThreshold(250_000)
-    return remoteChannel({ send: (text) => { channel.sendMessage(text) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else end('the server sent binary data') }), closed: (closed) => listeners.push(closed), close: () => end('closed here'), buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, transportBinding(offer, description.sdp))
+    return remoteChannel({ send: (text) => { channel.sendMessage(text) }, sendBinary: (bytes) => { channel.sendMessageBinary(Buffer.from(bytes)) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else heard(bytesOf(data)) }), closed: (closed) => listeners.push(closed), close: () => end('closed here'), buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, transportBinding(offer, description.sdp))
   } catch (error) { peer.close(); throw error }
 }

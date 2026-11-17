@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { connectRemote } from '../src/renderer/src/remote/client'
+import { HOLD, LINK_DOWN, connectRemote } from '../src/renderer/src/remote/client'
 import { remoteDial } from '../src/renderer/src/remote/transport'
 import { devicePublicKey, rememberServer, signDevice } from '../src/renderer/src/remote/storage'
 import { identity, sign, transcript, trustProof, verify } from '../src/shared/remote/identity'
@@ -60,20 +60,25 @@ describe('remote workspace calls', () => {
       const rejection = expect(uncertain).rejects.toThrow('Connection lost. Check the server before retrying this action.')
       first.link.close()
       await rejection
-      await expect(connection.call('chat:rename', 'session', 'Another title')).rejects.toThrow('Connect to this server')
+      const waiting = connection.call('chat:rename', 'session', 'Asked while down')
       await vi.advanceTimersByTimeAsync(2000)
       expect(remoteDial).toHaveBeenCalledTimes(2)
       vi.useRealTimers()
       await authenticate(second, server, trust)
       expect(first.requests.filter((request) => request.type === 'core-call')).toHaveLength(1)
       const renames = (requests: readonly RemoteRequest[]) => requests.filter((one) => one.type === 'core-call' && one.call.method === 'chat:rename')
-      expect(renames(second.requests)).toHaveLength(0)
+      await vi.waitFor(() => expect(renames(second.requests)).toHaveLength(1))
+      const held = renames(second.requests)[0]
+      if (held?.type !== 'core-call') throw new Error('The held action was not sent')
+      expect(held.call.args).toEqual(['session', 'Asked while down'])
+      second.deliver({ type: 'core-result', id: held.id, value: undefined })
+      await expect(waiting).resolves.toBeUndefined()
       const next = connection.call('chat:rename', 'session', 'New explicit action')
-      const request = renames(second.requests)[0]
+      const request = renames(second.requests)[1]
       if (request?.type !== 'core-call') throw new Error('Explicit action was not sent')
       second.deliver({ type: 'core-result', id: request.id, value: undefined })
       await expect(next).resolves.toBeUndefined()
-      expect(renames(second.requests)).toHaveLength(1)
+      expect(renames(second.requests)).toHaveLength(2)
     } finally { connection.close() }
   })
 
@@ -118,5 +123,29 @@ describe('remote workspace calls', () => {
     const signal = { id: 'room', key: 'k', signal: 'http://127.0.0.1:47932' } as unknown as Parameters<typeof connectRemote>[0]
     connectRemote(signal, 'Client', (view) => views.push(`${view.state}: ${view.message}`))
     await vi.waitFor(() => expect(views.at(-1)).toBe('error: Could not connect: the server did not answer. Check that GeckIt is running there and the code is new.'))
+  })
+})
+
+describe('a call made while the link is down', () => {
+  it('fails with the link-down error after a minute', async () => {
+    const server = await identity()
+    const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    vi.mocked(devicePublicKey).mockResolvedValue(btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey('spki', keys.publicKey)))))
+    vi.mocked(signDevice).mockImplementation(async (text) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(text))))))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const trust: RemoteTrust = { server: { id: 'server', name: 'Server', publicKey: server.publicKey }, device: 'device', key: 'a'.repeat(43), signal: 'http://127.0.0.1:47932', projects: [], manager: true, full: true }
+    const first = channel()
+    vi.mocked(remoteDial).mockResolvedValueOnce(first.link).mockImplementation(() => new Promise(() => undefined))
+    const connection = connectRemote(trust, 'Client', () => undefined, trust)
+    try {
+      await vi.waitFor(() => expect(remoteDial).toHaveBeenCalledTimes(1))
+      await authenticate(first, server, trust)
+      vi.useFakeTimers()
+      first.link.close()
+      const waiting = connection.call('chat:rename', 'session', 'Asked while down')
+      const failed = expect(waiting).rejects.toThrow(LINK_DOWN)
+      await vi.advanceTimersByTimeAsync(HOLD)
+      await failed
+    } finally { connection.close() }
   })
 })

@@ -34,7 +34,7 @@ export type RemoteResponse =
   | { readonly type: 'core-failure'; readonly id: number; readonly message: string }
   | { readonly type: 'core-event'; readonly event: CoreEvent }
   | { readonly type: 'error'; readonly code: 'expired' | 'reused' | 'revoked' | 'incompatible' | 'denied' | 'error'; readonly message: string }
-export interface RemoteChannel { readonly binding: Promise<string>; send(text: string): void; onMessage(heard: (text: string) => void): void; onClose(closed: () => void): void; close(): void }
+export interface RemoteChannel { readonly binding: Promise<string>; send(text: string): void; onMessage(heard: (text: string) => void): void; onClose(closed: () => void): void; close(): void; compress?(on: boolean): void }
 export interface RemoteSignal { readonly key: string; readonly signal: string }
 export const remoteRef = (server: string, kind: string, id: string): string => `geckit-remote:${encodeURIComponent(server)}:${kind}:${encodeURIComponent(id)}`
 export const invitationLink = (key: string, signal: string): string => `geckit://server?code=${key}&signal=${encodeURIComponent(signal)}`

@@ -1,15 +1,26 @@
 import { createRoot } from 'react-dom/client'
 import type { CoreMethods } from '../../../core/application'
 import type { HostView } from '../../../shared/hosts'
-import type { UpdateView } from '../../../shared/api'
+import type { Settings, UpdateView } from '../../../shared/api'
 import { createRendererApi } from '../../../shared/renderer-api'
 import type { RendererArgument, RendererTransport } from '../../../shared/renderer-api'
 import type { RemoteServer } from '../../../shared/remote/protocol'
+import { OWN } from '../phone-calls'
 import type { PhoneCalls } from '../phone-calls'
 import type { WorkspaceConnection } from './Workspace'
+import { clientData } from '../../../shared/client-data'
+import { keep, readKept } from '../kept'
 
 export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean) {
   const bootstrap = await connection.call('service:bootstrap')
+  const call = <T,>(name: string, ...args: unknown[]): Promise<T> => connection.call(name as keyof CoreMethods, ...args as Parameters<CoreMethods[keyof CoreMethods]>) as Promise<T>
+  // What this client reads of the server, as every client does, and kept here so it opens on that while the link is made.
+  const data = clientData({
+    call,
+    hear: (channel, said) => connection.on((event) => { if (event.name === channel) said(event.args[0] as never) }),
+    keeps: { prefix: `server:${server.id}`, read: readKept, keep },
+  })
+  connection.onReconnected?.(() => data.reconnected())
   const folderHost: HostView = { id: ':remote-server', name: server.name, address: '', user: '', port: 0, auth: 'key', state: 'up', remembered: false, canRemember: false }
   const report = (error: Error): void => {
     let notice = document.getElementById('remote-workspace-error')
@@ -108,7 +119,38 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     platform: bootstrap.platform,
     home: bootstrap.home,
     pathFor: () => { const error = new Error('Choose an attachment on the server. Local file paths cannot be used there.'); report(error); throw error },
-  })
+  }, data)
+  // How this client looks, which projects it shows and whether it counts or sends errors are its own, whatever the server has.
+  const ownKey = `server:${server.id}:own`
+  const readOwn = (): Partial<Settings> => {
+    try { return JSON.parse(localStorage.getItem(ownKey) ?? '{}') as Partial<Settings> } catch { return {} }
+  }
+  let mine = readOwn()
+  let last: Settings | undefined
+  const own = (settings: Settings): Settings => {
+    last = settings
+    const kept = { ...settings, analytics: false, analyticsAsked: false, sendErrors: false, client: '', ...mine }
+    const gone = mine.profile !== undefined && mine.profile !== '' && !settings.profiles.some((one) => one.id === mine.profile)
+    return gone ? { ...kept, profile: '', chatProjects: [], chatAll: true } : kept
+  }
+  const isOwn = (key: string): boolean => (OWN as readonly string[]).includes(key)
+  const settings = {
+    ...api.settings,
+    get: async (): Promise<Settings> => own(await api.settings.get()),
+    set: async (change: Partial<Settings>): Promise<Settings> => {
+      const here = Object.fromEntries(Object.entries(change).filter(([key]) => isOwn(key)))
+      const there = Object.fromEntries(Object.entries(change).filter(([key]) => !isOwn(key)))
+      if (Object.keys(here).length > 0) {
+        mine = { ...mine, ...here, ...(change.analytics === false ? { client: '' } : {}) }
+        try { localStorage.setItem(ownKey, JSON.stringify(mine)) } catch { /* kept for this launch only */ }
+      }
+      if (Object.keys(there).length > 0) return own(await api.settings.set(there))
+      const now = own(last ?? (await api.settings.get()))
+      window.dispatchEvent(new CustomEvent('remote:settings:changed', { detail: now }))
+      return now
+    },
+    on: (said: (settings: Settings) => void): (() => void) => api.settings.on((settings) => said(own(settings))),
+  }
   const hosts = {
     ...api.hosts,
     folders: (id: string, path?: string) => id === folderHost.id ? connection.call('chat:folders', path) : api.hosts.folders(id, path),
@@ -137,5 +179,5 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     away: () => undefined,
   }
   if (onPhone) Object.defineProperty(window, 'geckitPhone', { value: phone })
-  return { ...api, hosts }
+  return { ...api, settings, hosts }
 }

@@ -19,6 +19,7 @@ import type { ChannelId, ChannelJson } from '../shared/channels'
 import type { ServiceSnapshot } from '../core/application'
 import type { ServiceMethods, ServiceEvents } from '../service/application'
 import type { RpcEvent } from '../core/rpc'
+import { VIEW_METHODS, clientView } from '../core/client-view'
 import { connectDesktop } from './service-client'
 import { configurationActions } from './configuration-actions'
 import type { DesktopServiceClient } from './service-client'
@@ -93,6 +94,12 @@ const tell = (channel: string, ...args: NativeValue[]): void => {
   for (const window of everyWindow()) window.webContents.send(channel, ...args)
   shownPeer()?.webContents.send('peer:tell', channel, args[0])
 }
+// The Chat window reads conversations as every client does; pictures go whole and the list whole, since nothing here crosses a network.
+const chatView = clientView(
+  { items: (id) => invoke('chat:items', id), queuedPicture: (id, queued, index) => invoke('chat:queuedPicture', id, queued, index) },
+  ['steps', 'find'],
+  (event) => shownChat()?.webContents.send(event.name, ...(event.args as NativeValue[])),
+)
 const tellChats = (channel: string, value: NativeValue): void => {
   shownChat()?.webContents.send(channel, value)
   shownPeer()?.webContents.send('peer:tell', channel, value)
@@ -460,6 +467,10 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
     case 'chat:notice': notice(event.args[0]); return
     case 'chat:show': openChat(event.args[0]); return
     case 'manager:items': tellChats(event.name, event.args[0]); return
+    case 'chat:items':
+      chatView.event(event)
+      shownPeer()?.webContents.send('peer:tell', event.name, event.args[0])
+      return
     case 'employees:changed':
       if (snapshot !== undefined) snapshot = { ...snapshot, employees: event.args[0] }
       tell(event.name, event.args[0]); drawTray(); return
@@ -472,6 +483,13 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
     case 'core:terminal': {
       const [root, command, status] = event.args
       openTerminal(root, status === undefined ? command : `${command}; echo $? > ${JSON.stringify(status)}`)
+      return
+    }
+    case 'core:scale': {
+      const [id, image, width] = event.args
+      const peer = shownPeer()
+      if (peer === undefined) void invoke('desktop:scaled', id).catch(report)
+      else peer.webContents.send('peer:scale', id, image, width)
       return
     }
     case 'core:trash': {
@@ -496,10 +514,11 @@ function applySnapshot(next: ServiceSnapshot): void {
   for (const [id, value] of Object.entries(next.channels)) coreEvent({ name: 'channels:shown', args: [{ id: id as ChannelId, value, phone: next.channelPhoneViews?.[id] ?? null }] })
   tell('speech:model', next.speech)
   keepPeer()
-  if (watched !== undefined) void invoke('chat:items', watched).then((items) => tellChats('chat:items', { id: watched ?? '', items })).catch(report)
+  shownChat()?.webContents.send('chat:reconnected')
+  if (watched !== undefined) void invoke('chat:items', watched).then((items) => shownPeer()?.webContents.send('peer:tell', 'chat:items', { id: watched ?? '', items })).catch(report)
 }
 
-const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "secrets:prepare", "secrets:save", "secrets:update", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "manager:unfollow", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:setChecklist", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run", "shortcuts:destinations", "shortcuts:runs"] as const satisfies readonly (keyof ServiceMethods)[]
+const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "secrets:prepare", "secrets:save", "secrets:update", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:resume", "manager:retry", "manager:restart", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "manager:unfollow", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:firstAsked", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:setChecklist", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:run", "shortcuts:destinations", "shortcuts:runs"] as const satisfies readonly (keyof ServiceMethods)[]
 
 function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void {
   ipcMain.handle(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
@@ -546,6 +565,13 @@ function wire(): void {
   ipcMain.handle('configuration:import', () => configuration.import())
 
   for (const channel of CORE_CHANNELS) registerCore(channel)
+  for (const method of VIEW_METHODS) {
+    if (method === 'chat:queuedPicture') continue
+    ipcMain.handle(method, (event, ...args: unknown[]) => {
+      if (event.sender !== shownChat()?.webContents) throw new Error('Conversations are read in the Chat window.')
+      return chatView.call(method, args)
+    })
+  }
 
   ipcMain.handle('manager:inspect', (event, id: string) => {
     if (event.sender !== shownChat()?.webContents) throw new Error('Inspect Manager from the Desktop chat window.')
@@ -754,6 +780,11 @@ function wire(): void {
     if (first === undefined) return { error: 'The Mac has no screen to show. Its lid may be closed, or it is asleep.' }
     shownDisplay = first.display_id
     return { id: first.id }
+  })
+
+  ipcMain.on('peer:scaled', (event, id: string, image: SessionImage | null) => {
+    if (event.sender !== shownPeer()?.webContents) return
+    void invoke('desktop:scaled', id, image ?? undefined).catch(report)
   })
 
   ipcMain.on('peer:state', (event, count: number, trouble: string | null) => {

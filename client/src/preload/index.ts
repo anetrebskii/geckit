@@ -3,6 +3,7 @@ import { createRendererApi } from '../shared/renderer-api'
 import type { RendererArgument, RendererTransport } from '../shared/renderer-api'
 import type { Pairing } from '../shared/pairing'
 import type { ConnectionStorage } from '../shared/remote/storage'
+import type { SessionImage } from '../shared/api'
 
 const connectionStorage: ConnectionStorage = {
   publicKey: () => ipcRenderer.invoke('remote:storage', 'publicKey'),
@@ -42,6 +43,13 @@ const geckit = {
       }
     },
     state: (count: number, trouble: string | undefined): void => ipcRenderer.send('peer:state', count, trouble ?? null),
+    /** A picture the service wants at the width a client draws it, which only a window can scale. */
+    onScale: (said: (id: string, image: SessionImage, width: number) => void): (() => void) => {
+      const on = (_event: unknown, id: string, image: SessionImage, width: number): void => said(id, image, width)
+      ipcRenderer.on('peer:scale', on)
+      return () => { ipcRenderer.off('peer:scale', on) }
+    },
+    scaled: (id: string, image: SessionImage | undefined): void => ipcRenderer.send('peer:scaled', id, image ?? null),
     /** The rooms of the links shared now, each with its own key. */
     shares: (): Promise<readonly { readonly id: string; readonly key: string }[]> => ipcRenderer.invoke('peer:shares'),
     onShares: (said: (rooms: readonly { readonly id: string; readonly key: string }[]) => void): (() => void) => transport.listen('peer:shares', said),
