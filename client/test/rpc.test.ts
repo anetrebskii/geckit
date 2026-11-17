@@ -243,7 +243,8 @@ it('preserves deletions, permission cards, independent sessions and payload snap
   const client = await connectRpc<Methods, Updates>(path, 'secret', (event) => events.push(event))
   cleanup.push(async () => { client.close(); await client.closed })
   const update = (session: string, text: string): Parameters<Updates['chat:items']>[0] => ({ id: session, items: [{ id: 'same-message-id', kind: 'thought', text }] })
-  const large = 'x'.repeat(100_000)
+  // Large enough to fill the socket buffer on every platform, so the following snapshots queue behind it.
+  const large = 'x'.repeat(8_000_000)
   server.broadcast('chat:items', update('a', large))
   server.broadcast('chat:items', update('a', 'old'))
   server.broadcast('chat:items', update('b', 'other session'))
