@@ -25,7 +25,7 @@ export function useShortcutDestination(settings: DestinationSettings, destinatio
   const selected = channels.find((one) => one.id === channel)
   const choices = selected?.destinations
   const transport = useMemo(() => {
-    const list = [{ value: '', label: 'Only in GeckIt' }, ...channels.map((one) => ({ value: one.id, label: one.name }))]
+    const list = [{ value: '', label: 'GeckIt' }, ...channels.map((one) => ({ value: one.id, label: one.name }))]
     if (channel !== '' && selected === undefined) list.push({ value: channel, label: channel.replace(/^channel:/, '') })
     return list
   }, [channels, channel, selected])

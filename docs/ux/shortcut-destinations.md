@@ -11,7 +11,7 @@ created: 2026-11-15
 
 Alex saves where each shortcut should send its completed result, then continues that same run by replying there. Today a schedule chooses what starts but has no result destination.
 
-Open Shortcuts or the shortcut in Team, edit its prompt/target and timetable as before, then choose Send result. The default is Only in GeckIt, preserving old jobs. Selecting a transport reveals Destination. Choose the specific destination and Save. Reopening shows the saved choice; Cancel discards edits. Both manual and timed runs use it. A saved choice records intent; it does not prove live delivery or bypass channel setup, Manager, permissions or approvals.
+Open Shortcuts or the shortcut in Team, edit its prompt/target and timetable as before, then choose Send result. The default is GeckIt, preserving old jobs. GeckIt keeps the result in the run's task on the existing board; it requires no external channel setup. Selecting a transport reveals Destination. Choose the specific destination and Save. Reopening shows the saved choice; Cancel discards edits. Both manual and timed runs use it. A saved choice records intent; it does not prove live delivery or bypass channel setup, Manager, permissions or approvals.
 
 Keep the existing editor as one form with a result group after execution settings. Transport and place are dependent choices, so place appears only after transport. No separate setup wizard: Settings > Channels already owns connection setup. Returning edits do not require re-entering assistant settings. If a dependency disappears, keep the saved identity visible and explain the problem instead of substituting a place.
 
@@ -34,13 +34,13 @@ No changes to the channel connection screens. Use their existing setup entry poi
 
 | State | Condition | What the user sees | Next action |
 |---|---|---|---|
-| Local | No destination | "Only in GeckIt" | Save or choose transport |
+| Local | No destination | "GeckIt" | Save or choose transport |
 | Loading | Destination discovery in progress | "Loading destinations..." | Wait or cancel |
 | Discovery failed | Destination discovery rejects | "Couldn't load destinations. Try again." | Try again or cancel |
 | Older host | Host omits shortcut destination capability | "This host does not support shortcut result destinations. Update GeckIt on the host." | Keep local behavior, clear an existing destination, or update host |
 | Choose | Supported transport chosen, no place | "Choose a destination" | Choose a place |
 | Selected | Place selected | Saved transport and destination name; semantics help text | Save |
-| Empty | No available places | "No destinations available. Check this channel in Settings > Channels." | Configure channel or choose Only in GeckIt |
+| Empty | No available places | "No destinations available. Check this channel in Settings > Channels." | Configure channel or choose GeckIt |
 | Unavailable | Saved transport/place cannot be reached | "Destination unavailable. Check this channel in Settings > Channels." | Restore setup, change destination, or cancel |
 | Save failed | Save/readback rejected | "Couldn't save the shortcut. Try again." | Correct choice and retry |
 | Working | Run accepted but still working or awaiting approval | Existing task/Manager state | Continue work or answer approval |
@@ -58,7 +58,7 @@ No changes to the channel connection screens. Use their existing setup entry poi
 | Loading | Discovery rejects, automatically without user action | Discovery failed | Exact error and Try again |
 | Discovery failed | Press Try again | Loading | "Loading destinations..." |
 | Choose | Select a place | Selected | Place label and delivery semantics |
-| Any editing state | Select Only in GeckIt | Local | Destination control disappears |
+| Any editing state | Select GeckIt | Local | Destination control disappears |
 | Selected/Local | Press Save | Closed | Updated shortcut list after authoritative save/readback |
 | Selected | Save rejects | Save failed | Exact save failure text; draft retained |
 | Any editing state | Cancel, Escape or scrim | Closed | Existing saved shortcut remains |
@@ -71,7 +71,7 @@ No changes to the channel connection screens. Use their existing setup entry poi
 ```mermaid
 stateDiagram-v2
   direction LR
-  state "Only in GeckIt" as Local
+  state "GeckIt" as Local
   state "Loading destinations..." as Loading
   state "Destination selected" as Selected
   state "Destination unavailable" as Unavailable
@@ -102,7 +102,7 @@ No new schedule timer or missed-run catch-up rule. Completion follows existing s
 
 ## 7. Wording
 
-Fields: "Send result", "Destination". Default: "Only in GeckIt". Discord help: "Each completed run starts a new Discord thread. Reply there to continue that run with Manager." Slack help: "Each completed run starts a new Slack thread. Reply there to continue that run with Manager." Unavailable transport help: "This channel does not support shortcut result destinations." State wording is defined once in section 3. Connection-specific refusal reason comes from the channel. Save does not say delivery succeeded.
+Fields: "Send result", "Destination". Default: "GeckIt". Discord help: "Each completed run starts a new Discord thread. Reply there to continue that run with Manager." Slack help: "Each completed run starts a new Slack thread. Reply there to continue that run with Manager." Unavailable transport help: "This channel does not support shortcut result destinations." State wording is defined once in section 3. Connection-specific refusal reason comes from the channel. Save does not say delivery succeeded.
 
 ## 8. Edge cases
 
@@ -121,3 +121,9 @@ Persist stable transport/place IDs, not names alone: renaming a channel must not
 Sections 1-3 cover FR-001/002/007/009; 4-8 cover FR-003 through FR-006 and FR-008/010; 9 covers FR-011/012. Required evidence: persistence and readback, source completion, native receipt/route, actual Manager continuation, two-run isolation, refusals, uncertainty, restart, legacy, and renderer light/dark desktop/phone interactions. Mock and live results are reported separately. No actual live delivery is claimed by this document.
 
 Alex explicitly approved this document and the behavior in the original Discord thread with "Подтверждаю". The user relayed that approval in this Codex session on 2026-11-15. The define-ux-behavior approval gate is satisfied. Approval covers service -> destination, a separate thread for each run, and replies continuing the same task through Manager. It does not authorize arbitrary live test posts or a GeckIt restart.
+
+## Approved label revision, 2026-11-18
+
+Alex requested GeckIt as a cron job destination because a task and board already exist. Replace the local choice "Only in GeckIt" with "GeckIt" in the shared desktop/phone Send result picker. Selecting it continues to clear external delivery and keeps the result in its existing task. Target, folder, schedule, Save, Cancel and reopen behavior remain as specified above. No additional board or task picker is introduced. The existing approved behavior is unchanged. Alex approved implementation with "Implement it" in GeckIt session codex:01a1eda0-4164-70a3-a4cd-5fb6612ee20a on 2026-11-18.
+
+Apple UX review: selection acts on the shortcut directly, feedback remains inline, cancellation preserves the saved choice, Save remains the next action, the choice persists on reopen, no permissions or notifications are added, and "GeckIt" names the result location plainly. No destructive actions or new timing thresholds are introduced. Rendered review must confirm the existing shared picker in both themes and desktop/phone sizes after implementation.
