@@ -15835,6 +15835,7 @@ html.phone .manager-composer-hint {
 .configuration-settings .configuration-error { color: var(--danger); }
 
 .remote-clients { display: flex; flex-direction: column; block-size: 100dvh; color: var(--text); background: var(--bg); font-size: 12px; }
+html.phone .remote-clients { block-size: 100%; }
 .remote-clients .board-head { flex-shrink: 0; gap: 8px; padding-inline-end: 16px; }
 html.phone .remote-clients .board-head { padding-inline-start: 12px; }
 .remote-title { font-size: 13px; font-weight: 600; }
