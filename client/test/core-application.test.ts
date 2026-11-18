@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import { expect, it } from 'vitest'
-import { version } from '../package.json'
+import { version as packagedVersion } from '../package.json'
 
 import { connectDesktop } from '../src/main/service-client'
 import type { DesktopServiceClient } from '../src/main/service-client'
@@ -18,6 +18,7 @@ import type { ServiceMethods, ServiceEvents } from '../src/service/application'
 
 const exec = promisify(execFile)
 const clientDirectory = resolve(import.meta.dirname, '..')
+const version = packagedVersion === '1.0.0' ? `${(await readFile(resolve(clientDirectory, '..', '.version'), 'utf8')).trim()}.0` : packagedVersion
 
 it('bootstraps persisted projects before listing, shares events across desktop clients, and keeps running when they detach', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'geckit-core-app-'))

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { version } from '../package.json'
+import { version } from '../src/shared/version'
 import { askedEndpoint } from '../src/cli/endpoint'
 import { listenRpc, rpcEndpoint } from '../src/core/rpc'
 import type { RpcEvent } from '../src/core/rpc'

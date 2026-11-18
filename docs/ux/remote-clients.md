@@ -77,6 +77,8 @@ The desktop development window reads and updates the same original file-origin c
 
 After selecting a remote computer, Settings > Version identifies that computer's running GeckIt service as "GeckIt <version>". Phone Settings > About shows the same version beside the existing host label. This repairs missing information in the existing workflow and adds no controls or layout. Read fresh server metadata whenever either version surface opens; cached platform/home data must not supply a stale or local version.
 
+Tagged source builds use the checked-out release number from .version when package.json retains its development placeholder, 1.0.0. Packaged builds keep the exact version stamped by release CI. Both values are embedded in the build, so copying the headless bundle away from its checkout retains its own release number; the desktop compatibility handshake uses the same source. This 2026-11-18 correction changes only the reported metadata.
+
 The existing remote guidance stays "Update the GeckIt service on the server." Remote workspaces do not show the local desktop's Check for Updates or Restart to Update actions. A server predating version metadata, or one whose metadata cannot currently be read, shows "GeckIt version unavailable" on desktop and "Version unavailable" on phone. Do not infer a version from the client, a release channel or protocol number. Closing and reopening Settings retries the metadata read; reconnection retains the ordinary connection feedback and request timeout.
 
 | From | Event | To | What the user sees |

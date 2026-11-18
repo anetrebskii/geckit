@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync, copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { version } from '../../package.json'
+import { version } from '../shared/version'
 import { application } from '../core/application'
 import { exportConfiguration, stageConfigurationImport } from '../core/configuration-transfer'
 import type { CoreEvents } from '../core/events'

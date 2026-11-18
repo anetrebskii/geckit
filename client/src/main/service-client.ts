@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { closeSync, existsSync, fchmodSync, mkdirSync, openSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { version as bundledVersion } from '../../package.json'
+import { version as bundledVersion } from '../shared/version'
 import { askedEndpoint, endpointOnDisk } from '../cli/endpoint'
 import { connectRpc, rpcEndpoint } from '../core/rpc'
 import { canStartService, serviceCrashed } from '../core/ownership'

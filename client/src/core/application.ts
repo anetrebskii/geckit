@@ -1,4 +1,4 @@
-import { version } from '../../package.json'
+import { version } from '../shared/version'
 import { providerChange } from '../main/provider-changes'
 import { assertProviderUnused } from '../main/provider-settings'
 import type { ChannelScreenRequest } from '../shared/channel-ui'

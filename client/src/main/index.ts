@@ -994,7 +994,6 @@ else {
   void app.whenReady().then(async () => {
     service = await connectDesktop({
       directory: app.getPath('userData'),
-      version: app.getVersion(),
       executable: process.execPath,
       script: join(app.getAppPath(), 'out', 'service', 'service.js'),
       args: process.env['GECKIT_DATA'] === undefined ? ['--app-home', app.getAppPath(), ...(!app.isPackaged ? ['--source'] : [])] : [],

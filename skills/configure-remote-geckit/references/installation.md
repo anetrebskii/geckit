@@ -16,7 +16,7 @@ npm ci
 npm run build:service
 ```
 
-Copy all of `client/out/service/`, including `assets/` and `package.json`. Node must be version 22 or newer. Native addons must match the target OS and architecture; do not transplant a macOS service bundle onto Linux.
+The build embeds the checked-out release number from the repository's `.version` when `client/package.json` still has its `1.0.0` source placeholder; a version stamped into the package by release CI takes precedence. The remote Settings version comes from this embedded value, not the deployment's version pin. Copy all of `client/out/service/`, including `assets/` and `package.json`. Node must be version 22 or newer. Native addons must match the target OS and architecture; do not transplant a macOS service bundle onto Linux.
 
 A Linux packaged release may contain the same bundle at `resources/app.asar` -> `out/service`. Follow the owning repository's pinned extraction procedure and checksum verification; do not execute a downloaded AppImage as root merely to unpack it. Do not substitute Development for Stable or publish a release without the person's authorization.
 

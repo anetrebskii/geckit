@@ -61,6 +61,8 @@ npm ci
 npm run build:service
 ```
 
+The service embeds the release number from the checkout's `.version` when `client/package.json` retains its `1.0.0` source placeholder. Release CI's stamped package version takes precedence. Remote Settings and the desktop compatibility handshake read that same embedded value, so no source checkout or deployment marker is needed at runtime.
+
 Copy the **entire** `client/out/service/` directory to the target machine, including `assets/` and `package.json`. The bundle runs with Node 22 or newer and needs no `node_modules` directory. Provider libraries may have their own dependencies. Install and sign in to Claude Code, Codex or another supported provider separately, as the service's OS user. Provider/platform restrictions remain the same as desktop: builtin Codex is local; builtin remote execution uses Claude Code over SSH.
 
 ```sh

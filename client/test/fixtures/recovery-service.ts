@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { appendFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { version } from '../../package.json'
+import { version } from '../../src/shared/version'
 import { ownDataDirectory } from '../../src/core/ownership'
 import { listenRpc } from '../../src/core/rpc'
 
