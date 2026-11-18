@@ -6,3 +6,4 @@ release
 whisper
 llama
 broker
+.vitest
