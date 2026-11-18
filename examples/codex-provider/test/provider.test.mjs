@@ -53,6 +53,10 @@ test('built artifact uses its copied Codex CLI code for account, models, limits,
     driver.stop()
     for (let i = 0; i < 100 && !ended; i += 1) await setTimeout(10)
     assert.ok(signals.some((signal) => signal.kind === 'ended' && signal.how === 'stopped'))
+    ended = false
+    driver.send('hit the limit')
+    for (let i = 0; i < 100 && !ended; i += 1) await setTimeout(10)
+    assert.deepEqual(signals.findLast((signal) => signal.kind === 'ended'), { kind: 'ended', how: 'limit', text: "You've hit your usage limit.", resetsAt: 2000000000000 })
     await driver.end()
     assert.ok(left)
     await provider.setInstructions(true, {})

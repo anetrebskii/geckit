@@ -347,9 +347,25 @@ export function clock(at: number, now: number): string {
 }
 
 /** "Your Claude plan's limit is used up until 15:00." - and without the time where the tool gave none. */
-export function limitText(resetsAt: number | undefined, now: number): string {
-  const plan = "Your Claude plan's limit is used up"
+export function limitText(resetsAt: number | undefined, now: number, plan = 'Claude'): string {
+  plan = `Your ${plan} plan's limit is used up`
   return resetsAt === undefined || resetsAt <= now ? `${plan}.` : `${plan} until ${clock(resetsAt, now)}.`
+}
+
+/** "2 h 5 min" from now to then, rounded up to the minute. */
+export function wait(at: number, now: number): string {
+  const minutes = Math.max(1, Math.ceil((at - now) / 60_000))
+  const hours = Math.floor(minutes / 60)
+  if (hours === 0) return `${String(minutes)} min`
+  return minutes % 60 === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(minutes % 60)} min`
+}
+
+/** What Manager says in a channel thread while the plan's limit stops it, with when it is back where the tool said. */
+export function limitReply(until: number | undefined, now: number, plan = 'Claude'): string {
+  const reached = `Manager can't answer right now: the ${plan} plan's usage limit is reached.`
+  if (until === undefined || until <= now) return `${reached} The reset time is unknown; messages sent here are kept and answered once Manager is retried in GeckIt.`
+  const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(until).find((part) => part.type === 'timeZoneName')?.value
+  return `${reached} You can write again at ${clock(until, now)}${zone === undefined ? '' : ` ${zone}`} (in ${wait(until, now)}). Messages sent before then are kept and answered after the reset.`
 }
 
 export function limitStands(resetsAt: number | undefined, now: number): string {

@@ -1071,6 +1071,31 @@ describe('Manager automatic recovery', () => {
     expect((await reloaded.view()).session?.id).toBe(id)
   })
 
+  it('tells a channel thread about the plan limit, with its reset, and resumes after it', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'slack', place: 'Slack', key: 'C1:1' })
+    const responses: { readonly text: string; readonly origin: ManagerReplyOrigin }[] = []
+    f.manager.onResponse((text, origin) => responses.push({ text, origin }))
+    const id = await f.manager.send('Deploy it', 'channel', 'limit-first', [], () => true, [], [], thread)
+    await settle()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const resetsAt = Date.now() + 2 * 3_600_000 + 5 * 60_000
+    f.hear(id, { items: [], gone: [], signals: [{ kind: 'ended', how: 'limit', resetsAt }] })
+    await settle()
+    expect(responses).toHaveLength(1)
+    expect(responses[0]?.text).toContain("Claude plan's usage limit is reached")
+    expect(responses[0]?.text).toContain('(in 2 h 5 min)')
+    expect(responses[0]?.origin.thread).toBe(thread)
+    await f.manager.send('Are you there?', 'channel', 'limit-second', [], () => true, [], [], thread)
+    await settle()
+    expect(responses).toHaveLength(2)
+    expect(f.sent).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(resetsAt - Date.now() + 20_000)
+    await settle()
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === id && one.text.includes('usage limit reset'))).toBe(true))
+  })
+
   it.each([VPN_IP_CONFIGURATION_ERROR, 'VPN unavailable', `${vpnIpMismatchError('8.8.8.8')} Extra hook refusal`, vpnIpMismatchError('127.0.0.1')])('keeps non-transient guard failure %s held for manual retry', async (error) => {
     const f = await fixture(0, { beforeSend: () => { throw new Error(error) } })
     await f.manager.configure({ enabled: true })

@@ -3873,6 +3873,131 @@ function linksInText(texts) {
   }
   return [...found.values()];
 }
+var jsonObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
+var string = (value) => typeof value === "string" ? value : void 0;
+var number = (value) => typeof value === "number" && Number.isFinite(value) ? value : void 0;
+var strings = (value) => Array.isArray(value) && value.every((one) => typeof one === "string") ? value : void 0;
+var only = (value, keys) => Object.keys(value).every((key) => keys.includes(key));
+var unsupported = { fields: [], error: "This form is not supported yet." };
+var fieldKeys = ["type", "title", "description", "default", "minimum", "maximum", "minLength", "maxLength", "format", "enum", "enumNames", "oneOf", "items", "minItems", "maxItems"];
+function choices(schema) {
+  if (schema["enum"] !== void 0) {
+    const values = strings(schema["enum"]);
+    const labels = schema["enumNames"] === void 0 ? void 0 : strings(schema["enumNames"]);
+    if (values === void 0 || values.length === 0 || schema["enumNames"] !== void 0 && (labels === void 0 || labels.length !== values.length)) return void 0;
+    return values.map((value, at) => ({ value, label: labels?.[at] ?? value }));
+  }
+  const entries = schema["oneOf"] ?? schema["anyOf"];
+  if (!Array.isArray(entries) || entries.length === 0) return void 0;
+  const options = [];
+  for (const entry of entries) {
+    const option = jsonObject(entry);
+    if (option === void 0 || !only(option, ["const", "title"]) || typeof option["const"] !== "string" || typeof option["title"] !== "string") return void 0;
+    options.push({ value: option["const"], label: option["title"] });
+  }
+  return options;
+}
+function field(name, schema, required) {
+  if (!only(schema, fieldKeys)) return void 0;
+  if (["title", "description"].some((key) => schema[key] !== void 0 && typeof schema[key] !== "string")) return void 0;
+  const type = schema["type"];
+  if (type !== "string" && type !== "number" && type !== "integer" && type !== "boolean" && type !== "array") return void 0;
+  const constraints = ["minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems"];
+  for (const key of constraints) {
+    const value2 = schema[key];
+    if (value2 !== void 0 && (number(value2) === void 0 || key !== "minimum" && key !== "maximum" && (!Number.isInteger(value2) || Number(value2) < 0))) return void 0;
+    if (value2 !== void 0 && (key === "minimum" || key === "maximum" ? type !== "number" && type !== "integer" : key === "minLength" || key === "maxLength" ? type !== "string" : type !== "array")) return void 0;
+  }
+  const format = schema["format"];
+  if (format !== void 0 && (type !== "string" || format !== "email" && format !== "uri" && format !== "date" && format !== "date-time")) return void 0;
+  if ((schema["enum"] !== void 0 || schema["oneOf"] !== void 0 || schema["enumNames"] !== void 0) && type !== "string") return void 0;
+  if (schema["enum"] !== void 0 && schema["oneOf"] !== void 0) return void 0;
+  if (schema["items"] !== void 0 && type !== "array") return void 0;
+  const items = jsonObject(schema["items"]);
+  if (type === "array" && (items === void 0 || !only(items, ["type", "enum", "anyOf"]) || items["type"] !== void 0 && items["type"] !== "string")) return void 0;
+  const options = type === "array" && items !== void 0 ? choices(items) : schema["enum"] !== void 0 || schema["oneOf"] !== void 0 ? choices(schema) : void 0;
+  if ((type === "array" || schema["enum"] !== void 0 || schema["oneOf"] !== void 0) && options === void 0) return void 0;
+  if (options !== void 0 && new Set(options.map((option) => option.value)).size !== options.length) return void 0;
+  const description = string(schema["description"]);
+  const value = {
+    name,
+    label: string(schema["title"]) ?? name,
+    required,
+    type,
+    ...description === void 0 ? {} : { description },
+    ...options === void 0 ? {} : { options },
+    ...format === void 0 ? {} : { format },
+    ...Object.fromEntries(constraints.filter((key) => schema[key] !== void 0).map((key) => [key, schema[key]]))
+  };
+  if ((value.minimum ?? -Infinity) > (value.maximum ?? Infinity) || (value.minLength ?? 0) > (value.maxLength ?? Infinity) || (value.minItems ?? 0) > (value.maxItems ?? Infinity)) return void 0;
+  if (schema["default"] !== void 0) {
+    const initial = schema["default"];
+    if (!validField(value, initial)) return void 0;
+    return { ...value, default: initial };
+  }
+  return value;
+}
+function elicitationForm(schema) {
+  const root = jsonObject(schema);
+  if (root === void 0 || root["type"] !== "object" || !only(root, ["$schema", "type", "properties", "required", "title", "description", "additionalProperties"]) || root["additionalProperties"] !== void 0 && typeof root["additionalProperties"] !== "boolean") return unsupported;
+  const properties = jsonObject(root["properties"]);
+  const required = root["required"] === void 0 ? [] : strings(root["required"]);
+  if (properties === void 0 || required === void 0 || required.some((key) => !Object.hasOwn(properties, key))) return unsupported;
+  const fields = [];
+  for (const [name, value] of Object.entries(properties)) {
+    const schema2 = jsonObject(value);
+    const parsed = schema2 === void 0 ? void 0 : field(name, schema2, required.includes(name));
+    if (parsed === void 0) return unsupported;
+    fields.push(parsed);
+  }
+  return { fields };
+}
+function validField(field2, value) {
+  if (value === void 0) return !field2.required;
+  if (field2.type === "boolean") return typeof value === "boolean";
+  if (field2.type === "array") return Array.isArray(value) && value.every((one) => typeof one === "string" && field2.options?.some((option) => option.value === one)) && new Set(value).size === value.length && value.length >= (field2.minItems ?? 0) && value.length <= (field2.maxItems ?? Infinity);
+  if (field2.type === "number" || field2.type === "integer") return typeof value === "number" && Number.isFinite(value) && (field2.type !== "integer" || Number.isInteger(value)) && value >= (field2.minimum ?? -Infinity) && value <= (field2.maximum ?? Infinity);
+  if (typeof value !== "string" || [...value].length < (field2.minLength ?? 0) || [...value].length > (field2.maxLength ?? Infinity) || field2.options !== void 0 && !field2.options.some((option) => option.value === value)) return false;
+  switch (field2.format) {
+    case "email":
+      return /^[^\s@]+@[^\s@]+$/.test(value);
+    case "uri":
+      try {
+        return new URL(value).protocol !== "";
+      } catch {
+        return false;
+      }
+    case "date":
+      return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+    case "date-time":
+      return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value.slice(0, 10)).toISOString().slice(0, 10) === value.slice(0, 10);
+    default:
+      return true;
+  }
+}
+function elicitationAnswer(answer, request) {
+  let parsed;
+  try {
+    parsed = JSON.parse(answer);
+  } catch {
+    return void 0;
+  }
+  const value = jsonObject(parsed);
+  const action = value?.["action"];
+  if (action === "decline" || action === "cancel") return { action, content: null, _meta: null };
+  if (action !== "accept" || request.error !== void 0) return void 0;
+  const content = jsonObject(value?.["content"]);
+  if (request.url !== void 0) return { action, content: null, _meta: null };
+  if (content === void 0 || !only(content, request.fields.map((field2) => field2.name)) || request.fields.some((field2) => !validField(field2, Object.hasOwn(content, field2.name) ? content[field2.name] : void 0))) return void 0;
+  return { action, content, _meta: null };
+}
+function elicitationUrl(url) {
+  try {
+    return ["http:", "https:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
 var modelVersion = (id) => {
   const match = /^(?:claude-[a-z]+-|gpt-)(\d+)(?:[-.](\d+))?(?:-|\[|$)/.exec(id);
   return match === null ? void 0 : [match[1], match[2]].filter((part) => part !== void 0).join(".");
@@ -4017,8 +4142,8 @@ function inputOf(body) {
       return {};
     }
   }
-  const field = (name) => new RegExp(`^${name}: (.*)$`, "m").exec(body)?.[1] ?? "";
-  return { file_path: field("file"), command: field("command"), description: field("description") };
+  const field2 = (name) => new RegExp(`^${name}: (.*)$`, "m").exec(body)?.[1] ?? "";
+  return { file_path: field2("file"), command: field2("command"), description: field2("description") };
 }
 function questionDetail(input) {
   if (!Array.isArray(input["questions"])) return "";
@@ -4132,15 +4257,15 @@ function codexOptions(root, mode, model) {
     sandbox: mode === "plan" ? "read-only" : "workspace-write"
   };
 }
-var string = (value) => typeof value === "string" ? value : "";
+var string2 = (value) => typeof value === "string" ? value : "";
 var object2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
 var list = (value) => Array.isArray(value) ? value : [];
-var textsOf = (content) => typeof content === "string" ? [content] : list(content).map(object2).filter((block) => string(block["type"]) === "text").map((block) => string(block["text"]));
+var textsOf = (content) => typeof content === "string" ? [content] : list(content).map(object2).filter((block) => string2(block["type"]) === "text").map((block) => string2(block["text"]));
 function typed(entry) {
-  if (string(entry["type"]) !== "user" || entry["isSidechain"] === true || entry["isMeta"] === true) return "";
+  if (string2(entry["type"]) !== "user" || entry["isSidechain"] === true || entry["isMeta"] === true) return "";
   if (entry["isCompactSummary"] === true) return "";
   const content = object2(entry["message"])["content"];
-  if (list(content).some((block) => string(object2(block)["type"]) === "tool_result")) return "";
+  if (list(content).some((block) => string2(object2(block)["type"]) === "tool_result")) return "";
   return textsOf(content).filter((text2) => !/^\s*(<|\[Request interrupted|Caveat:)/.test(text2)).join("\n");
 }
 var EDGE = 64 * 1024;
@@ -4151,21 +4276,21 @@ var AROUND = 60;
 var SNIPPET = 160;
 var read = /* @__PURE__ */ new Map();
 var object3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
-var string2 = (value) => typeof value === "string" ? value : "";
+var string3 = (value) => typeof value === "string" ? value : "";
 function saidIn2(entry) {
   if (entry["isSidechain"] === true) return "";
-  const type = string2(entry["type"]);
+  const type = string3(entry["type"]);
   if (type === "user") {
     const words = typed(entry);
     if (words !== "") return words;
     const content2 = object3(entry["message"])["content"];
-    if (!Array.isArray(content2) || content2.some((block) => string2(object3(block)["type"]) === "tool_result")) return "";
-    return content2.map((block) => string2(object3(block)["type"]) === "text" ? string2(object3(block)["text"]) : "").join("\n");
+    if (!Array.isArray(content2) || content2.some((block) => string3(object3(block)["type"]) === "tool_result")) return "";
+    return content2.map((block) => string3(object3(block)["type"]) === "text" ? string3(object3(block)["text"]) : "").join("\n");
   }
   if (type !== "assistant") return "";
   const content = object3(entry["message"])["content"];
   if (!Array.isArray(content)) return "";
-  return content.map((block) => string2(object3(block)["type"]) === "text" ? string2(object3(block)["text"]) : "").join("\n");
+  return content.map((block) => string3(object3(block)["type"]) === "text" ? string3(object3(block)["text"]) : "").join("\n");
 }
 async function readOn(path, from, to, said, codex) {
   const file = await open(path, "r");
@@ -4247,10 +4372,15 @@ function searchCodex(files, asked) {
 var native = (id) => id.slice("codex:".length);
 var shownGoal = (goal) => goal === null || goal.status === "complete" ? void 0 : { condition: goal.objective, checks: 0 };
 var isDraining = (message) => message?.toLowerCase().includes("server is draining") ?? false;
+var codexLimitEnds = (limits) => {
+  const ends = (limits ?? []).flatMap((limit) => [limit.primary, limit.secondary]).flatMap((window) => window != null && window.usedPercent >= 100 && window.resetsAt != null ? [window.resetsAt * 1e3] : []);
+  return ends.length === 0 ? void 0 : Math.max(...ends);
+};
 var CodexSessions = class {
   #launch;
   #changed;
   #account;
+  #limits = [];
   #models = [];
   #rpc;
   #listeners = /* @__PURE__ */ new Map();
@@ -4268,8 +4398,9 @@ var CodexSessions = class {
     if (this.#rpc === void 0) {
       this.#rpc = new CodexRpc(this.#launch, (event) => {
         if (event.method === "account/rateLimits/updated") {
+          const limit = event.params.rateLimits;
+          this.#limits = [...this.#limits.filter((one) => one.limitId !== limit.limitId), limit];
           if (this.#account !== void 0) {
-            const limit = event.params.rateLimits;
             this.#account = { ...this.#account, limits: [...(this.#account.limits ?? []).filter((one) => one.limitId !== limit.limitId), limit] };
             this.#changed?.(this.#account);
           }
@@ -4506,16 +4637,32 @@ ${text2}`, text_elements: [] }], cwd: tmpdir(), effort, approvalPolicy: "on-requ
     let model = options.model;
     const signals = (...signals2) => hear({ items: [], gone: [], signals: signals2 });
     const ended = (how, text2) => {
+      clearRequests();
       if (!active) return;
       active = false;
       turnId = void 0;
+      const resetsAt = how === "limit" ? codexLimitEnds([...(this.#account?.limits ?? []).filter((one) => !this.#limits.some((own) => own.limitId === one.limitId)), ...this.#limits]) : void 0;
+      signals({ kind: "ended", how, ...text2 === void 0 ? {} : { text: text2 }, ...resetsAt === void 0 ? {} : { resetsAt } });
+    };
+    const clearRequests = () => {
+      for (const asked of requests.values()) {
+        if (asked.request.method !== "mcpServer/elicitation/request") continue;
+        const id = String(asked.request.id);
+        rpc?.reply(asked.request.id, { action: "cancel", content: null, _meta: null });
+        hear({ items: [], gone: [`card:${id}`], signals: [{ kind: "resolved", ask: id }] });
+      }
       requests.clear();
-      signals({ kind: "ended", how, ...text2 === void 0 ? {} : { text: text2 } });
     };
     const ask = (asked) => {
       const request = asked.request;
       const id = String(request.id);
       switch (request.method) {
+        case "mcpServer/elicitation/request": {
+          const params = request.params;
+          asked.elicitation = { serverName: params.serverName, message: params.message, ...params.mode === "url" ? { fields: [], url: params.url, ...elicitationUrl(params.url) ? {} : { error: "This form is not supported yet." } } : elicitationForm(params.requestedSchema) };
+          signals({ kind: "asks", ask: id, wanted: { kind: "elicitation", ...asked.elicitation } });
+          return;
+        }
         case "item/tool/requestUserInput": {
           const question = request.params.questions[asked.at];
           if (question === void 0) return;
@@ -4561,7 +4708,7 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
             return;
           case "turn/completed":
             if (event.params.turn.status === "failed" && isDraining(event.params.turn.error?.message)) this.#discardConnection(rpc);
-            ended(event.params.turn.status === "completed" ? "done" : event.params.turn.status === "interrupted" ? "stopped" : "failed", event.params.turn.error?.message);
+            ended(event.params.turn.status === "completed" ? "done" : event.params.turn.status === "interrupted" ? "stopped" : event.params.turn.error?.codexErrorInfo === "usageLimitExceeded" ? "limit" : "failed", event.params.turn.error?.message);
             return;
           case "item/started":
           case "item/completed": {
@@ -4603,7 +4750,8 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
           case "item/commandExecution/requestApproval":
           case "item/fileChange/requestApproval":
           case "item/tool/requestUserInput":
-          case "item/permissions/requestApproval": {
+          case "item/permissions/requestApproval":
+          case "mcpServer/elicitation/request": {
             const asked = { request: event, at: 0, answers: {} };
             requests.set(String(event.id), asked);
             ask(asked);
@@ -4621,7 +4769,7 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
           case "error":
             if (!event.params.willRetry) {
               if (isDraining(event.params.error.message)) this.#discardConnection(rpc);
-              ended("failed", event.params.error.message);
+              ended(event.params.error.codexErrorInfo === "usageLimitExceeded" ? "limit" : "failed", event.params.error.message);
             }
             return;
           default:
@@ -4739,7 +4887,11 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
         const asked = requests.get(key);
         if (asked === void 0 || rpc === void 0) return;
         const request = asked.request;
-        if (request.method === "item/tool/requestUserInput") {
+        if (request.method === "mcpServer/elicitation/request") {
+          const response = asked.elicitation === void 0 ? void 0 : elicitationAnswer(answer, asked.elicitation);
+          if (response === void 0) return;
+          rpc.reply(request.id, { ...response });
+        } else if (request.method === "item/tool/requestUserInput") {
           const question = request.params.questions[asked.at];
           if (question === void 0) return;
           asked.answers[question.id] = { answers: [answer] };
@@ -4759,11 +4911,13 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
       },
       stop: () => {
         stopped = true;
+        clearRequests();
         if (turnId !== void 0) void rpc?.request("turn/interrupt", { threadId, turnId }).catch((error) => ended("failed", error.message));
       },
       end: async () => {
         if (over) return;
         over = true;
+        clearRequests();
         this.#listeners.delete(threadId);
         if (active && turnId !== void 0) await rpc?.request("turn/interrupt", { threadId, turnId }).catch(() => void 0);
         await ready.catch(() => void 0);

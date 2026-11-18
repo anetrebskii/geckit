@@ -192,7 +192,7 @@ hear({ items: [], gone: [], signals: [
 ] })
 ```
 
-`spend.cost` is cumulative for the current driver run; GeckIt combines runs. `costKind` is `billed` or `api-equivalent` (legacy default); `currency` defaults to USD for existing plugins. Context used is occupancy, not total billable tokens. A provider's usage event does not change another provider's plan. Emit `ended` once per turn and call `left()` when the driver exits.
+`spend.cost` is cumulative for the current driver run; GeckIt combines runs. `costKind` is `billed` or `api-equivalent` (legacy default); `currency` defaults to USD for existing plugins. Context used is occupancy, not total billable tokens. A provider's usage event does not change another provider's plan. Emit `ended` once per turn and call `left()` when the driver exits. When the account's usage limit stops a turn, end it with `{ kind: 'ended', how: 'limit', resetsAt }`, `resetsAt` in Unix milliseconds where the backend says when the limit ends, omitted otherwise; do not report it as `failed`. GeckIt then shows the limit on the conversation, and a Manager on that library tells its channel threads when people can write again and resumes after `resetsAt`.
 
 ### Background activity
 

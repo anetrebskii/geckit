@@ -1,4 +1,4 @@
-import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
+import type { Answered, ChatFound, ClaudeAccount, ClaudeModel, CodexRateLimit, ReasoningEffort, SessionGoal, SessionMode } from '../../shared/api'
 import { computersFolder } from '../../cli/computer'
 import { elicitationAccessKey, elicitationAnswer, elicitationForm, elicitationUrl } from '../../shared/elicitation'
 import type { Elicitation } from '../../shared/elicitation'
@@ -42,10 +42,18 @@ interface Asked {
 /** Whether Codex could not be started because its program is not on this computer. */
 export const codexMissing = (error: unknown): boolean => error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT' && error.message.startsWith('spawn ')
 
+/** When the ChatGPT plan's spent windows open again, in milliseconds: the latest of those used up, as Codex last said. */
+export function codexLimitEnds(limits: readonly CodexRateLimit[] | undefined): number | undefined {
+  const ends = (limits ?? []).flatMap((limit) => [limit.primary, limit.secondary]).flatMap((window) => window !== null && window.usedPercent >= 100 && window.resetsAt !== null ? [window.resetsAt * 1000] : [])
+  return ends.length === 0 ? undefined : Math.max(...ends)
+}
+
 export class CodexSessions {
   readonly #launch: () => Held
   readonly #changed: ((account: ClaudeAccount) => void) | undefined
   #account: ClaudeAccount | undefined
+  /** What Codex last said of the plan's windows, kept even before the account is read, so a limit can say when it ends. */
+  #limits: readonly CodexRateLimit[] = []
   #models: readonly ClaudeModel[] = []
   #rpc: CodexRpc | undefined
   readonly #listeners = new Map<string, Listener>()
@@ -82,8 +90,9 @@ export class CodexSessions {
   #open(socketAllowed: boolean): CodexRpc {
     return new CodexRpc(this.#launch, (event) => {
       if (event.method === 'account/rateLimits/updated') {
+        const limit = event.params.rateLimits
+        this.#limits = [...this.#limits.filter((one) => one.limitId !== limit.limitId), limit]
         if (this.#account !== undefined) {
-          const limit = event.params.rateLimits
           this.#account = { ...this.#account, limits: [...(this.#account.limits ?? []).filter((one) => one.limitId !== limit.limitId), limit] }
           this.#changed?.(this.#account)
         }
@@ -346,7 +355,7 @@ export class CodexSessions {
         }
       }
     }
-    const ended = (how: 'done' | 'stopped' | 'failed', text?: string): void => {
+    const ended = (how: 'done' | 'stopped' | 'failed' | 'limit', text?: string): void => {
       clearRetry()
       clearRequests()
       items.clear()
@@ -354,7 +363,8 @@ export class CodexSessions {
       if (!active) return
       active = false
       turnId = undefined
-      signals({ kind: 'ended', how, ...(text === undefined ? {} : { text }) })
+      const resetsAt = how === 'limit' ? codexLimitEnds([...(this.#account?.limits ?? []).filter((one) => !this.#limits.some((own) => own.limitId === one.limitId)), ...this.#limits]) : undefined
+      signals({ kind: 'ended', how, ...(text === undefined ? {} : { text }), ...(resetsAt === undefined ? {} : { resetsAt }) })
     }
     const clearRequests = (): void => {
       for (const asked of requests.values()) {
@@ -424,7 +434,7 @@ export class CodexSessions {
           case 'turn/completed':
             if (turnId !== undefined && event.params.turn.id !== turnId) return
             if (event.params.turn.status === 'failed' && isDraining(event.params.turn.error?.message)) this.#discardConnection(rpc)
-            ended(event.params.turn.status === 'completed' ? 'done' : event.params.turn.status === 'interrupted' ? 'stopped' : 'failed', event.params.turn.error?.message)
+            ended(event.params.turn.status === 'completed' ? 'done' : event.params.turn.status === 'interrupted' ? 'stopped' : event.params.turn.error?.codexErrorInfo === 'usageLimitExceeded' ? 'limit' : 'failed', event.params.turn.error?.message)
             return
           case 'item/started':
           case 'item/completed': {
@@ -498,7 +508,7 @@ export class CodexSessions {
             }
             if (!event.params.willRetry) {
               if (isDraining(event.params.error.message)) this.#discardConnection(rpc)
-              ended('failed', event.params.error.message)
+              ended(event.params.error.codexErrorInfo === 'usageLimitExceeded' ? 'limit' : 'failed', event.params.error.message)
             }
             return
           default:

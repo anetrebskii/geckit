@@ -812,6 +812,27 @@ describe('Codex app-server', () => {
     }
   })
 
+  it('ends a turn stopped by the plan usage limit as a limit, with when the spent window resets', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Work')
+    await tick()
+    server.event({ method: 'account/rateLimits/updated', params: { rateLimits: { limitId: 'codex', limitName: null, primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: 2000000000 }, secondary: { usedPercent: 40, windowDurationMins: 10080, resetsAt: 2100000000 } } } })
+    server.event({ method: 'turn/completed', params: { threadId: 'terminal', turn: { id: 'turn-terminal', status: 'failed', error: { message: "You've hit your usage limit.", codexErrorInfo: 'usageLimitExceeded' }, startedAt: 100, items: [] } } })
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toEqual([{ kind: 'ended', how: 'limit', text: "You've hit your usage limit.", resetsAt: 2000000000 * 1000 }])
+    await driver.end()
+  })
+
+  it('keeps other failed turns as failures', async () => {
+    const { server, codex, heard } = setup()
+    const driver = codex.hold({ id: 'codex:terminal', root: ROOT, resume: true, mode: 'manual' }, (one) => heard.push(one), () => undefined)
+    driver.send('Work')
+    await tick()
+    server.event({ method: 'turn/completed', params: { threadId: 'terminal', turn: { id: 'turn-terminal', status: 'failed', error: { message: 'Too fast', codexErrorInfo: 'rateLimitExceeded' }, startedAt: 100, items: [] } } })
+    expect(heard.flatMap((one) => one.signals).filter((one) => one.kind === 'ended')).toEqual([{ kind: 'ended', how: 'failed', text: 'Too fast' }])
+    await driver.end()
+  })
+
   it('reports quota windows and applies live quota updates without a thread ID', async () => {
     const server = new Server()
     const updates: object[] = []

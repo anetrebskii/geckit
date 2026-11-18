@@ -34,6 +34,11 @@ for await (const line of createInterface({ input: process.stdin })) {
     event('item/agentMessage/delta', { itemId: 'answer', delta: 'Hello from copied code' })
     event('thread/tokenUsage/updated', { tokenUsage: { last: { inputTokens: 100, outputTokens: 20 }, modelContextWindow: 200000 } })
     if (request.params.input[0].text === 'wait for stop') continue
+    if (request.params.input[0].text === 'hit the limit') {
+      send({ method: 'account/rateLimits/updated', params: { rateLimits: { limitId: 'codex', limitName: null, primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: 2000000000 }, secondary: null } } })
+      event('turn/completed', { turn: { id: 'turn', status: 'failed', error: { message: "You've hit your usage limit.", codexErrorInfo: 'usageLimitExceeded' } } })
+      continue
+    }
     send({ id: 'approval', method: 'item/commandExecution/requestApproval', params: { threadId: id, itemId: 'command', command: 'git status' } })
   }
   if (request.method === 'turn/interrupt') event('turn/completed', { turn: { id: 'turn', status: 'interrupted' } })

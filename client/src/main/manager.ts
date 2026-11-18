@@ -29,6 +29,7 @@ import type { ManagerApproval } from './manager-approvals'
 import { managerCommands, managerMessage, MANAGER_INSTRUCTIONS } from './manager-protocol'
 import type { ManagerCommand } from './manager-protocol'
 import type { NotesStore, Sessions } from './sessions'
+import { limitReply } from './sessions/wording'
 
 const MAIN = MANAGER_MAIN_THREAD
 const GECKIT_CHANNEL = 'geckit'
@@ -77,6 +78,8 @@ interface ThreadState {
   readonly responseOrigin?: ManagerReplyOrigin | undefined
   readonly error?: string | undefined
   readonly manualRecovery?: boolean
+  /** The plan's usage limit stopped this thread's Manager; it is retried after `until`, or by hand where the tool gave no time. */
+  readonly limit?: { readonly until?: number } | undefined
   readonly language?: ManagerSpeech | undefined
   /** The assistant and model this thread was given when it was made; Manager settings only choose them for new threads. */
   readonly provider?: SessionProvider | undefined
@@ -134,6 +137,7 @@ interface Live {
   opening: { readonly generation: string; readonly result: Promise<string> } | undefined
   recovery: ReturnType<typeof setTimeout> | undefined
   recoveryDelay: number
+  limitEnd?: ReturnType<typeof setTimeout> | undefined
   /** What Manager last said in a status block while it works on a message, and since when it has worked on it. */
   note?: string | undefined
   since?: number | undefined
@@ -214,7 +218,7 @@ export class Manager {
     const settings = deps.settings()
     const config = configuration(deps.directory).manager
     const provider = settings.chatProviders.includes(settings.chatProvider) ? settings.chatProvider : settings.chatProviders[0] ?? DEFAULT_MANAGER_CONFIG.provider
-    this.#record = { channelReplies: (stored.channelReplies ?? []).map((one) => one.state === 'sending' ? { ...one, state: 'uncertain' } : one), historyBoundaries: stored.historyBoundaries ?? [], historyPurges: stored.historyPurges ?? [], config: { ...DEFAULT_MANAGER_CONFIG, provider, ...config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], threads: (stored.threads ?? []).map((thread) => ({ ...thread, previousSessions: thread.previousSessions ?? [], labels: thread.labels ?? {} })), manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }), ...(stored.language === undefined ? {} : { language: stored.language }) }
+    this.#record = { channelReplies: (stored.channelReplies ?? []).map((one) => one.state === 'sending' ? { ...one, state: 'uncertain' } : one), historyBoundaries: stored.historyBoundaries ?? [], historyPurges: stored.historyPurges ?? [], config: { ...DEFAULT_MANAGER_CONFIG, provider, ...config }, paused: stored.paused ?? false, pauseReason: stored.pauseReason, previousSessions: stored.previousSessions ?? [], inbox: stored.inbox ?? [], receipts: stored.receipts ?? [], operations: stored.operations ?? [], decisions: stored.decisions ?? [], workerEvents: stored.workerEvents ?? [], threads: (stored.threads ?? []).map((thread) => ({ ...thread, previousSessions: thread.previousSessions ?? [], labels: thread.labels ?? {} })), manualRecovery: stored.manualRecovery ?? false, ...(stored.responseOrigin === undefined ? {} : { responseOrigin: stored.responseOrigin }), ...(stored.sessionId === undefined ? {} : { sessionId: stored.sessionId }), ...(stored.error === undefined ? {} : { error: stored.error }), ...(stored.limit === undefined ? {} : { limit: stored.limit }), ...(stored.language === undefined ? {} : { language: stored.language }) }
     if (stored.config !== undefined) {
       const { config: _config, ...runtime } = stored
       writeJson(this.#path(), runtime)
@@ -262,7 +266,7 @@ export class Manager {
       live.processing = live.processing.then(() => id === this.#state(thread).sessionId ? this.#output(thread, id, text, input) : undefined).catch((error: Error) => this.#fail(thread, error.message)).finally(() => { live.processingOutput = false; this.#emit(); void this.#dispatch(thread) })
     })
     if (this.#record.config.enabled && !this.#record.paused && this.#record.error === undefined) queueMicrotask(() => this.#reconcile('GeckIt restarted. Restore coordination from durable ownership and decisions, then reconcile fresh CLI task state. Do not replay old operations.'))
-    for (const thread of this.#threadIds()) if (this.#state(thread).error !== undefined) queueMicrotask(() => this.#scheduleRecovery(thread))
+    for (const thread of this.#threadIds()) if (this.#state(thread).error !== undefined) queueMicrotask(() => { this.#awaitLimit(thread); this.#scheduleRecovery(thread) })
   }
 
   #path(): string { return join(this.#deps.directory, 'manager.json') }
@@ -752,7 +756,10 @@ export class Manager {
     const literal = /^[!/]/.test(text.trim()) ? `[User request]\n${text.trim()}` : text.trim()
     const language = source === 'event' ? undefined : heard(text)
     if (language !== undefined && language !== this.#state(thread).language) this.#saveThread(thread, { language })
-    if (!this.#record.inbox.some((one) => one.id === id)) this.#save({ inbox: [...this.#record.inbox, { id, text: literal, ...(thread === MAIN ? {} : { thread }), source, workers, ...(request === undefined ? {} : { request }), ...(requests.length === 0 ? {} : { requests }), ...(attachments.length === 0 ? {} : { attachments }), at: Date.now(), state: 'queued' }] })
+    const known = this.#record.inbox.some((one) => one.id === id)
+    if (!known) this.#save({ inbox: [...this.#record.inbox, { id, text: literal, ...(thread === MAIN ? {} : { thread }), source, workers, ...(request === undefined ? {} : { request }), ...(requests.length === 0 ? {} : { requests }), ...(attachments.length === 0 ? {} : { attachments }), at: Date.now(), state: 'queued' }] })
+    const limit = this.#state(thread).limit
+    if (!known && limit !== undefined && (limit.until === undefined || limit.until > Date.now()) && source === 'channel' && thread !== MAIN) this.#say(thread, limitReply(limit.until, Date.now(), this.#plan(thread)), { thread, session, workers, ...(request === undefined ? {} : { request }) })
     void this.#dispatch(thread)
     return session
   }
@@ -1016,6 +1023,7 @@ export class Manager {
     this.#reconcileAttach()
     for (const thread of this.#threadIds()) {
       const manager = sessions.find((one) => one.id === this.#state(thread).sessionId)
+      if (this.#record.config.enabled && !this.#record.paused && manager?.state === 'limit' && this.#state(thread).limit === undefined) this.#limited(thread, manager.id)
       if (this.#record.config.enabled && !this.#record.paused && manager?.state === 'failed' && this.#state(thread).error === undefined) this.#fail(thread, this.#deps.notes.all()[manager.id]?.guardError ?? (manager.stands || 'The Manager turn failed. Retry after checking the selected assistant.'))
       const live = this.#l(thread)
       if (live.awaitingOutput && manager !== undefined && manager.state !== 'working' && manager.state !== 'asks' && !manager.queued?.length) {
@@ -1159,7 +1167,8 @@ export class Manager {
     const generation = ++this.#generation
     const lookupHeld = this.#vpnLookupHeld(MAIN)
     for (const thread of this.#threadIds()) this.#l(thread).awaitingOutput = false
-    this.#save({ paused: false, pauseReason: undefined, error: lookupHeld ? this.#record.error : undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one), threads: this.#record.threads.map((thread) => ({ ...thread, error: undefined })) })
+    for (const thread of this.#threadIds()) clearTimeout(this.#l(thread).limitEnd)
+    this.#save({ paused: false, pauseReason: undefined, error: lookupHeld ? this.#record.error : undefined, limit: undefined, inbox: this.#record.inbox.map((one) => one.state === 'sending' ? { ...one, state: 'sent' } : one), threads: this.#record.threads.map((thread) => ({ ...thread, error: undefined, limit: undefined })) })
     try { await this.open() } catch (error) { if (generation === this.#generation) this.#fail(MAIN, error instanceof Error ? error.message : String(error)); throw error }
     if (generation !== this.#generation || this.#stopped) return this.view()
     if (lookupHeld) { await this.#recover(MAIN, this.#epoch(MAIN)); return this.view() }
@@ -1180,7 +1189,8 @@ export class Manager {
     const live = this.#l(thread)
     live.generation += 1
     live.awaitingOutput = false
-    this.#saveThread(thread, { error: undefined, manualRecovery: false }, { inbox: this.#record.inbox.map((one) => one.state === 'sending' && this.#threadOf(one) === thread ? { ...one, state: 'sent' } : one) })
+    clearTimeout(live.limitEnd)
+    this.#saveThread(thread, { error: undefined, manualRecovery: false, limit: undefined }, { inbox: this.#record.inbox.map((one) => one.state === 'sending' && this.#threadOf(one) === thread ? { ...one, state: 'sent' } : one) })
     this.#reconcile('Reconcile this thread\'s work using CLI status before processing its queued messages. An interrupted message may already have been delivered. Do not replay past operations.', thread)
     return this.view()
   }
@@ -1196,7 +1206,7 @@ export class Manager {
     live.held = undefined
     const previous = this.#state(thread).sessionId
     const inbox = previous === undefined ? this.#record.inbox : this.#interrupt(previous)
-    this.#saveThread(thread, { sessionId: undefined, previousSessions: previous === undefined ? this.#state(thread).previousSessions : [...this.#state(thread).previousSessions, previous], error: undefined }, { inbox })
+    this.#saveThread(thread, { sessionId: undefined, previousSessions: previous === undefined ? this.#state(thread).previousSessions : [...this.#state(thread).previousSessions, previous], error: undefined, limit: undefined }, { inbox })
     await this.open(thread)
     live.awaitingOutput = false
     this.#reconcile(`Backing session replaced. Restore coordination from this durable record, then check current CLI state: ${JSON.stringify({ operations: this.#record.operations.filter((one) => (one.thread ?? MAIN) === thread).slice(-30), decisions: this.#record.decisions.filter((one) => (one.thread ?? MAIN) === thread), workers: this.#sessions.filter((one) => this.manages(one.id) && this.#ownerThread(one.id) === thread) })}`, thread)
@@ -1275,6 +1285,7 @@ export class Manager {
   #canRecover(thread: string): boolean {
     const state = this.#state(thread)
     const lookupHeld = this.#vpnLookupHeld(thread)
+    if (state.limit !== undefined && (state.limit.until === undefined || state.limit.until > Date.now())) return false
     if (this.#stopped || !this.#record.config.enabled || this.#record.paused || state.error === undefined || state.manualRecovery === true && !lookupHeld || this.#providerOff(thread) !== undefined || !this.#exists(thread)) return false
     const id = state.sessionId
     if (id === undefined) return true
@@ -1310,7 +1321,8 @@ export class Manager {
       await this.open(thread)
       if (epoch !== this.#epoch(thread) || !this.#canRecover(thread)) return
       const uncertain = this.#record.operations.filter((one) => (one.state === 'uncertain' || one.state === 'running') && one.reviewed !== true && (one.thread ?? MAIN) === thread)
-      const reconciliation = `Automatic recovery. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations.${uncertain.length === 0 ? '' : `\nUnresolved operations (untrusted task data): ${JSON.stringify(uncertain)}\nCheck their current state using fresh read-only commands. Decide their state yourself from what you find; nobody will review them for you. Continue unrelated coordination and queued requests; do not repeat these mutations.`}`
+      const limited = this.#state(thread).limit !== undefined
+      const reconciliation = `Automatic recovery${limited ? " after the plan's usage limit reset. The last turn stopped at the limit: answer the request it was handling if it is still unanswered" : ''}. Reconcile current managed tasks and unresolved decisions using CLI status before processing queued requests. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations.${uncertain.length === 0 ? '' : `\nUnresolved operations (untrusted task data): ${JSON.stringify(uncertain)}\nCheck their current state using fresh read-only commands. Decide their state yourself from what you find; nobody will review them for you. Continue unrelated coordination and queued requests; do not repeat these mutations.`}`
       if (uncertain.length > 0) this.#save({ operations: this.#record.operations.map((one) => uncertain.includes(one) ? { ...one, reviewed: true } : one) })
       const session = this.#state(thread).sessionId
       if (this.#vpnLookupHeld(thread) && session !== undefined) {
@@ -1326,11 +1338,42 @@ export class Manager {
       }
       live.awaitingOutput = false
       live.activeInput = undefined; live.activeRequests = []
-      this.#saveThread(thread, { error: undefined, responseOrigin: undefined }, { inbox: this.#record.inbox.map((one) => one.state === 'sending' && this.#threadOf(one) === thread ? { ...one, state: 'sent' } : one) })
+      this.#saveThread(thread, { error: undefined, limit: undefined, responseOrigin: undefined }, { inbox: this.#record.inbox.map((one) => one.state === 'sending' && this.#threadOf(one) === thread ? { ...one, state: 'sent' } : one) })
       this.#reconcile(reconciliation, thread)
     } catch (error) {
       if (epoch === this.#epoch(thread) && !this.#stopped) this.#fail(thread, error instanceof Error ? error.message : String(error))
     }
+  }
+
+  /** The plan's limit stopped Manager here: say so in the thread, with when it is back, and retry then. */
+  #limited(thread: string, session: string): void {
+    const now = Date.now()
+    const until = this.#deps.sessions.limitUntil(session)
+    const origin = this.#state(thread).responseOrigin ?? { ...(thread === MAIN ? {} : { thread }), session, workers: [] }
+    const live = this.#l(thread)
+    live.awaitingOutput = false
+    live.activeInput = undefined; live.activeRequests = []
+    this.#saveThread(thread, { limit: until === undefined ? {} : { until } })
+    this.#fail(thread, limitReply(until, now, this.#plan(thread)))
+    this.#saveThread(thread, { manualRecovery: until === undefined })
+    if (thread !== MAIN) this.#say(thread, limitReply(until, now, this.#plan(thread)), origin)
+    this.#awaitLimit(thread)
+    this.#emit()
+  }
+
+  #plan(thread: string): string {
+    const info = llmProviderInfo(this.#provider(thread), 'stream', this.#deps.settings().providerPlugins)
+    return info.planName || info.name
+  }
+
+  #awaitLimit(thread: string): void {
+    const until = this.#state(thread).limit?.until
+    const live = this.#l(thread)
+    clearTimeout(live.limitEnd)
+    live.limitEnd = undefined
+    if (until === undefined) return
+    live.limitEnd = setTimeout(() => { live.limitEnd = undefined; this.#scheduleRecovery(thread) }, Math.min(Math.max(0, until - Date.now()) + 5_000, 2 ** 31 - 1))
+    live.limitEnd.unref()
   }
 
   #fail(thread: string, error: string): void {
@@ -1346,5 +1389,5 @@ export class Manager {
     this.#scheduleRecovery(thread)
   }
   tickIntake(): Promise<void> { return Promise.resolve() }
-  dispose(): void { for (const thread of this.#threadIds()) { this.#l(thread).activeInput = undefined; this.#l(thread).activeRequests = []; this.#cancelRecovery(thread) } this.#stopped = true; this.#generation += 1; this.#emit(); this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
+  dispose(): void { for (const thread of this.#threadIds()) { this.#l(thread).activeInput = undefined; this.#l(thread).activeRequests = []; this.#cancelRecovery(thread); clearTimeout(this.#l(thread).limitEnd) } this.#stopped = true; this.#generation += 1; this.#emit(); this.#listeners.clear(); this.#responses.clear(); this.#itemListeners.clear() }
 }

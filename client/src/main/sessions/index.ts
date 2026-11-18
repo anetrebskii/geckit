@@ -397,6 +397,8 @@ interface Live {
   /** The name Claude Code was last told, so it is told again after a start or a change. */
   named: string | undefined
   back: NodeJS.Timeout | undefined
+  /** When the plan's limit that stopped it ends, in milliseconds, while it stands. */
+  limitUntil: number | undefined
   stopping: NodeJS.Timeout | undefined
   /** Set with /goal, as the tool's file last said or as it was just sent. */
   goal: SessionGoal | undefined
@@ -1977,6 +1979,7 @@ export class Sessions {
       tasks: [],
       named: undefined,
       back: undefined,
+      limitUntil: undefined,
       stopping: undefined,
       goal: undefined,
       goalStatus: undefined,
@@ -3737,6 +3740,12 @@ export class Sessions {
   }
 
   /** In the middle of a turn, or waiting for an answer in one. */
+  /** When the plan's limit a conversation is stopped by ends, while it is; undefined where the tool gave no time. */
+  limitUntil(id: string): number | undefined {
+    const live = this.#live.get(id)
+    return live?.state === 'limit' ? live.limitUntil : undefined
+  }
+
   busy(id: string): boolean {
     const state = this.#live.get(id)?.state
     return state === 'working' || state === 'asks'
@@ -4185,12 +4194,13 @@ export class Sessions {
         break
       case 'limit': {
         under(
-          { kind: 'note', id: `limit:${String(now)}`, note: 'limit', text: limitText(signal.resetsAt, now) },
+          { kind: 'note', id: `limit:${String(now)}`, note: 'limit', text: limitText(signal.resetsAt, now, this.#for(live).planName || this.#for(live).name) },
           true,
         )
         live.state = 'limit'
+        live.limitUntil = signal.resetsAt !== undefined && signal.resetsAt > now ? signal.resetsAt : undefined
         live.stands = limitStands(signal.resetsAt, now)
-        this.#tell(live, 'Plan limit reached', limitText(signal.resetsAt, now), false)
+        this.#tell(live, 'Plan limit reached', limitText(signal.resetsAt, now, this.#for(live).planName || this.#for(live).name), false)
         if (signal.resetsAt !== undefined && signal.resetsAt > now) {
           // The note goes when the time passes. Nothing is sent on anybody's behalf.
           live.back = setTimeout(() => this.#back(live), Math.min(signal.resetsAt - now, 2 ** 31 - 1))

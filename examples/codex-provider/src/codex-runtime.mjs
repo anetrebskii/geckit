@@ -4435,10 +4435,15 @@ function searchCodex(files, asked) {
 var native = (id) => id.slice("codex:".length);
 var shownGoal = (goal) => goal === null || goal.status === "complete" ? void 0 : { condition: goal.objective, checks: 0 };
 var isDraining = (message) => message?.toLowerCase().includes("server is draining") ?? false;
+var codexLimitEnds = (limits) => {
+  const ends = (limits ?? []).flatMap((limit) => [limit.primary, limit.secondary]).flatMap((window) => window != null && window.usedPercent >= 100 && window.resetsAt != null ? [window.resetsAt * 1e3] : []);
+  return ends.length === 0 ? void 0 : Math.max(...ends);
+};
 var CodexSessions = class {
   #launch;
   #changed;
   #account;
+  #limits = [];
   #models = [];
   #rpc;
   #listeners = /* @__PURE__ */ new Map();
@@ -4455,8 +4460,9 @@ var CodexSessions = class {
     if (this.#rpc === void 0) {
       this.#rpc = new CodexRpc(this.#launch, (event) => {
         if (event.method === "account/rateLimits/updated") {
+          const limit = event.params.rateLimits;
+          this.#limits = [...this.#limits.filter((one) => one.limitId !== limit.limitId), limit];
           if (this.#account !== void 0) {
-            const limit = event.params.rateLimits;
             this.#account = { ...this.#account, limits: [...(this.#account.limits ?? []).filter((one) => one.limitId !== limit.limitId), limit] };
             this.#changed?.(this.#account);
           }
@@ -4697,7 +4703,8 @@ ${text2}`, text_elements: [] }], cwd: tmpdir(), effort, approvalPolicy: "on-requ
       if (!active) return;
       active = false;
       turnId = void 0;
-      signals({ kind: "ended", how, ...text2 === void 0 ? {} : { text: text2 } });
+      const resetsAt = how === "limit" ? codexLimitEnds([...(this.#account?.limits ?? []).filter((one) => !this.#limits.some((own) => own.limitId === one.limitId)), ...this.#limits]) : void 0;
+      signals({ kind: "ended", how, ...text2 === void 0 ? {} : { text: text2 }, ...resetsAt === void 0 ? {} : { resetsAt } });
     };
     const clearRequests = () => {
       for (const asked of requests.values()) {
@@ -4763,7 +4770,7 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
             return;
           case "turn/completed":
             if (event.params.turn.status === "failed" && isDraining(event.params.turn.error?.message)) this.#discardConnection(rpc);
-            ended(event.params.turn.status === "completed" ? "done" : event.params.turn.status === "interrupted" ? "stopped" : "failed", event.params.turn.error?.message);
+            ended(event.params.turn.status === "completed" ? "done" : event.params.turn.status === "interrupted" ? "stopped" : event.params.turn.error?.codexErrorInfo === "usageLimitExceeded" ? "limit" : "failed", event.params.turn.error?.message);
             return;
           case "item/started":
           case "item/completed": {
@@ -4824,7 +4831,7 @@ ${JSON.stringify(request.params.permissions, null, 2)}` } });
           case "error":
             if (!event.params.willRetry) {
               if (isDraining(event.params.error.message)) this.#discardConnection(rpc);
-              ended("failed", event.params.error.message);
+              ended(event.params.error.codexErrorInfo === "usageLimitExceeded" ? "limit" : "failed", event.params.error.message);
             }
             return;
           default:
