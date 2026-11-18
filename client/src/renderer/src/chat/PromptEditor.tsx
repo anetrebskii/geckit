@@ -56,6 +56,7 @@ export function turned(when: When, kind: When['kind']): When {
 
 export const KIND_NAME: Record<PromptKind, string> = { repeating: 'Repeating', scheduled: 'Scheduled', shortcut: 'Shortcut' }
 export const NEW_LABEL: Record<PromptKind, string> = { repeating: 'New repeating', scheduled: 'New scheduled', shortcut: 'New shortcut' }
+export const PAGE_NAME: Record<PromptKind, string> = { repeating: 'Repeating', scheduled: 'Scheduled', shortcut: 'Shortcuts' }
 
 const clock = (hour: number, minute: number): string => `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 
@@ -210,20 +211,23 @@ export function PromptEditor({
       }}
     >
       <header className="shortcut-editor-head">
-        <span className="shortcut-kicker">{given.id === undefined ? NEW_LABEL[kind] : KIND_NAME[kind]}</span>
-        <input
-          className="shortcut-title"
-          autoFocus={given.id !== undefined || given.prompt !== ''}
-          type="text"
-          aria-label="Name"
-          value={draft.name}
-          placeholder={name || 'Name it'}
-          onChange={(event) => change({ name: event.target.value })}
-        />
+        <button type="button" className="shortcut-crumb" title={`Back to ${PAGE_NAME[kind]}`} onClick={onDone}>{PAGE_NAME[kind]}</button>
+        <span className="shortcut-crumb-sep" aria-hidden="true">/</span>
+        <h2 className="shortcut-heading">{given.id === undefined ? NEW_LABEL[kind] : given.name.trim() || KIND_NAME[kind]}</h2>
       </header>
 
       <div className="shortcut-editor-body">
         <div className="shortcut-editor-main">
+          <label htmlFor="shortcut-name" className="shortcut-label">Name</label>
+          <input
+            id="shortcut-name"
+            className="shortcut-name"
+            autoFocus={given.id !== undefined || given.prompt !== ''}
+            type="text"
+            value={draft.name}
+            placeholder={name === '' ? 'Morning check' : name}
+            onChange={(event) => change({ name: event.target.value })}
+          />
           <label htmlFor="shortcut-prompt" className="shortcut-label">Prompt</label>
           <textarea
             id="shortcut-prompt"

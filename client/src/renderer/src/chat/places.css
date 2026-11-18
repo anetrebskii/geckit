@@ -677,30 +677,35 @@ html:not(.framed) .nav-toggle-hole {
   -webkit-app-region: drag;
 }
 
-.place-dialog-host .shortcut-kicker {
+.place-dialog-host .shortcut-crumb {
+  display: block;
   flex: none;
+  margin-inline-start: -6px;
+  padding: 3px 6px;
   color: var(--text-dim);
   font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.place-dialog-host .shortcut-kicker::after {
-  margin-inline-start: 8px;
-  color: var(--text-faint);
-  font-weight: 400;
-  content: '/';
-}
-
-.place-dialog-host .shortcut-editor input.shortcut-title {
-  flex: 0 1 520px;
-  width: auto;
-  min-width: 0;
-  margin: 0;
-  padding: 3px 8px;
-  font-size: 14px;
+  line-height: 20px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
   -webkit-app-region: no-drag;
+}
+
+.place-dialog-host .shortcut-crumb:hover {
+  color: var(--text);
+  background: var(--fill);
+}
+
+.place-dialog-host .shortcut-crumb-sep {
+  display: block;
+  flex: none;
+  color: var(--text-faint);
+}
+
+.place-dialog-host .shortcut-heading {
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .place-dialog-host .shortcut-editor-body {

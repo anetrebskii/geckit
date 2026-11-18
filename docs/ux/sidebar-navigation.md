@@ -24,6 +24,7 @@ The Chat window has one real page, the board, and everything else hangs off its 
 | Surface | What appears | When seen |
 |---|---|---|
 | Chat window, new | One bar across the whole window top, holding the traffic lights on macOS, the sidebar button and the place's own tools; the sidebar runs along the left edge below it, the same shown with names or folded to icons | Always on desktop |
+| Top bar of a full-page editor, new | Where the person is, never a field: the place as a button that goes back ("Scheduled"), a "/", then what is open, as text ("New scheduled", or the item's saved name). The item's name is the first labelled field of the page, "Name", above everything else. A dialog or sheet follows the same rule: its title says what is open and Name is its first field | Any page that edits one item |
 | Sidebar, new | Group one, no header: Tasks, Manager, Questions | Always |
 | Content area, Questions, moved | The general questions kept off the board (today the Questions button and its menu in the board bar): the list on the left, the open question on the right, "Ask a question" with Cmd+Shift+N in the page header | Questions chosen, or Cmd+Shift+N |
 | Sidebar, new | Group two, header "Workspace": Team, Shortcuts, Checklists, Browsers, Secrets | Always |
@@ -316,6 +317,16 @@ flowchart LR
 | A page in the content area | Yes |
 
 **Why:** a dialog closes when the person clicks the board behind it, and covers the cards Manager is talking about. A page keeps the conversation while the person looks at the board through the sidebar, and returns exactly as left.
+
+### Where an item's name is edited
+
+| Option | Verdict |
+|---|---|
+| A field in the top bar, after the place ("New scheduled / Name it") | No |
+| A large borderless title over the form | No |
+| The first labelled field of the page, "Name" | Yes |
+
+**Why:** people read the top bar as the window's chrome and do not type into it, so a name field there goes unseen (Alex, 2026-11-18). A borderless title has the same problem in a dialog. A labelled field looks like every other field and is read first because it comes first. The top bar keeps one job, saying where you are and taking you back, and does it the same on every page. Applies to every editor: prompts, employees, checklists, hosts, secrets, computers.
 
 ## Phone
 

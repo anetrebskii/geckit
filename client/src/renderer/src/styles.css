@@ -6068,37 +6068,32 @@ html:not(.phone) .composer-bar > .composer-hint {
 }
 
 .shortcut-editor-head {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
 }
 
-.shortcut-kicker {
-  color: var(--text-faint);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.shortcut-crumb,
+.shortcut-crumb-sep {
+  display: none;
 }
 
-.shortcut-editor input.shortcut-title {
-  width: 100%;
-  margin: 0 -8px;
-  padding: 4px 8px;
+.shortcut-editor-head .shortcut-heading {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--text);
   font-size: 18px;
   font-weight: 600;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.shortcut-editor input.shortcut-title:hover {
-  border-color: var(--border);
-}
-
-.shortcut-editor input.shortcut-title:focus {
-  background: var(--field);
-  border-color: var(--accent);
+.shortcut-editor-main input.shortcut-name {
+  margin-block-end: 10px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .shortcut-editor-body {
