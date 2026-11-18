@@ -9,7 +9,8 @@ import type { ChatSession, ReasoningEffort, SessionItem, SessionMode, Settings, 
 import { assistantFor, assistantsIn } from '../shared/api'
 import { requestedProvider } from '../cli/start'
 import { isCodexProvider } from '../shared/providers'
-import { cronOf, describeCron, describeStartWindow, isCron, nextTimed, startWindowError, WEEKDAYS } from '../shared/schedule'
+import { cronOf, describeCron, isCron, nextSet, WEEKDAYS } from '../shared/schedule'
+import { clockText, dayName, kindOf } from '../shared/prompt-kinds'
 
 /** What the write commands of `geckit employees` reach beyond the catalog. */
 export interface TeamDeps {
@@ -18,6 +19,7 @@ export interface TeamDeps {
   readonly project: (name: string) => string
   readonly projectName: (root: string) => string
   readonly saveShortcut: (draft: ShortcutDraft) => Shortcut
+  readonly postponeShortcut?: (id: string, at: number) => Shortcut
   readonly removeShortcut: (id: Shortcut['id']) => void
   readonly runShortcut: (id: Shortcut['id']) => Promise<string | undefined>
   readonly assign: (session: ChatSession['id'], employee: Employee['id'] | null) => void
@@ -90,7 +92,7 @@ function options(args: readonly string[], allowed: readonly string[]): { readonl
   return { words, flags }
 }
 
-const SHORTCUT_FLAGS = ['--destination', '--target', '--name', '--project', '--prompt', '--goal', '--checklist', '--items', '--every', '--cron', '--start-window-minutes', '--provider', '--model', '--reasoning', '--mode']
+const SHORTCUT_FLAGS = ['--destination', '--target', '--name', '--project', '--prompt', '--goal', '--checklist', '--items', '--every', '--cron', '--at', '--postpone', '--vary', '--start-window-minutes', '--provider', '--model', '--reasoning', '--mode']
 const quoted = (text: string): string => `"${text}"`
 const brief = (text: string): string => (text.length > 200 ? `${text.slice(0, 199)}...` : text).replace(/\s+/g, ' ')
 const scheduled = (one: Shortcut): boolean => one.on && (one.cron !== undefined || one.recurrence !== undefined)
@@ -265,7 +267,8 @@ export class Employees {
   }
 
   #shortcutWhen(one: Shortcut): string {
-    const when = one.cron !== undefined ? [describeCron(one.cron), describeStartWindow(one)].filter(Boolean).join(' · ') : one.recurrence !== undefined ? 'Custom recurrence' : 'By hand'
+    if (one.at !== undefined) return `Once ${dayName(one.at, Date.now())} ${clockText(one.at)}${one.vary === true ? ', varied' : ''}${one.outcome === undefined ? '' : ` · ${one.outcome.state}`}`
+    const when = one.cron !== undefined ? `${describeCron(one.cron)}${one.vary === true ? ', varied' : ''}` : one.recurrence !== undefined ? 'Custom recurrence' : 'By hand'
     if (one.cron === undefined && one.recurrence === undefined) return when
     if (one.employeeId !== undefined && this.#employees.find((employee) => employee.id === one.employeeId)?.archived === true) return `${when} · Paused while archived`
     return one.on ? when : `${when} · Paused`
@@ -274,7 +277,7 @@ export class Employees {
   #shortcuts(team: TeamDeps, owner: Employee['id'] | null | undefined, json: boolean): string {
     const now = Date.now()
     const list = team.settings().shortcuts.filter((one) => owner === undefined || (owner === null ? one.target !== 'manager' && one.employeeId === undefined : one.employeeId === owner))
-    if (json) return JSON.stringify(list.map((one) => { const next = nextTimed(one, now); return { ...one, project: team.projectName(one.root), ...(next === undefined || this.#shortcutWhen(one).endsWith('archived') ? {} : { next: new Date(next).toISOString() }) } }))
+    if (json) return JSON.stringify(list.map((one) => { const next = nextSet(one, now); return { ...one, kind: kindOf(one), project: team.projectName(one.root), ...(next === undefined || this.#shortcutWhen(one).endsWith('archived') ? {} : { next: new Date(next).toISOString() }) } }))
     if (list.length === 0) return 'No shortcuts.'
     return list.map((one) => `${one.name}  ·  ${this.#shortcutWhen(one)}  ·  ${team.projectName(one.root)}  ·  ${one.target === 'manager' ? 'Manager' : this.#owner(one.employeeId)}  ·  ${one.id}`).join('\n')
   }
@@ -376,7 +379,7 @@ export class Employees {
     const [action, said, ...rest] = args
     if (action === 'add' || action === 'edit') {
       const { words, flags } = options(rest, SHORTCUT_FLAGS)
-      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--destination <JSON|none>] [--goal <text>|--checklist <id-or-name>|--items <JSON array>] [--every <when>|--cron <expr>] [--start-window-minutes <N|none>] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --destination, --name, --project, --prompt, --prompt-file, --goal, --checklist, --items, --every, --cron, --start-window-minutes, --provider, --model, --reasoning, --mode.')
+      if (words.length !== 0 || said === undefined) throw new Error(action === 'add' ? 'Use employees shortcut add <employee-id|none> --name <name> --project <name> (--prompt <text>|--prompt-file <file>) [--target manager|task] [--destination <JSON|none>] [--goal <text>|--checklist <id-or-name>|--items <JSON array>] [--every <when>|--cron <expr>|--at <ISO date-time>] [--vary on|off] [--provider <id>] [--model <id>] [--reasoning <effort>] [--mode manual|auto|plan].' : 'Use employees shortcut edit <shortcut-id> with any of --target, --destination, --name, --project, --prompt, --prompt-file, --goal, --checklist, --items, --every, --cron, --at, --postpone, --vary, --provider, --model, --reasoning, --mode.')
       const destinationSaid = flags.get('--destination')
       const destination = destinationSaid === undefined || destinationSaid === 'none' ? undefined : JSON.parse(destinationSaid) as NonNullable<Shortcut['destination']>
       const destinationError = shortcutDestinationError(destination)
@@ -399,15 +402,22 @@ export class Employees {
       const cronSaid = flags.get('--cron')?.trim()
       if (cronSaid !== undefined && !isCron(cronSaid)) throw new Error(`${cronSaid} is not a cron line: minute, hour, day of the month, month, day of the week.`)
       const timed = every === undefined ? cronSaid : every.trim().toLowerCase() === 'none' ? '' : everyCron(every)
-      const windowSaid = flags.get('--start-window-minutes')?.trim().toLowerCase()
-      if (windowSaid !== undefined && windowSaid !== 'none' && !/^\d+$/.test(windowSaid)) throw new Error('Enter a whole number from 1 to 1,440, or none.')
-      const windowMinutes = windowSaid === undefined || windowSaid === 'none' ? undefined : Number(windowSaid)
-      const selectedWindow = windowSaid === undefined ? timed === '' ? undefined : was?.startWindowMinutes : windowMinutes
-      const window: Pick<Shortcut, 'startWindowMinutes'> = selectedWindow === undefined ? {} : { startWindowMinutes: selectedWindow }
+      const varySaid = flags.get('--vary')?.trim().toLowerCase() ?? ((said) => said === undefined ? undefined : said === 'none' || said === '0' ? 'off' : 'on')(flags.get('--start-window-minutes')?.trim().toLowerCase())
+      if (varySaid !== undefined && varySaid !== 'on' && varySaid !== 'off') throw new Error('Use --vary on or off.')
+      const moment = (text: string | undefined, flag: string): number | undefined => {
+        if (text === undefined || text.trim().toLowerCase() === 'none') return undefined
+        const at = Date.parse(text)
+        if (!Number.isFinite(at)) throw new Error(`Use ${flag} with a date and time, like 2026-11-19T09:00.`)
+        return at
+      }
+      if (flags.has('--at') && (flags.has('--every') || flags.has('--cron'))) throw new Error('Choose one timetable: --at, --every or --cron.')
+      const atSaid = moment(flags.get('--at'), '--at')
+      const postponeTo = moment(flags.get('--postpone'), '--postpone')
+      if (flags.has('--postpone') && (was?.at === undefined || postponeTo === undefined)) throw new Error('Only a Scheduled prompt can be postponed: give its id and --postpone <date-time>.')
       const cron = timed === undefined ? was?.cron : timed || undefined
       const recurrence = timed === undefined ? was?.recurrence : undefined
-      const windowError = startWindowError({ ...window, ...(cron === undefined ? {} : { cron }), ...(recurrence === undefined ? {} : { recurrence }) })
-      if (windowError !== undefined) throw new Error(windowError)
+      const once = flags.has('--at') ? atSaid : was?.at
+      if (once !== undefined && (cron !== undefined || recurrence !== undefined)) throw new Error('Choose one timetable: --at, --every or --cron.')
       const providerSaid = flags.get('--provider')
       const provider = providerSaid === undefined ? undefined : requestedProvider(providerSaid)
       if (providerSaid !== undefined && (provider === undefined || !assistantsIn(team.settings()).includes(provider))) throw new Error(`Assistant ${providerSaid} is not enabled. There are: ${assistantsIn(team.settings()).join(', ')}`)
@@ -425,26 +435,27 @@ export class Employees {
       const goalLine = checklist !== undefined ? [`Checklist: ${checklist.from === undefined ? '' : `${checklist.from.name}, `}${String(checklist.items.length)} ${checklist.items.length === 1 ? 'item' : 'items'}`] : goal === undefined ? [] : [goal === '' ? 'Goal: none' : `Goal: ${brief(goal)}`]
       if (reasoning !== undefined && !isCodexProvider(provider ?? was?.provider ?? assistantFor(team.settings(), root))) throw new Error('--reasoning is for Codex shortcuts only. Claude Code takes its effort from the model.')
       if (action === 'add' && (name === undefined || root === undefined || prompt === undefined)) throw new Error('A shortcut needs --name, --project and --prompt or --prompt-file.')
-      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --destination, --name, --project, --prompt, --goal, --checklist, --items, --every, --cron, --start-window-minutes, --provider, --model, --reasoning or --mode.')
+      if (was !== undefined && flags.size === 0) throw new Error('Nothing to change. Give any of --target, --destination, --name, --project, --prompt, --goal, --checklist, --items, --every, --cron, --at, --postpone, --vary, --provider, --model, --reasoning or --mode.')
       const where = root === undefined ? '' : team.projectName(root)
-      const when = timed === undefined ? undefined : timed === '' ? 'By hand' : describeCron(timed)
+      const when = atSaid !== undefined ? `Once ${dayName(atSaid, Date.now())} ${clockText(atSaid)}` : timed === undefined ? undefined : timed === '' ? 'By hand' : describeCron(timed)
       const title = name ?? was?.name ?? ''
       const lines = was === undefined
         ? [`Add shortcut ${quoted(title)} ${owner === undefined ? 'with no employee' : `to ${owner.name}`}`, `${when ?? 'By hand'} in ${where}`, `Prompt: ${brief(prompt ?? '')}`, ...(goal === '' ? [] : goalLine), ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
         : [`Change shortcut ${quoted(was.name)}${name === undefined || name === was.name ? '' : `: name to ${quoted(name)}`}`, ...(when === undefined && project === undefined ? [] : [`${when ?? this.#shortcutWhen(was)} in ${where}`]), ...(prompt === undefined ? [] : [`Prompt: ${brief(prompt)}`]), ...goalLine, ...[provider === undefined ? undefined : `Assistant: ${provider}`, model === undefined ? undefined : `Model: ${model === '' ? 'Default' : model}`, reasoning === undefined ? undefined : `Reasoning: ${reasoning === '' ? 'Default' : reasoning}`, mode === undefined ? undefined : `Mode: ${mode}`].filter((one) => one !== undefined)]
       if (destinationSaid !== undefined) lines.push(destination === undefined ? 'Result destination: none' : `Result destination: ${destination.channel} / ${destination.label ?? destination.destination}`)
       if (target !== undefined) lines.push(`Target: ${manager ? 'Manager' : 'New task'}`)
-      if (windowSaid !== undefined || timed !== undefined && window.startWindowMinutes !== undefined) lines.push(window.startWindowMinutes === undefined ? 'Start window: none' : describeStartWindow(window))
+      if (varySaid !== undefined) lines.push(`Vary start time: ${varySaid}`)
+      if (postponeTo !== undefined) lines.push(`Postpone to ${dayName(postponeTo, Date.now())} ${clockText(postponeTo)}`)
       return {
         lines,
         apply: async () => {
           const settings = team.settings()
           const current = was === undefined ? undefined : this.#shortcut(team, was.id)
           const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, ...kept } = current ?? { id: '', since: 0, name: title, root: root ?? '', prompt: prompt ?? '', mode: settings.chatMode, on: false, provider: assistantFor(settings, root) }
-          const { cron: _cron, recurrence: _recurrence, startWindowMinutes: _window, ...untimed } = kept
-          const timedBase = timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: true, ...(kept.startWindowMinutes === undefined ? {} : { startWindowMinutes: kept.startWindowMinutes }) }
-          const { startWindowMinutes: _startWindow, ...exactBase } = timedBase
-          const windowBase = windowSaid === undefined ? timedBase : windowMinutes === undefined ? exactBase : { ...exactBase, startWindowMinutes: windowMinutes }
+          const { cron: _cron, recurrence: _recurrence, outcome: _outcome, postponedFrom: _postponedFrom, ...untimed } = kept as typeof kept & Pick<Shortcut, 'outcome' | 'postponedFrom'>
+          const timedBase = atSaid !== undefined ? { ...untimed, at: atSaid, on: true, ...(current === undefined && varySaid === undefined ? { vary: true } : {}) } : timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: true, ...(current === undefined && varySaid === undefined ? { vary: true } : {}) }
+          const { vary: _vary, ...exactBase } = timedBase
+          const windowBase = varySaid === undefined ? timedBase : varySaid === 'off' ? exactBase : { ...exactBase, vary: true }
           const { goal: _goal, checklist: _checklist, ...ungoaled } = windowBase
           const base = checklist !== undefined ? { ...ungoaled, checklist } : goal === undefined ? windowBase : goal === '' ? ungoaled : { ...ungoaled, goal }
           const { target: _target, ...taskBase } = base
@@ -464,6 +475,7 @@ export class Employees {
             ...(reasoning === undefined ? {} : { reasoning }),
             ...(owner === undefined ? {} : { employeeId: owner.id }),
           })
+          if (postponeTo !== undefined && current !== undefined) team.postponeShortcut?.(current.id, postponeTo)
           return current === undefined ? `Added shortcut ${quoted(saved.name)} (${saved.id}).` : `Saved shortcut ${quoted(saved.name)}.`
         },
       }

@@ -411,6 +411,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       runs: (id) => call('shortcuts.runs', id),
       save: (draft) => call('shortcuts.save', draft),
       remove: (id) => send('shortcuts.remove', id),
+      postpone: (id, at) => call('shortcuts.postpone', id, at),
+      hold: (id, hold) => send('shortcuts.hold', id, hold),
       run: (id) => call('shortcuts.run', id),
       onManage: never,
     },

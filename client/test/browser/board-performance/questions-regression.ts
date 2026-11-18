@@ -43,7 +43,7 @@ export async function runQuestionsRegression(): Promise<readonly { readonly name
 
     await navigate('Tasks')
     check('Leaving a loading question opens Tasks without a conversation popup', document.querySelector('.talk:not([hidden])') === null)
-    await navigate('Questions')
+    await navigate('Quick chats')
     check('Returning to Questions shows its empty pane', document.querySelector('.talk.raised') === null && document.querySelector('.questions-list .row.on') === null)
     row(first.title).click()
     await settle()
@@ -70,7 +70,7 @@ export async function runQuestionsRegression(): Promise<readonly { readonly name
     check('A question stays closed after navigating through another place', document.querySelector('.talk:not([hidden])') === null)
     for (const listener of fixture.subscriptions.get('chat:show') ?? []) listener(new Event('chat:show'), source.id)
     await settle()
-    await navigate('Questions')
+    await navigate('Quick chats')
     await navigate('Tasks')
     check('A conversation opened from Tasks is preserved across places', (document.querySelector('.talk')?.textContent ?? '').includes(source.title))
 

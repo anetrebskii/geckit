@@ -1041,6 +1041,7 @@ export type ChatGrouping = 'time' | 'project'
 
 /** How the conversations are shown: the list, or a board of cards in columns by how each stands. */
 export type ChatView = 'list' | 'board'
+export type ScheduledView = 'week' | 'month' | 'list'
 
 /** When a notice about a conversation does something more than show: never, for a question or a request alone, or for every one. */
 export type NoticeWhen = 'never' | 'asks' | 'all'
@@ -1211,6 +1212,8 @@ export interface Settings {
   readonly chatGrouping: ChatGrouping
   /** The conversations as a list, or as a board of cards by what stands where. */
   readonly chatView: ChatView
+  /** Scheduled shows its runs by week, by month or as a list. */
+  readonly scheduledView: ScheduledView
   /** The place the Chat window shows: tasks, manager, questions, a Workspace place, settings, or `host:<id>`. */
   readonly chatPlace: string
   /** The Chat window's sidebar shows its names, or only its icons by the person's choice. */
@@ -1284,6 +1287,8 @@ export interface Settings {
   readonly calendarTimeZone?: string
   readonly calendarRecurrenceVersion?: 1
   readonly cronStartWindowVersion?: 1
+  /** The service keeps Scheduled prompts, Postpone and Vary start time. */
+  readonly promptKindsVersion?: 1
   readonly managerShortcutsVersion?: 1
   readonly shortcutDestinationsVersion?: 1
   /** What is written often, offered after ; in the message field. */
@@ -1311,8 +1316,15 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly employeeId?: Employee['id']
   /** When it also runs by itself, as cron writes it: minute, hour, day of the month, month, day of the week. Nothing is by hand only. */
   readonly cron?: string
-  readonly startWindowMinutes?: number
   readonly recurrence?: CalendarRecurrence
+  /** The one moment a Scheduled prompt runs at; a prompt with it has no timetable. */
+  readonly at?: number
+  /** The set time before the first postpone, shown as "Postponed from". */
+  readonly postponedFrom?: number
+  /** A timed run starts at a moment drawn around its set time, never shown. */
+  readonly vary?: boolean
+  /** What became of a Scheduled prompt's one run; written by the service only. */
+  readonly outcome?: ShortcutOutcome
   /** False pauses the timetable and keeps it. */
   readonly on: boolean
   /** The next timed run is the first time the timetable names after this: when it was made, last ran on time, or had its time changed. */
@@ -1322,8 +1334,13 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly lastSession?: string
 }
 
-/** What a window sends to make or change a shortcut; the main process keeps when it ran. */
-export type ShortcutDraft = Omit<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession'> & { readonly id?: string }
+export type ShortcutOutcome =
+  | { readonly state: 'ran'; readonly started: number; readonly session?: string; readonly lateMinutes?: number }
+  | { readonly state: 'didnt-start'; readonly reason: string }
+  | { readonly state: 'missed' }
+
+/** What a window sends to make or change a shortcut; the main process keeps when it ran. `startWindowMinutes` is what an older client sends for a varied start. */
+export type ShortcutDraft = Omit<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession' | 'outcome' | 'postponedFrom'> & { readonly id?: string; readonly startWindowMinutes?: number }
 
 export interface CalendarRecurrence {
   readonly start: string
@@ -1409,6 +1426,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatMode: 'auto',
   chatGrouping: 'time',
   chatView: 'board',
+  scheduledView: 'week',
   chatPlace: 'tasks',
   navNames: true,
   conversationPlace: 'over',

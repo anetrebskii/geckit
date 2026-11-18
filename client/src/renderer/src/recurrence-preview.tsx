@@ -15,7 +15,7 @@ if (phone) document.documentElement.classList.add('phone')
 document.documentElement.dataset.theme = query.get('theme') === 'light' ? 'light' : 'dark'
 const recurrence: CalendarRecurrence = { start: '2026-10-13', time: '09:00', interval: 2, unit: 'week', weekdays: [2, 4], monthly: 'day', end: { kind: 'after', count: 13 } }
 const fixtureRecurrence: CalendarRecurrence = query.has('ended') ? { ...recurrence, start: '2026-09-01', interval: 1, unit: 'day', end: { kind: 'after', count: 3 } } : recurrence
-const saved: Shortcut = { id: 'review', name: 'Morning review', root: '/work/geckit', prompt: 'Review the pull requests waiting for me.', mode: 'auto', provider: 'claude', ...(query.has('goal') ? { goal: 'Every waiting pull request has a reply' } : {}), on: !query.has('paused'), since: Date.now(), ...(query.has('cron') ? { cron: '0 */2 * * *', ...(query.has('window') ? { startWindowMinutes: Number(query.get('window') || 60) } : {}) } : { recurrence: fixtureRecurrence }) }
+const saved: Shortcut = { id: 'review', name: 'Morning review', root: '/work/geckit', prompt: 'Review the pull requests waiting for me.', mode: 'auto', provider: 'claude', ...(query.has('goal') ? { goal: 'Every waiting pull request has a reply' } : {}), on: !query.has('paused'), since: Date.now(), ...(query.has('cron') ? { cron: '0 */2 * * *', ...(query.has('window') ? { vary: true } : {}) } : { recurrence: fixtureRecurrence }) }
 let fail = query.has('fail')
 let failOnce = query.has('failonce')
 let notify: ((one: Shortcut) => void) | undefined
@@ -37,6 +37,8 @@ const shortcuts: Geckit['shortcuts'] = {
   },
   run: async () => 'preview-session',
   remove: () => undefined,
+  postpone: async () => saved,
+  hold: () => undefined,
   onManage: () => () => undefined,
 }
 Object.assign(window, { geckit: { platform: 'darwin', shortcuts, chat: { models: async () => [{ value: 'sonnet', name: 'Sonnet', isDefault: true }] } } })

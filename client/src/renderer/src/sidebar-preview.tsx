@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { DEFAULT_SETTINGS } from '../../shared/api'
-import type { ChatSession, Settings } from '../../shared/api'
+import type { ChatSession, Settings, Shortcut } from '../../shared/api'
 import type { ChannelsView } from '../../shared/channels'
 import type { HostView } from '../../shared/hosts'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_MAIN_THREAD } from '../../shared/manager'
@@ -42,8 +42,33 @@ let settings: Settings = {
     { id: 'review', name: 'Code review', items: [{ id: 'c1', title: 'No open comments', check: 'review' }] },
     { id: 'site', name: 'Site deploy', root: roots[1] ?? '/work/site', isDefault: true, items: [{ id: 's1', title: 'Build succeeds', check: 'command' }, { id: 's2', title: 'Pages load', check: 'none' }] },
   ] : [],
-  shortcuts: Array.from({ length: number('shortcuts', 0) }, (_, index) => ({ id: `shortcut-${String(index)}`, name: `Daily review ${String(index + 1)}`, root: roots[index % roots.length] ?? '/work/geckit', prompt: 'Review what changed yesterday and list what needs attention.', mode: 'auto', on: true, since: Date.now(), ...(index % 2 === 0 ? { cron: '0 10 * * *' } : {}) })),
+  ...(query.has('prompts') ? { promptKindsVersion: 1 as const, calendarRecurrenceVersion: 1 as const, cronStartWindowVersion: 1 as const, managerShortcutsVersion: 1 as const, shortcutDestinationsVersion: 1 as const } : {}),
+  shortcuts: query.has('prompts') ? promptFixtures() : Array.from({ length: number('shortcuts', 0) }, (_, index) => ({ id: `shortcut-${String(index)}`, name: `Daily review ${String(index + 1)}`, root: roots[index % roots.length] ?? '/work/geckit', prompt: 'Review what changed yesterday and list what needs attention.', mode: 'auto', on: true, since: Date.now(), ...(index % 2 === 0 ? { cron: '0 10 * * *' } : {}) })),
 }
+// With `prompts`, two employees and Repeating, Scheduled and Shortcuts around now: runs that need Alex, one that ran, a long name, a busy day.
+function promptFixtures(): Shortcut[] {
+  const hour = 3_600_000
+  const day = 24 * hour
+  const nine = new Date(at); nine.setHours(9, 0, 0, 0)
+  const base = { mode: 'auto' as const, on: true, since: at - day, prompt: 'Look through what changed and list what needs attention first.' }
+  return [
+    { ...base, id: 'r1', name: 'Morning plan', root: roots[0] ?? '', cron: '0 9 * * 1-5', vary: true, employeeId: 'e1' },
+    { ...base, id: 'r2', name: 'Weekly dependency check', root: roots[1] ?? '', cron: '0 10 * * 1', model: 'claude-opus-4-1', provider: 'claude' },
+    { ...base, id: 'r3', name: 'Inbox triage', root: roots[0] ?? '', cron: '30 * * * *', on: false, target: 'manager' },
+    { ...base, id: 's1', name: 'Draft the release notes', root: roots[0] ?? '', at: nine.getTime() + day + hour, vary: true, employeeId: 'e2' },
+    { ...base, id: 's2', name: 'Draft the LinkedIn post about the queue feature and the new Scheduled place with a long name that wraps', root: roots[1] ?? '', at: nine.getTime() + 2 * day, model: 'claude-sonnet-4-5', employeeId: 'e1' },
+    { ...base, id: 's3', name: 'Clean up old worktrees', root: roots[0] ?? '', at: nine.getTime() - 2 * day, outcome: { state: 'missed' }, provider: 'codex' },
+    { ...base, id: 's4', name: 'Ask about the invoice', root: roots[1] ?? '', at: nine.getTime() + 4 * hour - day, outcome: { state: 'didnt-start', reason: "Claude isn't available" } },
+    { ...base, id: 's5', name: 'Back up notes', root: roots[0] ?? '', at: at - 2 * hour, outcome: { state: 'ran', started: at - 2 * hour + 42 * 60_000, session: 'claude:done', lateMinutes: 42 } },
+    ...[2, 3, 4, 5].map((index) => ({ ...base, id: `s1${String(index)}`, name: `Busy day run ${String(index)}`, root: roots[index % 2] ?? '', at: nine.getTime() + 3 * day + index * hour })),
+    { ...base, id: 'b1', name: 'Code review', root: roots[0] ?? '', employeeId: 'e2' },
+    { ...base, id: 'b2', name: 'Summarise yesterday', root: roots[1] ?? '' },
+  ]
+}
+const employees = query.has('prompts') ? [
+  { id: 'e1', name: 'Maya Chen', role: 'Release manager', description: '', avatar: '', archived: false, revision: 1 },
+  { id: 'e2', name: 'Oleg Brandt', role: 'Reviewer', description: '', avatar: '', archived: false, revision: 1 },
+] : []
 // With `restart`, settings and hosts survive a reload the way the service keeps them across a restart.
 const restart = query.has('restart')
 const read = <Value,>(key: string): Value | undefined => { try { const kept = sessionStorage.getItem(key); return kept === null ? undefined : JSON.parse(kept) as Value } catch { return undefined } }
@@ -83,7 +108,12 @@ const answers: Record<string, (...args: readonly RendererArgument[]) => unknown>
   'chat:search': () => [],
   'chat:repo': () => undefined,
   'errors:question': () => undefined,
-  'employees:list': () => ({ employees: [] }),
+  'employees:list': () => ({ employees }),
+  'shortcuts:save': (draft) => { const one = { ...(draft as Shortcut), since: Date.now(), id: (draft as Shortcut).id ?? `p${String(Date.now())}` }; const { startWindowMinutes: _window, ...kept } = one as Shortcut & { startWindowMinutes?: number }; settings = { ...settings, shortcuts: settings.shortcuts.some((x) => x.id === kept.id) ? settings.shortcuts.map((x) => x.id === kept.id ? { ...x, ...kept } : x) : [...settings.shortcuts, kept] }; tell('settings:changed', settings); return kept },
+  'shortcuts:postpone': (id, moment) => { settings = { ...settings, shortcuts: settings.shortcuts.map((x) => { if (x.id !== id) return x; const { outcome: _outcome, ...rest } = x; return { ...rest, at: moment as number, postponedFrom: x.postponedFrom ?? x.at ?? (moment as number) } }) }; tell('settings:changed', settings); return settings.shortcuts.find((x) => x.id === id) },
+  'shortcuts:remove': (id) => { settings = { ...settings, shortcuts: settings.shortcuts.filter((x) => x.id !== id) }; tell('settings:changed', settings) },
+  'shortcuts:run': () => 'claude:done',
+  'shortcuts:hold': () => undefined,
   'manager:view': () => manager,
   'manager:inspect': (id) => ({ id, items: [{ kind: 'mine', id: 'm1', text: 'What is running now?' }, { kind: 'theirs', id: 'm2', text: 'One conversation is working: Build the sidebar.' }] }),
   'channels:view': () => channels,

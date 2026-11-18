@@ -45,6 +45,7 @@ export function Menu({
   onClose,
   children,
   search,
+  head,
 }: {
   readonly anchor: DOMRect
   readonly choices: readonly Choice[]
@@ -62,6 +63,8 @@ export function Menu({
   /** Rows of its own drawn after the choices, for a list whose rows say more than a name. */
   readonly children?: React.ReactNode
   readonly search?: { readonly value: string; readonly placeholder: string; readonly onChange: (value: string) => void }
+  /** What the menu is about, drawn above the choices. */
+  readonly head?: React.ReactNode
 }): React.JSX.Element {
   const menu = useRef<HTMLDivElement>(null)
   const opener = useRef(document.activeElement)
@@ -133,6 +136,7 @@ export function Menu({
     return (
       <Sheet {...(title === undefined ? {} : { title })} onClose={onClose}>
         <div className="sheet-list" role="menu">
+          {head}
           {search === undefined ? null : <input className="menu-search" aria-label={search.placeholder} placeholder={search.placeholder} value={search.value} onChange={(event) => search.onChange(event.target.value)} />}
           {choices.flatMap((choice) => choice.choices ?? [choice]).map((choice) => (
             <button
@@ -176,6 +180,7 @@ export function Menu({
         }}
       >
         {title === undefined ? null : <div className="menu-title">{title}</div>}
+        {head}
         {search === undefined ? null : <input className="menu-search" aria-label={search.placeholder} placeholder={search.placeholder} value={search.value} onChange={(event) => search.onChange(event.target.value)} />}
         {choices.map((choice) => (
           <button

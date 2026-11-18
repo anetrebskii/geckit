@@ -7,7 +7,9 @@ List all shortcuts with `employees shortcuts --json`, or restrict by employee ID
 ```text
 employees shortcut add <employee-id|none> --name <name> --project <registered-project> --prompt <self-contained-task> --target task --checklist <saved-checklist> --cron "0 9 * * 1-5" --provider <enabled-provider>
 employees shortcut add none --name <name> --project <registered-project> --prompt <coordination-request> --target manager --every "day 9:00"
+employees shortcut add <employee-id|none> --name <name> --project <registered-project> --prompt <self-contained-task> --target task --at 2026-11-19T10:00
 employees shortcut edit <shortcut-id> --cron "0 10 * * 1-5"
+employees shortcut edit <shortcut-id> --postpone 2026-11-20T09:00
 employees shortcut pause <shortcut-id>
 employees shortcut resume <shortcut-id>
 employees shortcut run <shortcut-id>
@@ -21,7 +23,9 @@ CRON has five numeric fields: minute 0-59, hour 0-23, day 1-31, month 1-12, week
 
 There is no per-shortcut timezone field. Verify the execution machine's OS timezone through authorized configuration or a delegated read-only check. Do not assume the Manager's chat timezone or this computer's timezone describes a remote service. Do not change system timezone to satisfy one shortcut.
 
-`--start-window-minutes <1-1440|none>` permits a delayed start within a CRON window. The scheduler selects a deterministic minute per shortcut and occurrence, clipped before the next occurrence. This is not an exact-time promise.
+A prompt has one kind, fixed when it is saved: Repeating (`--every` or `--cron`), Scheduled (`--at <date-time>`, runs once) or Shortcut (no timing, run by hand). An edit that would change the kind is refused; save a new prompt instead. `--at` takes a local date and time at least a minute ahead. `--postpone <date-time>` moves a Scheduled prompt and keeps its first set time; it also clears a Didn't start or Missed state. A Scheduled run that could not start runs late within 12 hours of its latest start, otherwise it is marked Missed and does not run by itself.
+
+`--vary on|off` lets a Repeating or Scheduled run start at a stable random minute up to 30 minutes either side of its set time (a quarter of the gap for hourly and shorter timetables). This is not an exact-time promise. The older `--start-window-minutes` is read as `--vary on`, or `off` for `none`.
 
 Dispatch is checked about every 20 seconds while GeckIt runs. A previous busy worker skips a timed occurrence without accumulating overlapping workers. Manager dispatch avoids overlapping pending submissions. One overdue occurrence can run after downtime; missed occurrences are not all replayed. Re-enabling a shortcut or changing its timetable resets its scheduling baseline. An archived employee's timed shortcuts are skipped.
 

@@ -13,7 +13,8 @@ import { PhoneTeam } from '../employees/PhoneTeam'
 import { PhoneBrowser } from './PhoneBrowser'
 import { Page, PhoneMenu } from './PhoneKit'
 import { Menu } from '../ui/Menu'
-import { menuDot, waitingCount, waitingSaid, WORK_PLACES, WORKSPACE_PLACES, type PlaceId, type PlaceItem } from './places'
+import { menuDot, PROMPT_PLACES, waitingCount, waitingSaid, WORK_PLACES, WORKSPACE_PLACES, type PlaceId, type PlaceItem } from './places'
+import { needYou, needYouSaid } from '../../../shared/prompt-kinds'
 import { PhoneBoard } from './PhoneBoard'
 import { PhoneQuestions } from './PhoneQuestions'
 import { PhoneSay } from './PhoneSay'
@@ -32,7 +33,7 @@ import './phone-home.css'
  * conversation comes up over all of it. See docs/ux/sidebar-navigation.md.
  */
 
-const PLACES: readonly PlaceId[] = ['tasks', 'manager', 'questions', 'team', 'shortcuts', 'checklists', 'browsers', 'secrets', 'settings']
+const PLACES: readonly PlaceId[] = ['tasks', 'manager', 'questions', 'repeating', 'scheduled', 'shortcuts', 'team', 'checklists', 'browsers', 'secrets', 'settings']
 
 const keptPhonePlace = (): PlaceId => {
   try {
@@ -109,12 +110,14 @@ export function PhoneHome({
   const waiting = chat.sessions.filter((session) => session.state === 'asks' && session.question !== true).length
   const unread = chat.questions.some((one) => one.state === 'asks' || one.state === 'unread')
   const dot = menuDot(place, waiting > 0, unread)
+  const needing = needYou(chat.settings.shortcuts)
   const item = (one: PlaceItem | { readonly id: 'settings'; readonly name: string; readonly icon: string }): React.JSX.Element => (
     <button key={one.id} type="button" className={`place-menu-item${place === one.id ? ' on' : ''}`} aria-current={place === one.id ? 'page' : undefined} onClick={() => choose(one.id)}>
       <Icon name={one.icon} size={22} />
       <span className="place-menu-name">{one.name}</span>
       {one.id === 'tasks' && waiting > 0 ? <span className="place-menu-count" aria-label={waitingSaid(waiting)}>{waitingCount(waiting)}</span> : null}
-      {one.id === 'questions' && unread ? <span className="place-menu-dot" aria-label="A question has an answer" /> : null}
+      {one.id === 'questions' && unread ? <span className="place-menu-dot" aria-label="A quick chat has an answer" /> : null}
+      {one.id === 'scheduled' && needing > 0 ? <span className="place-menu-count needs" aria-label={needYouSaid(needing)}>{needing}</span> : null}
     </button>
   )
   const host = macs()?.list().find((one) => one.current)?.name ?? 'the host'
@@ -160,7 +163,7 @@ export function PhoneHome({
         <PhoneQuestions chat={chat} onAsk={onAsk} />
       </div>
       {place === 'team' ? <div className="phone-tab"><PhoneTeam key={teamFirst.at} chat={chat} first={teamFirst.first} onEdit={edit} /></div> : null}
-      {place === 'shortcuts' ? <div className="phone-tab"><PhoneShortcuts chat={chat} onEdit={edit} /></div> : null}
+      {place === 'repeating' || place === 'scheduled' || place === 'shortcuts' ? <div className="phone-tab"><PhoneShortcuts key={place} chat={chat} kind={place === 'shortcuts' ? 'shortcut' : place} onEdit={edit} /></div> : null}
       {place === 'checklists' ? <div className="phone-tab"><Page title="Checklists"><div className="phone-section"><ChecklistsSection settings={chat.settings} change={chat.change} /></div></Page></div> : null}
       {place === 'browsers' ? <div className="phone-tab"><PhoneBrowser chat={chat} host={host} /></div> : null}
       {place === 'secrets' ? <div className="phone-tab"><Page title="Secrets"><div className="phone-section"><SecretsSection /></div></Page></div> : null}
@@ -173,6 +176,8 @@ export function PhoneHome({
         <div className="place-menu-items">
           {switcher}
           {WORK_PLACES.map(item)}
+          <div className="place-menu-group">Prompts</div>
+          {PROMPT_PLACES.map(item)}
           <div className="place-menu-group">Workspace</div>
           {WORKSPACE_PLACES.map(item)}
         </div>

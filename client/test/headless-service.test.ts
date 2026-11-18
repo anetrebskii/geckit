@@ -133,13 +133,13 @@ it('applies agent settings and shortcuts through real CLI/handlers without appro
     expect(await readFile(join(directory, 'settings.json'), 'utf8')).toBe(before)
   }
   await expect(agent('settings', 'edit', '--patch', '{"theme":"light"}', '--expected', '{"theme":"system"}')).rejects.toMatchObject({ code: 1, stdout: expect.stringContaining('changed') })
-  await agent('employees', 'shortcut', 'add', 'none', '--name', 'Agent shortcut', '--project', 'project', '--prompt', 'before', '--provider', 'plugin:fixture', '--cron', '0 10 * * *', '--start-window-minutes', '15')
+  await agent('employees', 'shortcut', 'add', 'none', '--name', 'Agent shortcut', '--project', 'project', '--prompt', 'before', '--provider', 'plugin:fixture', '--cron', '0 10 * * *', '--vary', 'on')
   const list = async (): Promise<Shortcut[]> => JSON.parse(await agent('employees', 'shortcuts', '--json')) as Shortcut[]
   const shortcut = (await list()).find((one) => one.name === 'Agent shortcut')
   if (shortcut === undefined) throw new Error('Shortcut missing')
   await agent('employees', 'shortcut', 'edit', shortcut.id, '--prompt', 'applied-agent-shortcut')
   await agent('employees', 'shortcut', 'pause', shortcut.id)
-  expect((await list()).find((one) => one.id === shortcut.id)).toMatchObject({ on: false, cron: '0 10 * * *', startWindowMinutes: 15 })
+  expect((await list()).find((one) => one.id === shortcut.id)).toMatchObject({ on: false, cron: '0 10 * * *', vary: true })
   await agent('employees', 'shortcut', 'resume', shortcut.id)
   await expect(agent('employees', 'shortcut', 'edit', shortcut.id, '--cron', 'bad')).rejects.toMatchObject({ code: 1, stdout: expect.stringContaining('cron') })
   expect((await list()).find((one) => one.id === shortcut.id)).toMatchObject({ prompt: 'applied-agent-shortcut', on: true, cron: '0 10 * * *' })
@@ -168,6 +168,40 @@ it('applies agent settings and shortcuts through real CLI/handlers without appro
   await cli('sessions', 'stop', occupied)
   await agent('settings', 'edit', '--patch', '{"workingAtOnce":0}')
 }, 30_000)
+
+it('saves, postpones and refuses Scheduled prompts through the real CLI, and runs an overdue one once after a restart', async () => {
+  const agent = async (...args: string[]): Promise<string> => (await exec(process.execPath, [join(folder, 'service', 'cli.js'), ...args], { cwd: client, env: { ...env, CODEX_THREAD_ID: 'isolated-agent' }, timeout: 5_000 })).stdout.trim()
+  const list = async (): Promise<Shortcut[]> => JSON.parse(await agent('employees', 'shortcuts', '--json')) as Shortcut[]
+  const local = (at: number): string => { const day = new Date(at); return `${String(day.getFullYear())}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}T${String(day.getHours()).padStart(2, '0')}:${String(day.getMinutes()).padStart(2, '0')}` }
+  const first = Math.floor((Date.now() + 2 * 86_400_000) / 60_000) * 60_000
+  await agent('employees', 'shortcut', 'add', 'none', '--name', 'Once', '--project', 'project', '--prompt', 'scheduled-once', '--provider', 'plugin:fixture', '--at', local(first), '--vary', 'off')
+  const saved = (await list()).find((one) => one.name === 'Once')
+  if (saved === undefined) throw new Error('Scheduled prompt missing')
+  expect(saved).toMatchObject({ at: first })
+  expect(saved.vary).not.toBe(true)
+  expect(saved).not.toHaveProperty('cron')
+  await expect(agent('employees', 'shortcut', 'edit', saved.id, '--cron', '0 9 * * *')).rejects.toMatchObject({ code: 1 })
+  await expect(agent('employees', 'shortcut', 'add', 'none', '--name', 'Both', '--project', 'project', '--prompt', 'x', '--at', local(first), '--cron', '0 9 * * *')).rejects.toMatchObject({ code: 1 })
+  await expect(agent('employees', 'shortcut', 'edit', saved.id, '--postpone', local(Date.now() - 3_600_000))).rejects.toMatchObject({ code: 1 })
+  const later = first + 86_400_000
+  await agent('employees', 'shortcut', 'edit', saved.id, '--postpone', local(later))
+  expect((await list()).find((one) => one.id === saved.id)).toMatchObject({ at: later, postponedFrom: first })
+
+  const exited = once(running!, 'exit'); running?.kill('SIGTERM'); await exited
+  const due = Date.now() - 5 * 60_000
+  const overdue = (value: unknown): unknown => Array.isArray(value) ? value.map(overdue) : value !== null && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, (value as { id?: unknown }).id === saved.id && key === 'at' ? due : (value as { id?: unknown }).id === saved.id && key === 'since' ? due - 60_000 : overdue(inner)])) : value
+  for (const file of ['settings.json', 'local-state.json'].map((name) => join(directory, name))) await writeFile(file, JSON.stringify(overdue(JSON.parse(await readFile(file, 'utf8')))))
+  await start()
+  const ran = await eventually(list, (all) => all.find((one) => one.id === saved.id)?.outcome !== undefined, 15_000)
+  const done = ran.find((one) => one.id === saved.id)
+  expect(done?.outcome).toMatchObject({ state: 'ran' })
+  await eventually(() => items(done?.lastSession ?? ''), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:scheduled-once'))
+  const exitedAgain = once(running!, 'exit'); running?.kill('SIGTERM'); await exitedAgain
+  await start()
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  expect((await list()).find((one) => one.id === saved.id)?.lastSession).toBe(done?.lastSession)
+  await agent('employees', 'shortcut', 'remove', saved.id)
+}, 45_000)
 
 it('executes authenticated Manager settings and saved-shortcut commands through its real subprocess CLI without decisions', async () => {
   await cli('manager', 'configure', JSON.stringify({ enabled: true, provider: 'plugin:fixture', delegation: 'approve' }))

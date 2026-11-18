@@ -1159,7 +1159,7 @@ export function NewTask({
     <div
       className={`new-task${question ? ' asking' : ''}`}
       role="dialog"
-      aria-label={question ? 'Ask a question' : 'New task'}
+      aria-label={question ? 'New quick chat' : 'New task'}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return
         event.preventDefault()
@@ -1167,7 +1167,7 @@ export function NewTask({
       }}
     >
       <header className="new-task-top">
-        <h2 className="new-task-head">{question ? 'Ask a question' : 'New task'}</h2>
+        <h2 className="new-task-head">{question ? 'New quick chat' : 'New task'}</h2>
         <span className="new-task-sub">{question ? 'Not about a folder, and not on the board' : 'A card on the board, worked on in its folder'}</span>
       </header>
       <div className="new-task-body">
@@ -1380,7 +1380,7 @@ function PhoneNewTask({
       <div
         className={`phone-task phone-compose${dragged === undefined ? '' : ' dragging'}`}
         role="dialog"
-        aria-label={question ? 'Ask a question' : 'New task'}
+        aria-label={question ? 'New quick chat' : 'New task'}
         style={dragged === undefined ? undefined : { transform: `translateY(${String(dragged)}px)` }}
       >
         <div

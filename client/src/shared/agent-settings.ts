@@ -14,7 +14,7 @@ export const AGENT_SETTING_RULES = {
   chatMode: ['manual', 'auto', 'plan'], chatTransport: ['stream', 'tmux'],
   codexReasoning: ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
   providerModels: 'provider/model array', providerAutoUpdate: 'boolean', channelAutoUpdate: 'boolean',
-  chatGrouping: ['time', 'project'], chatView: ['list', 'board'], chatPlace: 'string', navNames: 'boolean', conversationPlace: ['over', 'below'],
+  chatGrouping: ['time', 'project'], chatView: ['list', 'board'], scheduledView: ['week', 'month', 'list'], chatPlace: 'string', navNames: 'boolean', conversationPlace: ['over', 'below'],
   chatAll: 'boolean', chatProjects: 'registered project array', newTaskRoot: 'registered project or empty',
   projectAssistants: 'root/provider array', profiles: 'profile array', profile: 'profile id or empty',
   favorites: 'string array', phrases: 'string array', boardColumns: 'column array', openWith: 'open rule array',

@@ -38,15 +38,15 @@ export function PhoneQuestions({ chat, onAsk }: { readonly chat: Chat; readonly 
 
   return (
     <Page
-      title="Questions"
+      title="Quick chats"
       actions={
-        <button type="button" className="phone-icon" aria-label="Ask a question" onClick={onAsk}>
+        <button type="button" className="phone-icon" aria-label="New quick chat" onClick={onAsk}>
           <Icon name="compose" size={24} />
         </button>
       }
     >
       {chat.questions.length === 0 ? (
-        <div className="phone-empty">No questions. Ask one from the pencil above; each is kept a day after its last answer.</div>
+        <div className="phone-empty">No quick chats. Off the board. Each is deleted a day after its last answer, unless kept.</div>
       ) : (
         <>
           {kept.length === 0 ? null : (

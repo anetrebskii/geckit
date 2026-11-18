@@ -39,7 +39,7 @@ import { localTranscriptionReadiness } from '../main/local-transcription'
 import { askOrders, carryOut, saying } from '../main/orders'
 import type { Order, Told } from '../main/orders'
 import { keepRecording, startRecording, addToRecording, dropRecording } from '../main/recordings'
-import { removeShortcut, runShortcut, saveShortcut } from '../main/shortcuts'
+import { holdShortcut, postponeShortcut, removeShortcut, runShortcut, saveShortcut } from '../main/shortcuts'
 import { forgetProject, getSettings, rememberProject, setSettings } from '../main/store'
 import type { Sessions } from '../main/sessions'
 import { transcribe } from '../main/transcribe'
@@ -255,6 +255,8 @@ export function application(runtime: CoreRuntime) {
     'shortcuts:runs': (id?: string) => runtime.shortcutRuns.all(id),
     'shortcuts:save': (draft: ShortcutDraft) => saveShortcut(draft),
     'shortcuts:remove': (id: string) => removeShortcut(id),
+    'shortcuts:postpone': (id: string, at: number) => postponeShortcut(id, at),
+    'shortcuts:hold': (id: string, hold: boolean) => holdShortcut(id, hold),
     'shortcuts:run': (id: string) => runShortcut(id, 'hand'),
     'chat:list': (root: string | undefined) => list(root, shownProjects(getSettings())),
     'chat:listStatus': () => sessions.listStatus(),

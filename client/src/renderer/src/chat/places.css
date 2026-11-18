@@ -300,6 +300,11 @@ html:not(.framed) .nav-toggle-hole {
   border-radius: 9px;
 }
 
+.nav-count.needs,
+.nav-dot.needs {
+  background: var(--danger-solid);
+}
+
 .nav-dot {
   position: absolute;
   top: 6px;

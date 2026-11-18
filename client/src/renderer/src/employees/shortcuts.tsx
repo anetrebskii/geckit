@@ -1,29 +1,38 @@
 import { memo, useState } from 'react'
 import type { ChatSession, Settings, Shortcut, ShortcutDraft } from '../../../shared/api'
-import { describeCron, describeTime, nextTimed } from '../../../shared/schedule'
-import { describeRecurrence } from '../../../shared/recurrence'
+import { describeTime, nextSet } from '../../../shared/schedule'
+import { kindOf, problemLine, scheduledLead } from '../../../shared/prompt-kinds'
+import type { PromptKind } from '../../../shared/prompt-kinds'
 import { projectColor } from '../../../shared/project-color'
 import { saveShortcut } from '../../../shared/shortcut-save'
 import { Icon } from '../ui/Icon'
 import { projectLabel, tint } from '../chat/project'
+import { timetableSaid } from '../chat/PromptEditor'
 import type { ShortcutRun } from '../../../shared/shortcut-runs'
 import { destinationSummary, ShortcutDelivery, useShortcutRuns } from '../chat/ShortcutDestinations'
 
-export type ShortcutRowChat = { readonly settings: Pick<Settings, 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'projectColors' | 'shortcuts' | 'shortcutDestinationsVersion'>; readonly everyone: readonly ChatSession[] }
+export type ShortcutRowChat = { readonly settings: Pick<Settings, 'calendarTimeZone' | 'calendarRecurrenceVersion' | 'cronStartWindowVersion' | 'managerShortcutsVersion' | 'promptKindsVersion' | 'projectColors' | 'shortcuts' | 'shortcutDestinationsVersion'>; readonly everyone: readonly ChatSession[] }
 
-export const shortcutDraft = ({ since: _since, lastRun: _lastRun, lastSession: _lastSession, ...draft }: Shortcut): ShortcutDraft => draft
+export const shortcutDraft = ({ since: _since, lastRun: _lastRun, lastSession: _lastSession, outcome: _outcome, postponedFrom: _postponedFrom, ...draft }: Shortcut): ShortcutDraft => draft
 
 export const shortcutRunning = (everyone: readonly ChatSession[], one: Pick<Shortcut, 'lastSession'>): boolean =>
   one.lastSession !== undefined && everyone.some((session) => session.id === one.lastSession && (session.state === 'working' || session.state === 'asks'))
 
-const scheduled = (one: Shortcut): boolean => one.recurrence !== undefined || one.cron !== undefined
+const scheduled = (one: Shortcut): boolean => kindOf(one) === 'repeating'
+
+export const KIND_HEADS: readonly { readonly kind: PromptKind; readonly title: string; readonly icon: string }[] = [
+  { kind: 'repeating', title: 'Repeating', icon: 'refresh' },
+  { kind: 'scheduled', title: 'Scheduled', icon: 'clock' },
+  { kind: 'shortcut', title: 'Shortcuts', icon: 'bolt' },
+]
 
 export function shortcutWhen(one: Shortcut, settings: Pick<Settings, 'calendarTimeZone'>, now: number, archived: boolean): string {
+  if (one.at !== undefined) return problemLine(one) ?? (one.outcome?.state === 'ran' ? `Ran ${scheduledLead(one.outcome.started, now, settings.calendarTimeZone)}` : `Once ${scheduledLead(one.at, now, settings.calendarTimeZone)}`)
   if (!scheduled(one)) return 'By hand'
-  const rule = one.recurrence !== undefined ? describeRecurrence(one.recurrence) : describeCron(one.cron ?? '')
+  const rule = timetableSaid(one)
   if (archived) return `${rule} · Paused while archived`
   if (!one.on) return `${rule} · Paused`
-  const next = nextTimed(one, now, settings.calendarTimeZone)
+  const next = nextSet(one, now, one.recurrence === undefined ? undefined : settings.calendarTimeZone)
   return next === undefined ? `${rule} · Timetable ended` : `${rule} · Next ${describeTime(next, now, one.recurrence === undefined ? undefined : settings.calendarTimeZone)}`
 }
 
@@ -61,7 +70,7 @@ export const EmployeeShortcut = memo(function EmployeeShortcut({ shortcut, chat,
     {failed ? <span className="employee-alert" role="alert">Could not run. Check the assistant and folder.</span> : null}
   </>
   return <div className={`team-shortcut${timed && shortcut.on && !archived ? ' timed' : ''}`}>
-    <span className="team-shortcut-icon"><Icon name={timed ? 'todo' : 'bolt'} size={13} /></span>
+    <span className="team-shortcut-icon"><Icon name={KIND_HEADS.find((head) => head.kind === kindOf(shortcut))?.icon ?? 'bolt'} size={13} /></span>
     {onEdit === undefined ? <span className="team-shortcut-words">{words}</span> : <button type="button" className="team-shortcut-words" title="Edit shortcut" onClick={() => onEdit(shortcut.id)}>{words}</button>}
     <ShortcutDelivery run={lastRun} />
     {running && shortcut.lastSession !== undefined ? <button type="button" className="team-running" onClick={() => { if (shortcut.lastSession !== undefined) onOpen?.(shortcut.lastSession) }}>Running</button> : null}
@@ -76,6 +85,9 @@ export function EmployeeShortcutsRead({ shortcuts, chat, archived }: { readonly 
   const lastRuns = useShortcutRuns(chat.settings)
   return <section className="employee-tasks" aria-label="Shortcuts">
     <div className="employee-section-head"><h3>Shortcuts</h3><span className="employee-count">{shortcuts.length}</span></div>
-    <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={archived} now={now} />)}</div>
+    {KIND_HEADS.map((head) => {
+      const list = shortcuts.filter((one) => kindOf(one) === head.kind)
+      return list.length === 0 ? null : <div key={head.kind} className="team-kind"><div className="team-kind-head">{head.title}</div><div className="team-box">{list.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={archived} now={now} />)}</div></div>
+    })}
   </section>
 }

@@ -188,6 +188,8 @@ return {
     runs: (id?: string): Promise<readonly ShortcutRun[]> => rendererTransport.invoke('shortcuts:runs', id),
     save: (draft: ShortcutDraft): Promise<Shortcut> => rendererTransport.invoke('shortcuts:save', draft),
     remove: (id: string): void => rendererTransport.send('shortcuts:remove', id),
+    postpone: (id: string, at: number): Promise<Shortcut> => rendererTransport.invoke('shortcuts:postpone', id, at),
+    hold: (id: string, hold: boolean): void => rendererTransport.send('shortcuts:hold', id, hold),
     /** Run by hand: the conversation it started, or nothing where it could not. */
     run: (id: string): Promise<string | undefined> => rendererTransport.invoke('shortcuts:run', id),
     /** The tray asked for the list, `new`, or one shortcut by id to edit. */

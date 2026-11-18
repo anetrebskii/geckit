@@ -1195,3 +1195,167 @@ html.phone .secrets-section .browser-profile + .browser-profile::before {
 .checklist-sheet-items + .phone-note {
   margin-inline: 16px;
 }
+
+/* Repeating, Scheduled and Shortcuts on the phone: the assignee leads each row, Scheduled ends it with its time. */
+.place-menu-count.needs {
+  background: var(--danger-solid);
+}
+
+.phone-shortcut.prompt-row,
+.phone-shortcuts > .phone-shortcut:has(> .who-mark) {
+  gap: 12px;
+  padding-inline-start: 16px;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.phone-shortcuts > .phone-shortcut:has(> .who-mark) .phone-shortcut-text {
+  padding-inline-start: 0;
+}
+
+.phone-shortcuts > .phone-shortcut:has(> .who-mark) + .phone-shortcut::before {
+  inset-inline-start: 58px;
+}
+
+.phone-shortcut-when .trouble {
+  color: var(--danger);
+}
+
+.phone-when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.phone-when b {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.phone-when small {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.phone-when.problem b {
+  color: var(--danger);
+}
+
+.prompt-views {
+  margin-inline: 16px;
+}
+
+.phone-head-line {
+  margin: 18px 32px 6px;
+  color: var(--text-faint);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.phone-empty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 17px;
+}
+
+.phone-undo {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  color: var(--text-dim);
+  font-size: 15px;
+  background: var(--bg-raised);
+}
+
+.phone-undo button {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.phone-cal {
+  margin: 0 16px;
+  padding: 8px 6px 10px;
+  background: var(--bg-raised);
+  border-radius: 10px;
+}
+
+.phone-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 6px;
+}
+
+.phone-cal-head b {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.phone-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+}
+
+.phone-cal-grid .wd {
+  padding-bottom: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.phone-cal-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding-top: 4px;
+  color: var(--text);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.phone-cal-grid button > span {
+  display: grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  border-radius: 50%;
+}
+
+.phone-cal-grid button.other {
+  color: var(--text-faint);
+}
+
+.phone-cal-grid button.today > span {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.phone-cal-grid button.on > span {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+
+.phone-cal-grid i {
+  inline-size: 5px;
+  block-size: 5px;
+  background: var(--text-faint);
+  border-radius: 50%;
+}
+
+.phone-cal-grid i.problem {
+  background: var(--danger);
+}
+
+.phone-cal-grid i.none {
+  visibility: hidden;
+}

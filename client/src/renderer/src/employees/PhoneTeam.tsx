@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { ChatSession, Shortcut, ShortcutDraft } from '../../../shared/api'
 import type { Employee, EmployeeDraft } from '../../../shared/employees'
 import { projectColor } from '../../../shared/project-color'
@@ -13,7 +13,8 @@ import type { Chat } from '../chat/useChat'
 import { EMPLOYEE_AVATARS } from './avatars'
 import { newEmployeeDraft, savedEmployeeId } from './draft'
 import { EmployeeAvatar, EmployeeConversations, EmployeeTasks, TaskSummary, useTasksByEmployee } from './Employees'
-import { shortcutDraft, shortcutRunning, shortcutWhen } from './shortcuts'
+import { KIND_HEADS, shortcutDraft, shortcutRunning, shortcutWhen } from './shortcuts'
+import { kindOf } from '../../../shared/prompt-kinds'
 import { TeamConfirm } from './Team'
 import { useEmployees } from './useEmployees'
 import { managerStand } from '../chat/manager-label'
@@ -23,7 +24,7 @@ type PhoneTeamChat = Pick<Chat, 'everyone' | 'settings' | 'goTo' | 'change'>
 type Shown = Employee['id'] | 'none' | 'manager' | undefined
 
 const draftOf = (employee: Employee): EmployeeDraft => ({ id: employee.id, revision: employee.revision, name: employee.name, role: employee.role, description: employee.description, avatar: employee.avatar })
-const scheduled = (one: Shortcut): boolean => one.cron !== undefined || one.recurrence !== undefined
+const scheduled = (one: Shortcut): boolean => kindOf(one) === 'repeating'
 const open = (one: ChatSession): boolean => one.status !== 'done' && one.status !== 'archived'
 
 export function PhoneTeam({ chat, back, first, onBack, onEdit }: {
@@ -128,8 +129,10 @@ function PhoneEmployee({ employee, chat, onBack, onEdit, onChange, take }: {
           <TaskSummary tasks={tasks} shortcuts={shortcuts.length} />
         </span>
       </header>
-      <div className="phone-head">Shortcuts</div>
-      {shortcuts.length === 0 ? null : <PhoneShortcutRows shortcuts={shortcuts} chat={chat} archived={employee.archived} onEdit={onEdit} />}
+      {shortcuts.length === 0 ? <div className="phone-head">Shortcuts</div> : KIND_HEADS.map((head) => {
+        const list = shortcuts.filter((one) => kindOf(one) === head.kind)
+        return list.length === 0 ? null : <Fragment key={head.kind}><div className="phone-head">{head.title}</div><PhoneShortcutRows shortcuts={list} chat={chat} archived={employee.archived} onEdit={onEdit} /></Fragment>
+      })}
       <div className={`phone-group${shortcuts.length === 0 ? '' : ' phone-team-group'}`}><Cell label="New shortcut" accent onPress={() => { if (!employee.archived) onEdit(blank()) }} /></div>
       <div className="phone-note">Each run starts a task assigned to {employee.name}.</div>
       <div className="phone-team-block"><EmployeeTasks key={`tasks-${employee.id}`} tasks={tasks} settings={chat.settings} onOpen={chat.goTo} /></div>

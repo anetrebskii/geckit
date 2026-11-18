@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeckIt - Repeating, Scheduled, Shortcuts</title>
+<!-- The UX is docs/ux/shortcut-kinds.md. The app's own styles.css supplies every token and the shortcut, views, menu and switch rules. -->
+<link rel="stylesheet" href="../../client/src/renderer/src/styles.css">
+<style>
+  html, body { margin: 0; min-height: 100vh; background: var(--bg-sunken); color: var(--text); }
+  body { font: 13px/1.4 var(--font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+  .proto-bar { position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 10px 16px; background: var(--bg-raised); border-bottom: 1px solid var(--border); }
+  .proto-bar strong { font-size: 13px; }
+  .proto-bar .spacer { flex: 1; }
+  .proto-bar label { display: inline-flex; gap: 6px; align-items: center; color: var(--text-dim); font-size: 12px; }
+
+  .stage { display: flex; justify-content: center; padding: 24px 16px 60px; }
+  .stage[data-view='phone'] .desk, .stage[data-view='desktop'] .phone { display: none; }
+
+  /* The Chat window, reduced to its sidebar and the Shortcuts place. */
+  .desk { display: grid; grid-template-columns: 196px 1fr; width: min(1080px, 100%); height: 720px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+  .desk-side { display: flex; flex-direction: column; gap: 1px; padding: 38px 8px 12px; background: var(--bg-sunken); border-right: 1px solid var(--border); }
+  .desk-side .group { margin: 12px 8px 4px; color: var(--text-faint); font-size: 11px; font-weight: 600; }
+  .desk-side span.item { display: flex; gap: 8px; align-items: center; padding: 5px 8px; color: var(--text-dim); border-radius: 6px; }
+  .desk-side span.item.on, .desk-side button.item.on { color: var(--text); background: var(--bg-active); }
+  .desk-side button.item { display: flex; gap: 8px; align-items: center; width: 100%; padding: 5px 8px; color: var(--text-dim); text-align: left; border-radius: 6px; }
+  .desk-side button.item:hover:not(.on) { background: var(--bg-hover); }
+  #kind-items { display: contents; }
+  .badge { margin-inline-start: auto; min-width: 18px; padding: 0 6px; color: var(--danger-text); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; background: var(--danger-solid); border-radius: 9px; }
+  .p-drawer { position: absolute; inset: 0; z-index: 9; display: flex; background: var(--scrim); }
+  .p-drawer nav { display: flex; flex-direction: column; width: 290px; padding: 64px 12px 20px; background: var(--ground); }
+  .p-drawer .group { margin: 16px 12px 6px; color: var(--text-faint); font-size: 13px; text-transform: uppercase; }
+  .p-drawer button, .p-drawer span.item { display: flex; gap: 12px; align-items: center; min-height: 44px; padding: 0 12px; font-size: 17px; text-align: left; border-radius: 10px; }
+  .p-drawer button.on { color: var(--accent); background: var(--bg-active); }
+  .p-drawer span.item { color: var(--text-dim); }
+  .desk-main { position: relative; min-width: 0; overflow-y: auto; padding: 0 0 40px; }
+  .desk-main .page { padding: 20px 32px 0; }
+  .board-head.page-bar { position: sticky; top: 0; z-index: 5; padding: 8px 12px; background: var(--bg); }
+  .page-bar .views svg { flex: none; }
+  .desk-main .page { max-width: 720px; margin: 0 auto; }
+  .kinds { margin: 2px 0 16px; }
+  .kinds .n { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .kinds button.on .n { color: var(--text-dim); }
+
+  .shortcut-when .trouble { color: var(--danger); }
+  .shortcut-when .moved { color: var(--text-faint); }
+  .who-mark { display: grid; flex: none; place-items: center; inline-size: var(--size); block-size: var(--size); color: var(--text-dim); font-size: calc(var(--size) * 0.39); font-weight: 600; letter-spacing: 0.02em; background: var(--bg-sunken); border-radius: 50%; }
+  .who-mark.person { color: var(--text); background: color-mix(in srgb, var(--text) 9%, var(--bg-raised)); }
+  .shortcut-when .who { color: var(--text); }
+  .shortcut-mark.problem { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+  .lead { display: flex; flex: 0 0 132px; flex-direction: column; gap: 1px; min-width: 0; }
+  .lead b { overflow: hidden; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+  .lead.problem b { color: var(--danger); }
+  .lead small { color: var(--text-faint); font-size: 11px; }
+  .row-note { display: flex; gap: 8px; align-items: center; padding: 0 12px 8px 50px; color: var(--text-dim); font-size: 12px; }
+  .row-note button { color: var(--accent); }
+  .row-note + .shortcut-row, .shortcut-row + .undo-row, .row-note + .undo-row { border-top: 1px solid var(--border); }
+  .undo-row { display: flex; gap: 8px; align-items: center; padding: 10px 12px; color: var(--text-dim); font-size: 12px; }
+  .undo-row button { color: var(--accent); font-weight: 600; }
+  .shortcut-actions .team-switch { margin-inline: 4px; }
+  .shortcut-actions .quiet { padding: 4px 11px; font-size: 12px; }
+  .ran { margin-top: 18px; }
+  .ran .shortcut-name { font-weight: 500; color: var(--text-dim); }
+
+  .pop { position: absolute; z-index: 80; min-width: 210px; padding: 4px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg, 10px); box-shadow: var(--shadow); }
+  .pop .menu-item .says { margin-inline-start: auto; padding-inline-start: 18px; color: var(--text-faint); font-size: 12px; }
+  .pop hr { margin: 4px 6px; border: 0; border-top: 1px solid var(--border); }
+  .pop .choose { display: grid; gap: 8px; padding: 8px 9px; }
+  .pop .choose div { display: flex; gap: 6px; }
+  .pop input { min-width: 0; padding: 5px 7px; color: var(--text); background: var(--field); border: 1px solid var(--border-strong); border-radius: var(--radius, 6px); font: inherit; }
+  .pop .wrong { color: var(--danger); font-size: 12px; }
+
+  /* The editor, as today, with When in place of "By hand / On a schedule". */
+  .editor-scrim { position: absolute; inset: 0; z-index: 70; display: grid; place-items: center; background: var(--scrim); }
+  .editor-scrim .dialog.shortcut-list { width: min(820px, 94%); height: min(600px, 92%); }
+  .once { display: grid; grid-template-columns: 1fr 92px; gap: 6px; }
+  .once input { min-width: 0; padding: 5px 7px; color: var(--text); background: var(--field); border: 1px solid var(--border-strong); border-radius: var(--radius, 6px); font: inherit; }
+
+  /* The phone: iOS grouped list in the product's phone tokens. */
+  .phone { position: relative; width: 390px; height: 844px; overflow: hidden; background: var(--ground); border: 1px solid var(--border); border-radius: 44px; box-shadow: var(--shadow); }
+  .phone-in { position: absolute; inset: 0; overflow-y: auto; padding: 54px 0 40px; }
+  .p-top { display: flex; justify-content: space-between; align-items: center; padding: 0 16px; }
+  .p-top button { min-width: 44px; min-height: 44px; color: var(--accent); font-size: 17px; }
+  .p-title { margin: 2px 16px 0; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+  .p-top .badge { margin-inline-start: 6px; vertical-align: 2px; }
+  .p-title { margin-bottom: 12px; }
+  .p-head { margin: 18px 32px 6px; color: var(--text-faint); font-size: 13px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .p-group { margin: 0 16px; overflow: hidden; background: var(--bg-raised); border-radius: 10px; }
+  .p-swipe { position: relative; overflow: hidden; }
+  .p-swipe + .p-swipe .p-row::before { position: absolute; top: 0; right: 0; left: 52px; border-top: 0.5px solid var(--separator); content: ''; }
+  .p-acts { position: absolute; inset: 0 0 0 auto; display: flex; }
+  .p-acts button { width: 84px; font-size: 15px; }
+  .p-acts .later { color: var(--accent-text); background: var(--accent); }
+  .p-acts .del { color: var(--danger-text); background: var(--danger-solid); }
+  .p-acts .pause { color: var(--bg); background: var(--text-dim); }
+  .p-row { position: relative; display: flex; gap: 12px; align-items: center; min-height: 60px; padding: 10px 16px; background: var(--bg-raised); transition: transform 220ms var(--ease); touch-action: pan-y; }
+  .p-row .shortcut-mark { inline-size: 30px; block-size: 30px; }
+  .p-txt { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+  .p-txt b { overflow: hidden; font-size: 17px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+  .p-txt span { overflow: hidden; color: var(--text-dim); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  .p-txt .trouble { color: var(--danger); }
+  .p-when { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .p-when b { font-size: 15px; font-weight: 500; }
+  .p-when small { color: var(--text-faint); font-size: 12px; }
+  .p-run { min-width: 44px; min-height: 44px; color: var(--accent); font-size: 15px; font-weight: 600; }
+  .p-empty { margin: 40px 32px; color: var(--text-dim); text-align: center; }
+  .p-empty strong { display: block; margin-bottom: 4px; color: var(--text); font-size: 17px; }
+  .p-empty button { margin-top: 14px; min-height: 44px; color: var(--accent); font-size: 17px; }
+  .p-sheet-scrim { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; padding: 0 8px 30px; background: var(--scrim); }
+  .p-sheet { overflow: hidden; background: var(--bg-raised); border-radius: 14px; }
+  .p-sheet p { margin: 0; padding: 14px 16px; color: var(--text-faint); font-size: 13px; text-align: center; border-bottom: 0.5px solid var(--separator); }
+  .p-sheet button { display: block; width: 100%; min-height: 56px; color: var(--accent); font-size: 19px; border-top: 0.5px solid var(--separator); }
+  .p-sheet button:first-of-type { border-top: 0; }
+  .p-sheet.cancel button { font-weight: 600; }
+  .p-sheet button.danger { color: var(--danger); }
+  .phone .shortcut-chip { font-size: 12px; }
+
+
+  /* Scheduled as a month. */
+  .desk-main.cal-mode { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  .desk-main .page.cal-page { display: flex; flex: 1; flex-direction: column; min-height: 0; max-width: none; margin: 0; padding: 14px 20px 10px; }
+  .cal-head { display: flex; gap: 2px; align-items: center; margin: 0 0 10px; }
+  .cal-head h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .cal-head h2 span { color: var(--text-faint); font-weight: 400; }
+  .cal-head .quiet { padding-inline: 10px; }
+  .cal { display: grid; flex: 1; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto; grid-auto-rows: minmax(0, 1fr); min-height: 0; }
+  .cal-wd { padding: 0 8px 6px; color: var(--text-faint); font-size: 11px; font-weight: 600; text-align: end; }
+  .cal-day { position: relative; display: flex; flex-direction: column; gap: 1px; min-width: 0; min-height: 0; padding: 4px 4px 2px; overflow: hidden; border-top: 1px solid var(--border); border-inline-start: 1px solid var(--border); outline: none; }
+  .cal-day:nth-child(7n + 1) { border-inline-start: 0; }
+  .cal-day.weekend { background: color-mix(in srgb, var(--text) 2.5%, transparent); }
+  .cal-day.on { background: var(--bg-hover); }
+  .cal-day:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cal-day.drop { background: var(--bg-active); }
+  .cal-day .n { display: grid; place-items: center; align-self: flex-end; min-inline-size: 22px; block-size: 22px; padding: 0 4px; margin-bottom: 1px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; border-radius: 11px; }
+  .cal-day.other .n { color: var(--text-faint); }
+  .cal-day.today .n { color: var(--accent-text); font-weight: 600; background: var(--accent); }
+  .cal-chip { display: flex; flex: none; gap: 5px; align-items: center; width: 100%; min-width: 0; padding: 1px 4px; color: var(--text); font-size: 11.5px; line-height: 16px; text-align: left; white-space: nowrap; border-radius: 4px; cursor: default; }
+  .cal-chip:hover { background: var(--bg-hover); }
+  .cal-chip i { flex: none; inline-size: 7px; block-size: 7px; background: var(--tint); border-radius: 50%; }
+  .cal-chip span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .cal-chip time { flex: none; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .cal-chip.problem, .cal-chip.problem time { color: var(--danger); }
+  .cal-chip.problem i { background: var(--danger); }
+  .cal-chip[aria-expanded="true"] { color: var(--accent-text); background: var(--accent); }
+  .cal-chip[aria-expanded="true"] time { color: inherit; opacity: 0.85; }
+  .cal-chip[aria-expanded="true"] i { background: var(--accent-text); }
+  .cal-chip.dragging { opacity: 0.4; }
+  .cal-day { container-type: inline-size; }
+  .cal.wk { position: relative; grid-template-rows: auto minmax(0, 1fr); }
+  .wk-head { display: flex; gap: 6px; align-items: center; padding: 0 8px 8px; color: var(--text-faint); font-size: 12px; }
+  .wk-head .n { display: grid; place-items: center; min-inline-size: 24px; block-size: 24px; padding: 0 4px; color: var(--text); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; border-radius: 12px; }
+  .wk-head.today { color: var(--accent); font-weight: 600; }
+  .wk-head.today .n { color: var(--accent-text); background: var(--accent); }
+  .wk-col { gap: 4px; padding: 6px 5px; overflow-y: auto; }
+  .wk-card { display: flex; flex: none; flex-direction: column; gap: 2px; min-width: 0; padding: 5px 7px 6px 9px; color: var(--text); font-size: 12px; line-height: 16px; text-align: left; background: color-mix(in srgb, var(--tint) 12%, var(--bg)); border-radius: 6px; box-shadow: inset 3px 0 0 var(--tint); cursor: default; }
+  .wk-card:hover { background: color-mix(in srgb, var(--tint) 18%, var(--bg)); }
+  .wk-card time { color: var(--text-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .wk-card .t { display: -webkit-box; overflow: hidden; font-weight: 600; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+  .wk-card .who { display: flex; gap: 5px; align-items: center; min-width: 0; margin-top: 2px; color: var(--text-dim); font-size: 11.5px; }
+  .wk-card .who > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wk-card small { color: var(--text-faint); font-size: 11px; }
+  .wk-card small.trouble { color: var(--danger); font-weight: 600; }
+  .wk-card.problem { background: color-mix(in srgb, var(--danger) 10%, var(--bg)); box-shadow: inset 3px 0 0 var(--danger); }
+  .wk-card.problem:hover { background: color-mix(in srgb, var(--danger) 16%, var(--bg)); }
+  .wk-card.problem time { color: var(--danger); }
+  .wk-card[aria-expanded="true"] { color: var(--accent-text); background: var(--accent); box-shadow: none; }
+  .wk-card[aria-expanded="true"] :is(time, .who, small, small.trouble) { color: inherit; }
+  .wk-card[aria-expanded="true"] .who-mark { color: var(--accent); background: var(--accent-text); }
+  .wk-card.dragging { opacity: 0.4; }
+  .wk-empty { position: absolute; inset: 40% 0 auto; margin: 0; color: var(--text-dim); font-size: 13px; text-align: center; pointer-events: none; }
+  @container (max-width: 96px) { .cal-chip time { display: none; } }
+  .cal-more { flex: none; align-self: flex-start; padding: 0 4px; color: var(--text-faint); font-size: 11.5px; line-height: 16px; border-radius: 4px; }
+  .cal-more:hover { color: var(--text); background: var(--bg-hover); }
+  .menu-head { display: flex; flex-direction: column; gap: 1px; max-width: 260px; padding: 6px 9px 6px; }
+  .menu-head b { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .menu-head small { color: var(--text-dim); font-size: 12px; }
+  .menu-head small.trouble { color: var(--danger); }
+  .day-pop { min-width: 240px; }
+  .day-pop .menu-head b { white-space: normal; }
+  .day-pop .cal-chip { padding: 4px 8px; font-size: 13px; line-height: 18px; border-radius: 6px; }
+  .day-pop .none { padding: 4px 9px 8px; color: var(--text-dim); font-size: 13px; }
+  .cal-note { display: flex; flex: none; gap: 8px; align-items: center; min-height: 20px; margin: 6px 2px 0; color: var(--text-dim); font-size: 12px; }
+  .cal-note.wrong { color: var(--danger); }
+  .cal-note button { color: var(--accent); font-weight: 600; }
+  .shortcut-row.hit { background: var(--bg-active); }
+  .p-cal { margin: 0 16px; padding: 8px 6px 10px; background: var(--bg-raised); border-radius: 10px; }
+  .p-cal-head { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 6px; }
+  .p-cal-head b { font-size: 17px; font-weight: 600; }
+  .p-cal-head button { min-width: 44px; min-height: 44px; color: var(--accent); }
+  .p-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
+  .p-cal-grid .wd { padding-bottom: 4px; color: var(--text-faint); font-size: 11px; font-weight: 600; }
+  .p-cal-grid button { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; padding-top: 4px; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .p-cal-grid button > span { display: grid; place-items: center; inline-size: 30px; block-size: 30px; border-radius: 50%; }
+  .p-cal-grid button.other { color: var(--text-faint); }
+  .p-cal-grid button.today > span { color: var(--accent); font-weight: 600; }
+  .p-cal-grid button.on > span { color: var(--accent-text); background: var(--accent); }
+  .p-cal-grid i { inline-size: 5px; block-size: 5px; background: var(--text-faint); border-radius: 50%; }
+  .p-cal-grid i.problem { background: var(--danger); }
+  .p-cal-grid i.none { visibility: hidden; }
+  .p-views { margin: 0 16px 12px; }
+  @media (prefers-reduced-motion: reduce) { .p-row { transition: none; } }
+  @media (max-width: 760px) { .desk { grid-template-columns: 1fr; } .desk-side { display: none; } .desk-main .page { padding: 16px; } .page-bar { flex-wrap: wrap; } .shortcut-list-head { flex-wrap: wrap; } .shortcut-row { flex-wrap: wrap; } .shortcut-actions { margin-inline-start: auto; } }
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <strong>Repeating, Scheduled, Shortcuts</strong>
+  <span class="views" role="radiogroup" aria-label="Surface">
+    <button type="button" role="radio" data-view="desktop" class="on" aria-checked="true">Desktop</button>
+    <button type="button" role="radio" data-view="phone" aria-checked="false">Phone</button>
+  </span>
+  <label>Data <select id="scenario"><option value="typical">Typical</option><option value="trouble">Didn't start and Missed</option><option value="empty">Empty</option></select></label>
+  <span class="spacer"></span>
+  <button type="button" class="quiet" id="theme">Dark</button>
+</div>
+
+<div class="stage" data-view="desktop">
+  <div class="desk">
+    <nav class="desk-side" aria-label="Sidebar">
+      <span class="item">Tasks</span><span class="item">Manager</span><span class="item">Quick chats</span>
+      <span class="group">Prompts</span><span id="kind-items"></span>
+      <span class="group">Workspace</span>
+      <span class="item">Team</span><span class="item">Checklists</span><span class="item">Browsers</span><span class="item">Secrets</span>
+    </nav>
+    <main class="desk-main" id="desk"></main>
+  </div>
+  <div class="phone"><div class="phone-in" id="phone"></div></div>
+</div>
+
+<script>
+const NOW = new Date(2026, 10, 18, 14, 20).getTime()
+const MODKEY = '\u2318'
+const H = 3600e3, D = 24 * H
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const ICON = {
+  bolt: 'M9 2.5 4 9h4l-1 4.5L12 7H8Z',
+  refresh: 'M13.4 8a5.4 5.4 0 1 1-5.4-5.4c1.51 0 2.96.6 4.04 1.64L13.4 5.6M13.4 2.6v3h-3',
+  clock: 'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM8 5v3.2l2.2 1.4',
+  send: 'M8 13V3.5M8 3.5 4 7.5M8 3.5l4 4',
+  plus: 'M8 3.5v9M3.5 8h9',
+  search: 'M7 11.25a4.25 4.25 0 1 0 0-8.5 4.25 4.25 0 0 0 0 8.5ZM10.1 10.1l3.15 3.15',
+  right: 'M6.5 4 10.5 8 6.5 12',
+  left: 'M9.5 4 5.5 8 9.5 12',
+  trash: 'M3 4.5h10M6.2 4.5V3.2a.7.7 0 0 1 .7-.7h2.2a.7.7 0 0 1 .7.7v1.3M4.6 4.5l.7 8.2a1 1 0 0 0 1 .9h3.4a1 1 0 0 0 1-.9l.7-8.2',
+  calendar: 'M3 4h10v9.5H3zM3 7h10M5.5 2.5v3M10.5 2.5v3',
+  week: 'M2.5 3.5h11v9h-11zM2.5 6h11M6.2 6v6.5M9.8 6v6.5',
+  board: 'M2.5 3.5h3.4v9H2.5zM6.3 3.5h3.4v6H6.3zM10.1 3.5h3.4v7.5h-3.4z',
+  list: 'M2.5 4.5h11M2.5 8h11M2.5 11.5h11',
+  more: 'M3.5 8m-1.15 0a1.15 1.15 0 1 0 2.3 0 1.15 1.15 0 1 0 -2.3 0M8 8m-1.15 0a1.15 1.15 0 1 0 2.3 0 1.15 1.15 0 1 0 -2.3 0M12.5 8m-1.15 0a1.15 1.15 0 1 0 2.3 0 1.15 1.15 0 1 0 -2.3 0',
+  alert: 'M8 2.5 14 13H2ZM8 6.5v3M8 11.2h.01',
+  claude: 'M8 2v12M2 8h12M3.8 3.8l8.4 8.4M3.8 12.2l8.4-8.4M5.7 2.5l4.6 11M2.5 5.7l11 4.6M2.5 10.3l11-4.6M5.7 13.5l4.6-11',
+  codex: 'M3.5 2.5h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1ZM5 5.5 7.5 8 5 10.5M9 10.5h2',
+  manager: 'M8 7a2.25 2.25 0 1 0 0-4.5A2.25 2.25 0 0 0 8 7ZM3.5 13.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M8 9l-.8 1.6L8 13l.8-2.4Z',
+}
+const icon = (name, size = 13) => `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON[name]}"/></svg>`
+const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const clock = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+const dayStart = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime() }
+function when(t) {
+  const days = Math.round((dayStart(t) - dayStart(NOW)) / D)
+  const d = new Date(t)
+  if (days === 0) return `Today ${clock(t)}`
+  if (days === 1) return `Tomorrow ${clock(t)}`
+  if (days === -1) return `Yesterday ${clock(t)}`
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${clock(t)}`
+}
+function inHow(t) {
+  if (t <= NOW) return 'Due'
+  const m = Math.round((t - NOW) / 60e3)
+  if (m < 60) return `In ${m} min`
+  if (m < 36 * 60) return `In ${Math.round(m / 60)} h`
+  return `In ${Math.round(m / 1440)} days`
+}
+const at = (days, h, m = 0) => { const d = new Date(dayStart(NOW) + days * D); d.setHours(h, m, 0, 0); return d.getTime() }
+const nextMonday = () => { const d = new Date(NOW); const add = ((8 - d.getDay()) % 7) || 7; return at(add, 9) }
+
+const TYPICAL = () => ({
+  kind: 'repeating',
+  items: [
+    { id: 'r1', name: 'Morning plan', folder: 'my-workspace', tint: '#2f7de1', who: 'Claude', model: 'Sonnet 5.5', repeat: 'Every weekday at 09:00', next: at(1, 9), on: true, prompt: 'Read yesterday\'s notes and today\'s calendar, then write the plan for today.' },
+    { id: 'r2', name: 'Check pull requests', folder: 'geckit', tint: '#1f8031', who: 'Codex', emp: 'Mira Chen', role: 'Reviewer', repeat: 'Every hour at :15', next: at(0, 15, 15), on: true, prompt: 'List pull requests waiting for my review, oldest first.' },
+    { id: 'r3', name: 'Weekly report', folder: 'twinsai', tint: '#b2559b', who: 'Manager', repeat: 'Every Friday at 16:00', next: at(2, 16), on: false, prompt: 'Collect what was done this week and draft the report.' },
+    { id: 's0', name: 'Tidy the downloads folder', folder: 'my-workspace', tint: '#2f7de1', who: 'Codex', at: at(0, 14, 5), prompt: 'Move installers older than a week from Downloads to the bin.' },
+    { id: 's1', name: 'Answer the review on the queue PR', folder: 'geckit', tint: '#1f8031', who: 'Claude', emp: 'Mira Chen', role: 'Reviewer', at: at(0, 16), prompt: 'Read the latest review comments on the queue PR and draft answers.' },
+    { id: 's2', name: 'Release notes for 1.263', folder: 'geckit', tint: '#1f8031', who: 'Claude', emp: 'Theo Park', role: 'Writer', model: 'Opus 5.5', at: at(1, 10), from: at(0, 11), prompt: 'Write release notes from the commits since 1.262.' },
+    { id: 's3', name: 'Check the domain renewal', folder: 'my-workspace', tint: '#2f7de1', who: 'Manager', at: nextMonday(), prompt: 'Check whether the domain renewed and tell me if anything failed.' },
+    { id: 'h1', name: 'Code review', folder: 'geckit', tint: '#1f8031', who: 'Claude', emp: 'Mira Chen', role: 'Reviewer', model: 'Opus 5.5', prompt: 'Review the current diff for bugs. State the bug and the fix.' },
+    { id: 'h2', name: 'Translate to English', folder: 'my-workspace', tint: '#2f7de1', who: 'Claude', prompt: 'Translate the selected text to plain English, keep the meaning.' },
+    { id: 'h3', name: 'Summarize the meeting', folder: 'twinsai', tint: '#b2559b', who: 'Manager', prompt: 'Summarize the last meeting notes into decisions and action items.' },
+  ],
+  ran: [{ id: 'x1', name: 'Inbox triage', folder: 'my-workspace', tint: '#2f7de1', who: 'Claude', ranAt: at(0, 9), late: 0 }],
+})
+const SCENARIOS = {
+  typical: TYPICAL,
+  trouble: () => {
+    const s = TYPICAL()
+    s.kind = 'scheduled'
+    s.items.push(
+      { id: 's4', name: 'Draft the LinkedIn post', folder: 'my-workspace', tint: '#2f7de1', who: 'Claude', at: at(0, 13), failed: 'Claude isn\'t available', prompt: 'Draft a post about the queue feature.' },
+      { id: 's5', name: 'Clean up old worktrees', folder: 'geckit', tint: '#1f8031', who: 'Codex', at: at(-2, 9), missed: true, prompt: 'List worktrees older than a week and remove the clean ones.' },
+    )
+    s.ran.push({ id: 'x2', name: 'Back up notes', folder: 'my-workspace', tint: '#2f7de1', who: 'Codex', ranAt: at(0, 8, 42), late: 42 })
+    return s
+  },
+  empty: () => ({ kind: 'repeating', items: [], ran: [] }),
+}
+
+let state = SCENARIOS.typical()
+let ui = { search: '', menu: null, note: null, undo: null, editor: null, sheet: null }
+const stored = (() => { try { return localStorage.getItem('scheduled-view') } catch { return null } })()
+let view = stored === 'list' || stored === 'month' ? stored : 'week'
+let cal = { month: monthOf(NOW), day: dayStart(NOW), note: null, drag: null }
+function monthOf(t) { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), 1).getTime() }
+function setView(next) { if (next === 'calendar') next = view === 'list' ? 'week' : view; view = next; cal = { ...cal, month: monthOf(NOW), day: dayStart(NOW), note: null }; try { localStorage.setItem('scheduled-view', next) } catch {} }
+const WEEKDAYS_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const dayLabel = (t) => { const d = new Date(t); return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}` }
+function gridDays(month) {
+  const first = new Date(month)
+  const start = new Date(first); start.setDate(1 - ((first.getDay() + 6) % 7))
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0)
+  const days = []
+  for (let d = new Date(start); d <= last || days.length % 7 !== 0; d.setDate(d.getDate() + 1)) days.push(new Date(d).getTime())
+  return days
+}
+const onDay = (day) => ofKind('scheduled').filter((one) => dayStart(one.at) === day).sort((a, b) => a.at - b.at)
+function weekDays(day) { const d = new Date(day); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return Array.from({ length: 7 }, (_, i) => { const x = new Date(d); x.setDate(d.getDate() + i); return x.getTime() }) }
+function weekCard(one) {
+  const bad = problem(one)
+  const status = one.missed ? '<small class="trouble">Missed</small>' : one.failed ? '<small class="trouble">Didn\'t start</small>' : ''
+  return `<button type="button" class="wk-card${bad ? ' problem' : ''}" style="--tint:${one.tint}" draggable="${bad ? 'false' : 'true'}" data-chip="${one.id}" aria-haspopup="menu" aria-expanded="${ui.menu?.mode !== 'day' && ui.menu?.id === one.id}">
+    <time>${clock(one.at)}</time><b class="t">${esc(one.name)}</b><span class="who">${whoMark(one, 18)}<span>${esc(assignee(one))}</span></span>${one.model ? `<small>${esc(one.model)}</small>` : ''}${status}</button>`
+}
+function calendarWeek() {
+  const days = weekDays(cal.day)
+  const today = dayStart(NOW)
+  const a = new Date(days[0]), z = new Date(days[6])
+  const title = a.getMonth() === z.getMonth() ? `${MONTH_NAMES[a.getMonth()]} <span>${a.getFullYear()}</span>` : `${MONTHS[a.getMonth()]} – ${MONTHS[z.getMonth()]} <span>${z.getFullYear()}</span>`
+  const heads = days.map((day) => `<div class="wk-head${day === today ? ' today' : ''}" role="columnheader"><span>${DAYS[new Date(day).getDay()]}</span><b class="n">${new Date(day).getDate()}</b></div>`).join('')
+  let total = 0
+  const cols = days.map((day) => {
+    const runs = onDay(day); total += runs.length
+    const wd = new Date(day).getDay()
+    const cls = ['cal-day', 'wk-col', day < today ? 'past' : '', day === cal.day ? 'on' : '', wd === 0 || wd === 6 ? 'weekend' : ''].filter(Boolean).join(' ')
+    return `<div class="${cls}" role="gridcell" tabindex="${day === cal.day ? 0 : -1}" aria-selected="${day === cal.day}" aria-label="${dayLabel(day)}${day === today ? ', today' : ''}${runs.length ? `, ${runs.length} scheduled` : ''}" data-day="${day}">${runs.map(weekCard).join('')}</div>`
+  }).join('')
+  const note = cal.note ? `<div class="cal-note${cal.note.wrong ? ' wrong' : ''}" role="status">${esc(cal.note.text)}${cal.note.undo ? ' <button type="button" data-cal-undo>Undo</button>' : ''}</div>` : '<div class="cal-note" role="status"></div>'
+  return `<div class="cal-head"><h2>${title}</h2><span class="spacer"></span><button type="button" class="icon-button" aria-label="Previous week" title="Previous week" data-cal-month="-1">${icon('left')}</button><button type="button" class="quiet" data-cal-today>Today</button><button type="button" class="icon-button" aria-label="Next week" title="Next week" data-cal-month="1">${icon('right')}</button></div>
+    <div class="cal wk" role="grid" aria-label="Scheduled runs this week">${heads}${cols}${total === 0 ? '<p class="wk-empty">Nothing scheduled this week. Double-click a day to plan a run.</p>' : ''}</div>
+    ${note}`
+}
+function calChip(one, attr) {
+  return `<button type="button" class="cal-chip${problem(one) ? ' problem' : ''}" style="--tint:${one.tint}" ${attr} aria-haspopup="menu" aria-expanded="${ui.menu?.mode !== 'day' && ui.menu?.id === one.id}" title="${esc(one.name)}, ${clock(one.at)} · ${esc(assignee(one))}${one.model ? ` · ${esc(one.model)}` : ''}"><i></i><span>${esc(one.name)}</span><time>${clock(one.at)}</time></button>`
+}
+function calendarDesk() {
+  const days = gridDays(cal.month)
+  const m = new Date(cal.month)
+  const today = dayStart(NOW)
+  const cells = days.map((day) => {
+    const runs = onDay(day)
+    const wd = new Date(day).getDay()
+    const cls = ['cal-day', day < today ? 'past' : '', day === today ? 'today' : '', day === cal.day ? 'on' : '', wd === 0 || wd === 6 ? 'weekend' : '', new Date(day).getMonth() !== m.getMonth() ? 'other' : ''].filter(Boolean).join(' ')
+    const fit = runs.length > 3 ? 2 : 3
+    const chips = runs.slice(0, fit).map((one) => calChip(one, `draggable="${problem(one) ? 'false' : 'true'}" data-chip="${one.id}"`)).join('')
+    const more = runs.length > fit ? `<button type="button" class="cal-more" data-day-pop="${day}" aria-haspopup="dialog">${runs.length - fit} more</button>` : ''
+    return `<div class="${cls}" role="gridcell" tabindex="${day === cal.day ? 0 : -1}" aria-selected="${day === cal.day}" aria-label="${dayLabel(day)}${day === today ? ', today' : ''}${runs.length ? `, ${runs.length} scheduled` : ''}" data-day="${day}"><span class="n">${new Date(day).getDate()}</span>${chips}${more}</div>`
+  }).join('')
+  const note = cal.note ? `<div class="cal-note${cal.note.wrong ? ' wrong' : ''}" role="status">${esc(cal.note.text)}${cal.note.undo ? ' <button type="button" data-cal-undo>Undo</button>' : ''}</div>` : '<div class="cal-note" role="status"></div>'
+  return `<div class="cal-head"><h2>${MONTH_NAMES[m.getMonth()]} <span>${m.getFullYear()}</span></h2><span class="spacer"></span><button type="button" class="icon-button" aria-label="Previous month" title="Previous month" data-cal-month="-1">${icon('left')}</button><button type="button" class="quiet" data-cal-today>Today</button><button type="button" class="icon-button" aria-label="Next month" title="Next month" data-cal-month="1">${icon('right')}</button></div>
+    <div class="cal" role="grid" aria-label="Scheduled runs by day">${WEEKDAYS_MON.map((w) => `<div class="cal-wd" role="columnheader">${w}</div>`).join('')}${cells}</div>
+    ${note}`
+}
+function newOn(day) {
+  let t = new Date(day); t.setHours(9, 0, 0, 0); t = t.getTime()
+  if (t <= NOW + 60e3) { const d = new Date(NOW); d.setMinutes(0, 0, 0); t = d.getTime() + H }
+  ui.menu = null
+  ui.editor = { kind: 'scheduled', when: 'once', at: t }
+}
+function dropOn(id, day) {
+  const one = find(id)
+  if (!one) return
+  const d = new Date(one.at)
+  const target = new Date(day); target.setHours(d.getHours(), d.getMinutes(), 0, 0)
+  const t = target.getTime()
+  if (dayStart(t) === dayStart(one.at)) return
+  if (t <= NOW + 60e3) { cal.note = { wrong: true, text: `${clock(t)} on ${dayLabel(t)} has passed. Drop it on a later day or use Postpone.` }; return }
+  const before = { at: one.at, from: one.from, failed: one.failed, missed: one.missed }
+  postpone(id, t)
+  cal.day = dayStart(t)
+  cal.note = { text: `Moved ${one.name} to ${dayLabel(t)}.`, undo: { id, before } }
+  clearTimeout(cal.timer); cal.timer = setTimeout(() => { if (cal.note?.undo) { cal.note = null; render() } }, 6000)
+}
+const kindOf = (one) => one.at !== undefined ? 'scheduled' : one.repeat !== undefined ? 'repeating' : 'byhand'
+const KINDS = [
+  ['repeating', 'Repeating', 'Prompts that run by themselves on a timetable while GeckIt is running.'],
+  ['scheduled', 'Scheduled', 'Prompts that run once at their time. Postpone one until you\'re ready for it.'],
+  ['byhand', 'Shortcuts', 'Saved prompts for a new task or Manager. Run them here or from the gecko in the menu bar.'],
+]
+const GLYPH = { repeating: 'refresh', scheduled: 'clock', byhand: 'bolt' }
+const needs = () => state.items.filter((one) => one.at !== undefined && (one.failed !== undefined || one.missed === true)).length
+const EMPTY = {
+  repeating: ['No repeating jobs', 'Run a prompt every day, weekday or week, like a morning plan.', 'New repeating'],
+  scheduled: ['Nothing scheduled', 'Plan a prompt to run once, later. You can postpone it until the time comes.', 'New scheduled'],
+  byhand: ['No shortcuts yet', 'Save a prompt you send often, like a code review.', 'New shortcut'],
+}
+const NEW_LABEL = { repeating: 'New repeating', scheduled: 'New scheduled', byhand: 'New shortcut' }
+const KIND_LABEL = { repeating: 'Repeating', scheduled: 'Scheduled', byhand: 'Shortcut' }
+const problem = (one) => one.failed !== undefined || one.missed === true
+function ofKind(kind) {
+  const list = state.items.filter((one) => kindOf(one) === kind)
+  if (kind === 'scheduled') return list.sort((a, b) => (problem(b) - problem(a)) || a.at - b.at)
+  if (kind === 'repeating') return list.sort((a, b) => (b.on - a.on) || a.next - b.next)
+  return list
+}
+function presets() {
+  const hour = new Date(NOW).getHours()
+  return [
+    ['In 1 hour', NOW + H, clock(NOW + H)],
+    ...(hour < 17 ? [['This evening, 18:00', at(0, 18), '']] : []),
+    ['Tomorrow, 09:00', at(1, 9), ''],
+    [new Date(NOW).getDay() === 1 ? 'Next Monday, 09:00' : 'Monday, 09:00', nextMonday(), `${new Date(nextMonday()).getDate()} ${MONTHS[new Date(nextMonday()).getMonth()]}`],
+  ]
+}
+
+const assignee = (one) => one.emp ?? one.who
+function whoMark(one, size = 28) {
+  const name = assignee(one)
+  const inner = one.emp ? one.emp.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() : icon(one.who === 'Manager' ? 'manager' : one.who === 'Codex' ? 'codex' : 'claude', Math.round(size / 2))
+  return `<span class="who-mark${one.emp ? ' person' : ''}" style="--size:${size}px" title="${esc(one.emp ? `${one.emp} · ${one.role} · runs on ${one.who}` : one.who === 'Manager' ? 'Manager' : `${one.who}, no employee`)}" aria-hidden="true">${inner}</span>`
+}
+const whoText = (one) => `<span class="who">${esc(assignee(one))}</span>`
+const modelText = (one) => one.model ? `<span>${esc(one.model)}</span>` : ''
+function scheduledLine(one) {
+  if (one.missed) return `<span class="trouble">Missed. GeckIt wasn't running.</span>`
+  if (one.failed) return `<span class="trouble">Didn't start: ${esc(one.failed)}.</span>`
+  return [whoText(one), `<span class="tinted" style="--tint:${one.tint}">${esc(one.folder)}</span>`, modelText(one), one.from ? `<span class="moved">Postponed from ${esc(when(one.from))}</span>` : ''].join('')
+}
+
+function row(one, kind) {
+  const tint = `--tint:${one.tint}`
+  const edit = `<button type="button" class="shortcut-text" data-edit="${one.id}" title="Edit">`
+  if (kind === 'scheduled') {
+    const bad = problem(one)
+    return `<div class="shortcut-row${ui.hit === one.id ? ' hit' : ''}" data-id="${one.id}">
+      ${whoMark(one)}
+      <span class="lead${bad ? ' problem' : ''}"><b>${esc(when(one.at).replace(/^(\w+ \d+ \w+) /, '$1, '))}</b><small>${bad ? '' : inHow(one.at)}</small></span>
+      ${edit}<span class="shortcut-title-line"><span class="shortcut-name">${esc(one.name)}</span></span>
+        <span class="shortcut-when">${scheduledLine(one)}</span>
+        <span class="shortcut-prompt">${esc(one.prompt)}</span></button>
+      <span class="shortcut-actions">
+        <button type="button" class="icon-button" aria-label="More for ${esc(one.name)}" title="More" data-more="${one.id}" aria-haspopup="menu">${icon('more')}</button>
+        <button type="button" class="quiet" data-postpone="${one.id}" aria-haspopup="menu">Postpone</button>
+        <button type="button" class="quiet shortcut-run" data-run="${one.id}">${icon('send', 11)}Run now</button>
+      </span></div>`
+  }
+  if (kind === 'repeating') {
+    return `<div class="shortcut-row" data-id="${one.id}">
+      ${whoMark(one)}
+      ${edit}<span class="shortcut-title-line"><span class="shortcut-name">${esc(one.name)}</span><span class="shortcut-chip${one.on ? '' : ' paused'}">${one.on ? esc(one.repeat) : 'Paused'}</span></span>
+        <span class="shortcut-when">${whoText(one)}<span class="tinted" style="${tint}">${esc(one.folder)}</span>${modelText(one)}${one.on ? `<span>Next ${esc(when(one.next))}</span>` : ''}</span>
+        <span class="shortcut-prompt">${esc(one.prompt)}</span></button>
+      <span class="shortcut-actions">
+        <button type="button" class="icon-button" aria-label="More for ${esc(one.name)}" title="More" data-more="${one.id}" aria-haspopup="menu">${icon('more')}</button>
+        <button type="button" class="quiet shortcut-run" data-run="${one.id}" title="Run now, the timetable stays as it is">${icon('send', 11)}Run now</button>
+        <button type="button" class="team-switch${one.on ? ' on' : ''}" role="switch" aria-checked="${one.on}" aria-label="Run ${esc(one.name)} on its timetable" data-toggle="${one.id}"></button>
+      </span></div>`
+  }
+  const note = ui.note?.id === one.id ? `<div class="row-note" role="status">Scheduled for ${esc(when(ui.note.at))}. <button type="button" data-show>Show</button></div>` : ''
+  return `<div class="shortcut-row" data-id="${one.id}">
+      ${whoMark(one)}
+      ${edit}<span class="shortcut-title-line"><span class="shortcut-name">${esc(one.name)}</span></span>
+        <span class="shortcut-when">${whoText(one)}<span class="tinted" style="${tint}">${esc(one.folder)}</span>${modelText(one)}</span>
+        <span class="shortcut-prompt">${esc(one.prompt)}</span></button>
+      <span class="shortcut-actions">
+        <button type="button" class="icon-button" aria-label="More for ${esc(one.name)}" title="More" data-more="${one.id}" aria-haspopup="menu">${icon('more')}</button>
+        <button type="button" class="quiet shortcut-run" data-run="${one.id}">${icon('send', 11)}Run</button>
+      </span></div>${note}`
+}
+
+function list(kind, rows) {
+  const undo = ui.undo && kindOf(ui.undo) === kind ? `<div class="undo-row" role="status">Deleted ${esc(ui.undo.name)}. <button type="button" data-undo>Undo</button></div>` : ''
+  if (rows.length === 0 && !undo) {
+    const [title, line, button] = EMPTY[kind]
+    return `<div class="shortcut-empty">${icon(kind === 'scheduled' ? 'clock' : kind === 'repeating' ? 'refresh' : 'bolt', 18)}<strong>${title}</strong><span>${line}</span><button type="button" class="primary" data-new="${kind}">${button}</button></div>`
+  }
+  return `<div class="shortcut-rows">${rows.map((one) => row(one, kind)).join('')}${undo}</div>`
+}
+
+function renderDesk() {
+  const q = ui.search.trim().toLowerCase()
+  const rows = ofKind(state.kind).filter((one) => q === '' || `${one.name} ${one.prompt} ${one.folder} ${assignee(one)}`.toLowerCase().includes(q))
+  const calendar = state.kind === 'scheduled' && view !== 'list' && q === ''
+  let body = calendar ? (view === 'week' ? calendarWeek() : calendarDesk()) : q !== '' && rows.length === 0 ? '<div class="shortcut-empty"><span>Nothing matches.</span></div>' : list(state.kind, rows)
+  if (!calendar && q === '' && state.kind === 'scheduled' && state.ran.length > 0) {
+    body += `<div class="shortcut-group ran">Ran today</div><div class="shortcut-rows ran">${state.ran.map((one) => `<div class="shortcut-row">
+      ${whoMark(one)}
+      <span class="shortcut-text"><span class="shortcut-name">${esc(one.name)}</span><span class="shortcut-when"><span>${esc(one.folder)}</span><span>${one.late ? `Ran ${clock(one.ranAt)}, ${one.late} min late` : `Ran ${clock(one.ranAt)}`}</span></span></span>
+      <span class="shortcut-actions"><button type="button" class="quiet" data-again="${one.id}">Schedule again</button><button type="button" class="quiet shortcut-run">Open${icon('right', 11)}</button></span></div>`).join('')}</div>`
+  }
+  const total = ofKind(state.kind).length
+  const [, title, about] = KINDS.find(([k]) => k === state.kind)
+  document.getElementById('kind-items').innerHTML = KINDS.map(([k, label]) => `<button type="button" class="item${state.kind === k ? ' on' : ''}" data-kind="${k}" aria-current="${state.kind === k ? 'page' : 'false'}">${label}${k === 'scheduled' && needs() > 0 ? `<span class="badge" aria-label="${needs()} need you">${needs()}</span>` : ''}</button>`).join('')
+  const switcher = state.kind === 'scheduled' ? `<div class="board-views" role="group" aria-label="View controls"><div class="views" role="radiogroup" aria-label="View">${[['week', 'Week', 'week', 'Week: each day\'s runs with full names, who runs them and the model'], ['month', 'Month', 'calendar', 'Month: the runs by day, drag one to another day to postpone it'], ['list', 'List', 'list', 'List: the runs one under another, soonest first']].map(([v, l, g, tip]) => `<button type="button" role="radio" aria-checked="${view === v}" class="${view === v ? 'on' : ''}" data-mode="${v}" title="${tip}">${icon(g)}<span>${l}</span></button>`).join('')}</div></div>` : ''
+  document.getElementById('desk').classList.toggle('cal-mode', calendar)
+  document.getElementById('desk').innerHTML = `<div class="board-head page-bar">
+      ${switcher}
+      ${total > 0 ? `<label class="employee-find shortcut-find">${icon('search')}<input type="search" aria-label="Search ${title.toLowerCase()}" placeholder="Search" value="${esc(ui.search)}" id="find"></label>` : ''}
+      <span class="spacer"></span>
+      <button type="button" class="primary shortcut-new" data-new="${state.kind}">${icon('plus', 12)}${NEW_LABEL[state.kind]}</button>
+    </div>
+    <div class="page${calendar ? ' cal-page' : ''}">
+    ${calendar ? '' : `<header class="shortcut-list-head"><h2>${title}${total ? `<span class="employee-count">${total}</span>` : ''}</h2></header>
+    <p class="shortcut-list-about">${about}</p>`}
+    ${body}
+  </div>${ui.menu ? menuHtml() : ''}${ui.editor ? editorHtml() : ''}`
+  if (ui.menu) placeMenu()
+  if (ui.focus) { document.querySelector(ui.focus)?.focus(); ui.focus = null }
+  bindCalendar()
+}
+
+function menuHtml() {
+  const { id, mode, error } = ui.menu
+  if (mode === 'day') {
+    const runs = onDay(ui.menu.day)
+    return `<div class="pop menu day-pop" role="dialog" id="pop" aria-label="${dayLabel(ui.menu.day)}"><div class="menu-head"><b>${dayLabel(ui.menu.day)}</b></div>${runs.map((one) => calChip(one, `data-pop-chip="${one.id}"`)).join('') || '<div class="none">Nothing scheduled.</div>'}${ui.menu.day >= dayStart(NOW) ? `<hr><button type="button" class="menu-item" data-new-on="${ui.menu.day}"><span class="label">New scheduled on this day</span></button>` : ''}</div>`
+  }
+  if (mode === 'chip') {
+    const one = find(id)
+    const head = `<div class="menu-head"><b>${esc(one.name)}</b>${one.missed ? '<small class="trouble">Missed. GeckIt wasn\'t running.</small>' : one.failed ? `<small class="trouble">Didn't start: ${esc(one.failed)}.</small>` : `<small>${esc(when(one.at))} · ${esc(assignee(one))} · ${esc(one.folder)}${one.model ? ` · ${esc(one.model)}` : ''}</small>`}</div><hr>`
+    const item = (attr, label, says = '') => `<button type="button" class="menu-item" role="menuitem" ${attr}><span class="label">${label}</span>${says ? `<span class="says">${says}</span>` : ''}</button>`
+    return `<div class="pop menu" role="menu" id="pop" aria-label="${esc(one.name)}">${head}${item(`data-edit="${id}"`, 'Edit')}${item(`data-run="${id}"`, 'Run now')}${item(`data-chip-postpone="${id}"`, 'Postpone...')}${item(`data-dup="${id}"`, 'Duplicate', `${MODKEY}D`)}<hr><button type="button" class="menu-item danger" role="menuitem" data-delete="${id}"><span class="label">Delete</span></button></div>`
+  }
+  if (mode === 'more') {
+    const one = find(id)
+    return `<div class="pop menu" role="menu" id="pop">${kindOf(one) === 'byhand' ? `<button type="button" class="menu-item" role="menuitem" data-later-open><span class="label">Run later...</span></button>` : ''}<button type="button" class="menu-item" role="menuitem" data-dup="${id}"><span class="label">Duplicate</span><span class="says">${MODKEY}D</span></button><hr><button type="button" class="menu-item danger" role="menuitem" data-delete="${id}"><span class="label">Delete</span></button></div>`
+  }
+  const title = mode === 'later' ? '<div class="menu-title">Run later</div>' : ''
+  return `<div class="pop menu" role="menu" id="pop">${title}${presets().map(([label, t, says]) => `<button type="button" class="menu-item" role="menuitem" data-pick="${t}"><span class="label">${label}</span><span class="says">${says}</span></button>`).join('')}<hr>
+    ${ui.menu.choose ? `<div class="choose"><div><input type="date" id="cd" value="${new Date(at(1, 9)).toISOString().slice(0, 10)}" aria-label="Date"><input type="time" id="ct" value="09:00" aria-label="Time"></div>${error ? `<span class="wrong" role="alert">Pick a time from now on.</span>` : ''}<button type="button" class="primary" data-choose-ok>${mode === 'later' ? 'Schedule' : 'Postpone'}</button></div>` : `<button type="button" class="menu-item" role="menuitem" data-choose>Choose...</button>`}</div>`
+}
+function placeMenu() {
+  const anchor = document.querySelector(menuAnchor())
+  const pop = document.getElementById('pop')
+  if (!anchor || !pop) return
+  const main = document.getElementById('desk')
+  const a = anchor.getBoundingClientRect(), m = main.getBoundingClientRect()
+  let top = a.bottom - m.top + main.scrollTop + 4
+  if (a.bottom + pop.offsetHeight + 8 > m.bottom) top = a.top - m.top + main.scrollTop - pop.offsetHeight - 4
+  pop.style.top = `${top}px`
+  pop.style.left = `${Math.max(8, ui.menu.anchor ? Math.min(a.left - m.left, m.width - pop.offsetWidth - 8) : a.right - m.left - pop.offsetWidth)}px`
+}
+const menuAnchor = () => ui.menu.anchor === 'day' ? `#desk .cal-day[data-day="${ui.menu.day}"]` : ui.menu.anchor === 'chip' ? `#desk [data-chip="${ui.menu.id}"]` : `[data-${ui.menu.mode === 'postpone' ? 'postpone' : 'more'}="${ui.menu.id}"]`
+
+function editorHtml() {
+  const d = ui.editor
+  const isOnce = d.when === 'once'
+  const date = new Date(d.at ?? at(1, 9))
+  const repeat = d.repeat ?? 'Every weekday at 09:00'
+  const [rule, rest = ''] = repeat.split(' at ')
+  const vary = d.vary !== false
+  const windowField = `<label class="check shortcut-on"><input type="checkbox" id="ev" ${vary ? 'checked' : ''}> Vary start time</label>`
+  const summary = d.when === 'byhand' ? 'Run it from Shortcuts, Team or the gecko in the menu bar.' : d.when === 'once' ? `Runs once on ${DAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]} ${vary ? 'around' : 'at'} ${clock(date)}.` : vary ? `${repeat.replace(' at ', ' around ')}.` : `${repeat}.`
+  const timing = isOnce
+    ? `<div class="once"><input type="date" aria-label="Date" id="ed" value="${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}"><input type="time" aria-label="Time" id="et" value="${clock(date)}"></div>${d.error ? '<span class="shortcut-next wrong" role="alert">Pick a time from now on.</span>' : ''}${windowField}`
+    : `<div class="shortcut-repeat"><button type="button" class="select">${esc(rule)}</button>${rest.startsWith(':') ? `<label class="shortcut-minute">at<input type="number" value="${rest.slice(1)}" aria-label="Minutes past the hour">past</label>` : `<input type="time" value="${rest || '09:00'}" aria-label="Time">`}</div>${windowField}<label class="check shortcut-on"><input type="checkbox" ${d.on === false ? '' : 'checked'}> Timetable on</label>`
+  return `<div class="editor-scrim" data-close-editor><div class="dialog shortcut-list" role="dialog" aria-label="Shortcut"><div class="shortcut-editor">
+    <header class="shortcut-editor-head"><span class="shortcut-kicker">${d.id ? KIND_LABEL[d.kind] : NEW_LABEL[d.kind]}</span><input class="shortcut-title" aria-label="Name" placeholder="Name it" value="${esc(d.name ?? '')}"></header>
+    <div class="shortcut-editor-body">
+      <div class="shortcut-editor-main"><label class="shortcut-label" for="ep">Prompt</label><textarea id="ep" placeholder="Look through the pull requests waiting for my review and tell me which ones need me first.">${esc(d.prompt ?? '')}</textarea></div>
+      <aside class="shortcut-editor-side" aria-label="Settings">
+        <div class="shortcut-setting"><span>Target</span><button type="button" class="select">${d.who === 'Manager' ? 'Manager' : 'New task'}</button></div>
+        ${d.who === 'Manager' ? '' : `<div class="shortcut-setting"><span>Employee</span><button type="button" class="select">${d.emp ? `<span class="employee-badge">${whoMark(d, 20)}<span class="employee-words"><span>${esc(d.emp)}</span></span></span>` : 'None'}</button></div>`}
+        <div class="shortcut-setting"><span>Folder</span><button type="button" class="select">${esc(d.folder ?? 'geckit')}</button></div>
+        <div class="shortcut-setting"><span>Assistant</span><button type="button" class="select">${esc(d.who === 'Manager' ? 'Claude' : d.who ?? 'Claude')}</button></div>
+        ${d.who === 'Manager' ? '' : `<div class="shortcut-setting"><span>Model</span><button type="button" class="select">${esc(d.model ?? 'Default')}</button></div>`}
+        ${d.when === 'byhand' ? '' : `<div class="shortcut-when-block"><span class="shortcut-label">${isOnce ? 'Runs once' : 'Repeats'}</span>${timing}</div>`}
+      </aside>
+    </div>
+    <p class="shortcut-summary">${summary}</p>
+    <div class="dialog-actions"><span class="spacer"></span><span class="together"><button type="button" class="quiet" data-cancel>Cancel</button><button type="button" class="primary" data-save>Save</button></span></div>
+  </div></div></div>`
+}
+
+/* The phone: same kinds, iOS grouped rows, swipe actions and an action sheet for Postpone. */
+function renderPhone() {
+  const pcal = state.kind === 'scheduled' && view !== 'list'
+  const rows = pcal ? onDay(cal.day) : ofKind(state.kind)
+  const title = KINDS.find(([k]) => k === state.kind)[1]
+  let body
+  if (pcal && rows.length === 0) {
+    body = `<div class="p-empty">Nothing scheduled on ${dayLabel(cal.day)}.${cal.day >= dayStart(NOW) ? `<br><button type="button" data-new-on="${cal.day}">New scheduled</button>` : ''}</div>`
+  } else if (rows.length === 0) {
+    const [title, line, button] = EMPTY[state.kind]
+    body = `<div class="p-empty"><strong>${title}</strong>${line}<br><button type="button" data-new="${state.kind}">${button}</button></div>`
+  } else {
+    body = `<div class="p-group">${rows.map((one) => {
+      const bad = problem(one)
+      const acts = state.kind === 'scheduled' ? `<button type="button" class="later" data-psheet="${one.id}">Postpone</button><button type="button" class="del" data-delete="${one.id}">Delete</button>` : state.kind === 'repeating' ? `<button type="button" class="pause" data-toggle="${one.id}">${one.on ? 'Pause' : 'Resume'}</button>` : `<button type="button" class="later" data-plater="${one.id}">Run later</button>`
+      const width = state.kind === 'scheduled' ? 168 : 84
+      const line = state.kind === 'scheduled' ? (one.missed ? `<span class="trouble">Missed. GeckIt wasn't running.</span>` : one.failed ? `<span class="trouble">Didn't start: ${esc(one.failed)}</span>` : `<span>${esc(assignee(one))} · ${esc(one.folder)}${one.from ? ' · Postponed from ' + esc(when(one.from)) : ' · ' + inHow(one.at)}</span>`)
+        : state.kind === 'repeating' ? `<span>${esc(assignee(one))} · ${one.on ? esc(one.repeat) + ' · Next ' + esc(when(one.next)) : 'Paused'}</span>` : `<span>${esc(assignee(one))} · ${esc(one.folder)}</span>`
+      const trail = state.kind === 'scheduled' ? `<span class="p-when"><b>${clock(one.at)}</b><small>${esc(when(one.at).replace(/ \d\d:\d\d$/, ''))}</small></span>` : state.kind === 'repeating' ? `<button type="button" class="team-switch${one.on ? ' on' : ''}" role="switch" aria-checked="${one.on}" aria-label="Run ${esc(one.name)} on its timetable" data-toggle="${one.id}"></button>` : `<button type="button" class="p-run" data-run="${one.id}">Run</button>`
+      return `<div class="p-swipe"><div class="p-acts" style="width:${width}px">${acts}</div><div class="p-row" data-swipe="${width}" data-id="${one.id}">
+        ${whoMark(one, 30)}
+        <span class="p-txt"><b>${esc(one.name)}</b>${line}</span>${trail}</div></div>`
+    }).join('')}</div>`
+    if (pcal) body = `<div class="p-head">${dayLabel(cal.day)}</div>${body}`
+    else if (state.kind === 'scheduled') body = `<div class="p-head">Next</div>${body}${state.ran.length ? `<div class="p-head">Ran today</div><div class="p-group">${state.ran.map((one) => `<div class="p-swipe"><div class="p-row">${whoMark(one, 30)}<span class="p-txt"><b>${esc(one.name)}</b><span>${one.late ? `Ran ${clock(one.ranAt)}, ${one.late} min late` : `Ran ${clock(one.ranAt)}`}</span></span><button type="button" class="p-run">Open</button></div></div>`).join('')}</div>` : ''}`
+  }
+  const named = ui.sheet ? esc(state.items.find((one) => one.id === ui.sheet.id)?.name ?? '') : ''
+  const sheetBody = !ui.sheet ? '' : ui.sheet.mode === 'more'
+    ? `<p>${named}</p>${kindOf(find(ui.sheet.id)) === 'byhand' ? `<button type="button" data-plater="${ui.sheet.id}">Run later...</button>` : ''}<button type="button" data-dup="${ui.sheet.id}">Duplicate</button><button type="button" class="danger" data-delete="${ui.sheet.id}">Delete</button>`
+    : `<p>${ui.sheet.mode === 'later' ? 'Run later' : 'Postpone'} "${named}"</p>${presets().map(([label, t]) => `<button type="button" data-ppick="${t}">${label}</button>`).join('')}<button type="button" data-sheet-close>Choose...</button>`
+  const sheet = ui.sheet ? `<div class="p-sheet-scrim" data-sheet-close><div class="p-sheet">${sheetBody}</div><div class="p-sheet cancel"><button type="button" data-sheet-close>Cancel</button></div></div>` : ''
+  document.getElementById('phone').innerHTML = `<div class="p-top"><button type="button" data-drawer>Menu${needs() > 0 ? ` <span class="badge" aria-label="${needs()} need you">${needs()}</span>` : ''}</button><button type="button" aria-label="${NEW_LABEL[state.kind]}" data-new="${state.kind}">${icon('plus', 20)}</button></div>
+    <h1 class="p-title">${title}</h1>
+    ${state.kind === 'scheduled' ? `<div class="phone-seg p-views" style="--count:2;--at:${view === 'list' ? 1 : 0}" role="radiogroup" aria-label="View"><span class="phone-seg-thumb"></span>${[['calendar', 'Calendar'], ['list', 'List']].map(([v, l]) => `<button type="button" role="radio" aria-checked="${view === v}" class="${view === v ? 'on' : ''}" data-mode="${v}">${l}</button>`).join('')}</div>` : ''}
+    ${pcal ? phoneCalendar() : ''}
+    ${body}`
+  document.querySelector('.phone').querySelector('.p-sheet-scrim')?.remove()
+  document.querySelector('.phone').querySelector('.p-drawer')?.remove()
+  if (ui.drawer) document.querySelector('.phone').insertAdjacentHTML('beforeend', `<div class="p-drawer" data-drawer-close><nav aria-label="Menu"><span class="item">Tasks</span><span class="item">Manager</span><span class="item">Quick chats</span><span class="group">Prompts</span>${KINDS.map(([k, label]) => `<button type="button" class="${state.kind === k ? 'on' : ''}" data-kind="${k}">${label}${k === 'scheduled' && needs() > 0 ? `<span class="badge">${needs()}</span>` : ''}</button>`).join('')}<span class="group">Workspace</span><span class="item">Team</span><span class="item">Checklists</span><span class="item">Browsers</span><span class="item">Secrets</span></nav></div>`)
+  if (sheet) document.querySelector('.phone').insertAdjacentHTML('beforeend', sheet)
+  bindSwipes()
+}
+
+function bindSwipes() {
+  document.querySelectorAll('#phone .p-row[data-swipe]').forEach((rowEl) => {
+    let x0 = null, dx = 0
+    const width = Number(rowEl.dataset.swipe)
+    let hold = null
+    const longPress = () => { ui.sheet = { id: rowEl.dataset.id, mode: 'more' }; render() }
+    rowEl.addEventListener('contextmenu', (e) => { e.preventDefault(); longPress() })
+    rowEl.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; hold = setTimeout(() => { x0 = null; longPress() }, 500); x0 = e.clientX; dx = 0; rowEl.style.transition = 'none'; rowEl.setPointerCapture(e.pointerId) })
+    rowEl.addEventListener('pointermove', (e) => { if (x0 === null) return; if (Math.abs(e.clientX - x0) > 6) clearTimeout(hold); dx = Math.min(0, Math.max(-width - 20, e.clientX - x0 + (rowEl.classList.contains('open') ? -width : 0))); rowEl.style.transform = `translateX(${dx}px)` })
+    rowEl.addEventListener('pointerup', () => { clearTimeout(hold); if (x0 === null) return; x0 = null; rowEl.style.transition = ''; const open = dx < -width / 2; rowEl.classList.toggle('open', open); rowEl.style.transform = open ? `translateX(${-width}px)` : '' })
+  })
+}
+
+function phoneCalendar() {
+  const m = new Date(cal.month)
+  const today = dayStart(NOW)
+  const cells = gridDays(cal.month).map((day) => {
+    const runs = onDay(day)
+    const dot = runs.length === 0 ? 'none' : runs.some(problem) ? 'problem' : ''
+    const cls = [new Date(day).getMonth() !== m.getMonth() ? 'other' : '', day === today ? 'today' : '', day === cal.day ? 'on' : ''].filter(Boolean).join(' ')
+    return `<button type="button" class="${cls}" data-day="${day}" aria-label="${dayLabel(day)}${runs.length ? `, ${runs.length} scheduled` : ''}" aria-pressed="${day === cal.day}"><span>${new Date(day).getDate()}</span><i class="${dot}"></i></button>`
+  }).join('')
+  return `<div class="p-cal"><div class="p-cal-head"><button type="button" aria-label="Previous month" data-cal-month="-1">${icon('left', 18)}</button><b>${MONTH_NAMES[m.getMonth()]} ${m.getFullYear()}</b><button type="button" aria-label="Next month" data-cal-month="1">${icon('right', 18)}</button></div><div class="p-cal-grid">${WEEKDAYS_MON.map((w) => `<span class="wd">${w.slice(0, 1)}</span>`).join('')}${cells}</div></div>`
+}
+function bindCalendar() {
+  const grid = document.querySelector('#desk .cal')
+  if (!grid) return
+  grid.addEventListener('dragstart', (e) => { const chip = e.target.closest('[data-chip]'); if (!chip) return; cal.drag = chip.dataset.chip; chip.classList.add('dragging'); e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', cal.drag) })
+  grid.addEventListener('dragend', () => { cal.drag = null; grid.querySelectorAll('.drop, .dragging').forEach((el) => el.classList.remove('drop', 'dragging')) })
+  grid.addEventListener('dragover', (e) => { const cell = e.target.closest('.cal-day'); if (!cell || !cal.drag || Number(cell.dataset.day) < dayStart(NOW)) return; e.preventDefault(); e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move'; grid.querySelectorAll('.drop').forEach((el) => el !== cell && el.classList.remove('drop')); cell.classList.add('drop') })
+  grid.addEventListener('drop', (e) => { const cell = e.target.closest('.cal-day'); if (!cell || !cal.drag) return; e.preventDefault(); const id = cal.drag; cal.drag = null; if (e.altKey) copyOn(id, Number(cell.dataset.day)); else dropOn(id, Number(cell.dataset.day)); render() })
+  grid.addEventListener('keydown', (e) => {
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key]
+    if (step !== undefined) { e.preventDefault(); const d = new Date(cal.day); d.setDate(d.getDate() + step); cal.day = d.getTime(); cal.month = monthOf(cal.day); ui.focus = `#desk .cal-day[data-day="${cal.day}"]`; render() }
+    else if ((e.key === 'PageUp' || e.key === 'PageDown') && view === 'week') { e.preventDefault(); const d = new Date(cal.day); d.setDate(d.getDate() + (e.key === 'PageUp' ? -7 : 7)); cal.day = d.getTime(); cal.month = monthOf(cal.day); ui.focus = `#desk .cal-day[data-day="${cal.day}"]`; render() }
+    else if (e.key === 'PageUp' || e.key === 'PageDown') { e.preventDefault(); const d = new Date(cal.month); d.setMonth(d.getMonth() + (e.key === 'PageUp' ? -1 : 1)); cal.month = d.getTime(); cal.day = cal.month; ui.focus = `#desk .cal-day[data-day="${cal.day}"]`; render() }
+    else if (e.key === 'Enter' && e.target.classList.contains('cal-day')) { e.preventDefault(); ui.menu = { mode: 'day', anchor: 'day', day: cal.day }; render(); document.querySelector('#pop button')?.focus() }
+  })
+}
+function render() { renderDesk(); renderPhone() }
+const find = (id) => state.items.find((one) => one.id === id)
+
+function postpone(id, t) {
+  const one = find(id)
+  if (!one) return
+  if (!one.failed && !one.missed) one.from = one.from ?? one.at
+  delete one.failed; delete one.missed
+  one.at = t
+  ui.menu = null; ui.sheet = null; ui.focus = `[data-postpone="${id}"]`
+}
+function runLater(id, t) {
+  const src = find(id)
+  const copy = { ...src, id: `s${Date.now()}`, at: t }
+  state.items.push(copy)
+  ui.note = { id, at: t }; ui.menu = null; ui.sheet = null; ui.focus = `[data-more="${id}"]`
+  clearTimeout(ui.noteTimer); ui.noteTimer = setTimeout(() => { ui.note = null; render() }, 4000)
+}
+
+document.addEventListener('click', (e) => {
+  const cell = e.target.closest('#desk .cal-day')
+  if (cell && !e.target.closest('button')) {
+    const day = Number(cell.dataset.day)
+    if (e.detail >= 2) { if (day >= dayStart(NOW)) { newOn(day); render() } return }
+    cal.day = day
+    if (ui.menu || cal.note?.wrong) { ui.menu = null; if (cal.note?.wrong) cal.note = null; ui.focus = `#desk .cal-day[data-day="${day}"]`; render(); return }
+    document.querySelectorAll('#desk .cal-day').forEach((c) => { const on = Number(c.dataset.day) === day; c.classList.toggle('on', on); c.tabIndex = on ? 0 : -1; c.setAttribute('aria-selected', String(on)) })
+    cell.focus(); renderPhone(); return
+  }
+  const t = e.target.closest('button, [data-close-editor], [data-sheet-close], [data-drawer-close]')
+  if (!t) { if (ui.menu && !e.target.closest('#pop')) { ui.menu = null; render() } return }
+  const d = t.dataset
+  if (t.closest('.proto-bar')) {
+    if (d.view) { document.querySelector('.stage').dataset.view = d.view; t.parentElement.querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b === t); b.setAttribute('aria-checked', b === t) }) }
+    return
+  }
+  if (d.closeEditor !== undefined && e.target !== t) return
+  if (d.sheetClose !== undefined && e.target !== t && !t.matches('button')) return
+  if (d.mode) { setView(d.mode) }
+  else if (d.calMonth && view === 'week') { const w = new Date(cal.day); w.setDate(w.getDate() + 7 * Number(d.calMonth)); cal.day = w.getTime(); cal.month = monthOf(cal.day); cal.note = null }
+  else if (d.calMonth) { const m = new Date(cal.month); m.setMonth(m.getMonth() + Number(d.calMonth)); cal.month = m.getTime(); cal.note = null }
+  else if (d.calToday !== undefined) { cal.month = monthOf(NOW); cal.day = dayStart(NOW); cal.note = null }
+  else if (d.calUndo !== undefined) { const { id, before } = cal.note.undo; const one = find(id); Object.assign(one, before); for (const k of ['from', 'failed', 'missed']) if (before[k] === undefined) delete one[k]; cal.day = dayStart(one.at); cal.note = null }
+  else if (d.chip) { const one = find(d.chip); cal.day = dayStart(one.at); ui.menu = ui.menu?.id === one.id && ui.menu.anchor === 'chip' ? null : { id: one.id, mode: 'chip', anchor: 'chip' } }
+  else if (d.chipPostpone) ui.menu = { ...ui.menu, mode: 'postpone' }
+  else if (d.popChip) ui.menu = { id: d.popChip, mode: 'chip', anchor: 'day', day: ui.menu.day }
+  else if (d.dayPop) { cal.day = Number(d.dayPop); ui.menu = { mode: 'day', anchor: 'day', day: cal.day } }
+  else if (d.day && !t.closest('.cal-day')) { cal.day = Number(d.day) }
+  else if (d.newOn) newOn(Number(d.newOn))
+  else if (d.kind) { state.kind = d.kind; ui.search = ''; ui.menu = null; ui.drawer = false }
+  else if (d.drawer !== undefined) ui.drawer = true
+  else if (d.drawerClose !== undefined) { if (e.target !== t) return; ui.drawer = false }
+  else if (d.toggle) { const one = find(d.toggle); one.on = !one.on; ui.focus = t.closest('#desk') ? `#desk [data-toggle="${one.id}"]` : null }
+  else if (d.postpone) ui.menu = ui.menu?.id === d.postpone ? null : { id: d.postpone, mode: 'postpone' }
+  else if (d.more) ui.menu = ui.menu?.id === d.more ? null : { id: d.more, mode: 'more' }
+  else if (d.laterOpen !== undefined) ui.menu = { id: ui.menu.id, mode: 'later' }
+  else if (d.dup) duplicate(d.dup)
+  else if (d.pick) { const at_ = Number(d.pick); ui.menu.mode === 'later' ? runLater(ui.menu.id, at_) : postpone(ui.menu.id, at_) }
+  else if (d.choose !== undefined) { ui.menu.choose = true }
+  else if (d.chooseOk !== undefined) {
+    const v = new Date(`${document.getElementById('cd').value}T${document.getElementById('ct').value}`).getTime()
+    if (!(v > NOW + 60e3)) { ui.menu.error = true } else { ui.menu.mode === 'later' ? runLater(ui.menu.id, v) : postpone(ui.menu.id, v) }
+  }
+  else if (d.delete) { ui.menu = null; ui.sheet = null; const one = find(d.delete); state.items = state.items.filter((x) => x !== one); ui.undo = one; clearTimeout(ui.undoTimer); ui.undoTimer = setTimeout(() => { ui.undo = null; render() }, 6000); ui.focus = '[data-undo]' }
+  else if (d.undo !== undefined) { const one = ui.undo; if (one.at < NOW && !one.failed) one.missed = true; state.items.push(one); ui.undo = null }
+  else if (d.run) { ui.menu = null; const one = find(d.run); if (kindOf(one) === 'scheduled') { state.items = state.items.filter((x) => x !== one); state.ran.unshift({ ...one, ranAt: NOW, late: 0 }) } t.textContent = 'Starting...'; setTimeout(render, 700); return }
+  else if (d.show !== undefined) { state.kind = 'scheduled'; ui.note = null }
+  else if (d.again) { const one = state.ran.find((x) => x.id === d.again); ui.editor = { kind: 'scheduled', when: 'once', name: one.name, folder: one.folder, prompt: '', at: one.ranAt + D } }
+  else if (d.new) { ui.editor = { kind: d.new, when: d.new === 'scheduled' ? 'once' : d.new, at: at(1, 9) } }
+  else if (d.edit) { ui.menu = null; const one = find(d.edit); ui.editor = { ...one, kind: kindOf(one), when: kindOf(one) === 'scheduled' ? 'once' : kindOf(one) } }
+  else if (d.cancel !== undefined || d.closeEditor !== undefined) { ui.editor = null }
+  else if (d.save !== undefined) { saveEditor() }
+  else if (d.psheet) ui.sheet = { id: d.psheet, mode: 'postpone' }
+  else if (d.plater) ui.sheet = { id: d.plater, mode: 'later' }
+  else if (d.ppick) { ui.sheet.mode === 'later' ? runLater(ui.sheet.id, Number(d.ppick)) : postpone(ui.sheet.id, Number(d.ppick)) }
+  else if (d.sheetClose !== undefined) ui.sheet = null
+  else return
+  render()
+})
+
+function duplicate(id) {
+  const one = find(id)
+  const kind = kindOf(one)
+  const { id: _id, from: _from, failed: _failed, missed: _missed, ...rest } = one
+  ui.menu = null; ui.sheet = null
+  ui.editor = { ...rest, kind, when: kind === 'scheduled' ? 'once' : kind, name: `${one.name} copy`, at: kind === 'scheduled' ? (one.at > NOW + 60e3 ? one.at : one.at + Math.ceil((NOW - one.at) / D) * D) : undefined }
+}
+function copyOn(id, day) {
+  const one = find(id)
+  const t = new Date(one.at), d = new Date(day)
+  d.setHours(t.getHours(), t.getMinutes(), 0, 0)
+  duplicate(id)
+  ui.editor.at = d.getTime()
+}
+function readEditor() {
+  const ed = ui.editor
+  const box = document.querySelector('.editor-scrim')
+  if (!box) return
+  ed.name = box.querySelector('.shortcut-title').value
+  ed.prompt = box.querySelector('textarea').value
+  const date = box.querySelector('#ed'), time = box.querySelector('#et')
+  if (date && time) ed.at = new Date(`${date.value}T${time.value}`).getTime()
+  const v = box.querySelector('#ev')
+  if (v) ed.vary = v.checked
+}
+function saveEditor() {
+  readEditor()
+  const ed = ui.editor
+  if (ed.when === 'once' && !(ed.at > NOW + 60e3)) { ed.error = true; return }
+  const base = ed.id ? find(ed.id) : { id: `n${Date.now()}`, folder: ed.folder ?? 'geckit', tint: ed.tint ?? '#1f8031', who: ed.who ?? 'Claude', repeat: ed.repeat, next: ed.next, on: ed.on }
+  const one = { ...base, name: ed.name || 'Untitled', prompt: ed.prompt || '', vary: ed.vary !== false }
+  delete one.at; delete one.repeat; delete one.from; delete one.failed; delete one.missed
+  if (ed.when === 'once') one.at = ed.at
+  if (ed.when === 'repeating') { one.repeat = base.repeat ?? 'Every weekday at 09:00'; one.next = base.next ?? at(1, 9); one.on = base.on ?? true }
+  state.items = state.items.filter((x) => x.id !== one.id).concat(one)
+  state.kind = kindOf(one)
+  ui.editor = null; ui.focus = `[data-edit="${one.id}"]`
+}
+
+document.getElementById('desk').addEventListener('contextmenu', (e) => {
+  const chip = e.target.closest('[data-chip]')
+  if (chip && !ui.editor) { e.preventDefault(); cal.day = dayStart(find(chip.dataset.chip).at); ui.menu = { id: chip.dataset.chip, mode: 'chip', anchor: 'chip' }; render(); return }
+  const rowEl = e.target.closest('.shortcut-row[data-id]')
+  if (!rowEl || ui.editor) return
+  e.preventDefault(); ui.menu = { id: rowEl.dataset.id, mode: 'more' }; render()
+})
+document.addEventListener('change', (e) => { if (e.target.id === 'ev') { readEditor(); render(); document.getElementById('ev')?.focus() } })
+document.addEventListener('input', (e) => { if (e.target.id === 'find') { ui.search = e.target.value; renderDesk(); const f = document.getElementById('find'); f.focus(); f.setSelectionRange(f.value.length, f.value.length) } })
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && !ui.editor) {
+    const id = document.activeElement?.closest?.('#desk .shortcut-row[data-id]')?.dataset.id ?? document.activeElement?.closest?.('#desk [data-chip]')?.dataset.chip ?? ui.menu?.id
+    if (id && find(id)) { e.preventDefault(); duplicate(id); render() }
+    return
+  }
+  if (e.key !== 'Escape') return
+  if (ui.menu) { const back = menuAnchor(); ui.menu = null; ui.focus = back }
+  else if (ui.editor) ui.editor = null
+  else if (ui.sheet) ui.sheet = null
+  else if (ui.drawer) ui.drawer = false
+  else return
+  render()
+})
+document.getElementById('scenario').addEventListener('change', (e) => { state = SCENARIOS[e.target.value](); ui = { search: '', menu: null, note: null, undo: null, editor: null, sheet: null }; render() })
+const themeButton = document.getElementById('theme')
+const params = new URLSearchParams(location.search)
+function setTheme(dark) { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; themeButton.textContent = dark ? 'Light' : 'Dark' }
+themeButton.addEventListener('click', () => setTheme(document.documentElement.dataset.theme !== 'dark'))
+setTheme(params.get('theme') === 'dark')
+if (params.get('view')) document.querySelector(`.proto-bar [data-view="${params.get('view')}"]`)?.click()
+if (params.get('data')) { document.getElementById('scenario').value = params.get('data'); state = SCENARIOS[params.get('data')]() }
+render()
+</script>
+</body>
+</html>

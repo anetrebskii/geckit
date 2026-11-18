@@ -59,7 +59,7 @@ it('persists the chosen CRON window and progress through settings reloads and pr
   try {
     const store = await import('../src/main/store')
     const main = await import('../src/main/shortcuts')
-    const draft: ShortcutDraft = { name: 'Window review', root: '/fixture', prompt: 'Review pull requests', mode: 'auto', on: true, cron: '0 9 * * *', startWindowMinutes: 60 }
+    const draft: ShortcutDraft = { name: 'Window review', root: '/fixture', prompt: 'Review pull requests', mode: 'auto', on: true, cron: '0 9 * * *', vary: true }
     const saved = await checkedSave({ save: async (next) => main.saveShortcut(next) }, store.getSettings(), draft)
     const chosen = nextTimed(saved, saved.since)
     const disk = readPreferences(state.folder, false) as Settings
@@ -69,7 +69,8 @@ it('persists the chosen CRON window and progress through settings reloads and pr
     const falseSupport: Partial<Settings> = {}
     Object.defineProperty(falseSupport, 'cronStartWindowVersion', { value: 0, enumerable: true })
     expect(store.setSettings(falseSupport).cronStartWindowVersion).toBe(1)
-    expect(() => store.setSettings({ shortcuts: [{ ...saved, startWindowMinutes: 0 }] })).toThrow('whole number')
+    expect(store.getSettings().promptKindsVersion).toBe(1)
+    expect(() => store.setSettings({ shortcuts: [{ ...saved, at: Date.now() + 3_600_000 }] })).toThrow('Choose one timetable.')
     expect(store.getSettings().shortcuts).toEqual([saved])
 
     vi.resetModules()
@@ -79,12 +80,13 @@ it('persists the chosen CRON window and progress through settings reloads and pr
     expect(reloaded.getSettings().cronStartWindowVersion).toBe(1)
     expect(restored === undefined ? undefined : nextTimed(restored, restored.since)).toBe(chosen)
 
-    writeFileSync(path, JSON.stringify({ ...disk, shortcuts: [{ ...saved, startWindowMinutes: null }, saved] }))
+    const { vary: _vary, ...exact } = saved
+    writeFileSync(path, JSON.stringify({ ...disk, shortcuts: [{ ...exact, id: 'window', startWindowMinutes: 45 }, { ...exact, id: 'none', startWindowMinutes: null }] }))
     vi.resetModules()
-    const malformed = await import('../src/main/store')
-    const invalid = malformed.getSettings().shortcuts[0]
-    expect(invalid === undefined ? true : isDue(invalid, (chosen ?? 0) + 86_400_000)).toBe(false)
-    expect(malformed.getSettings().shortcuts[1]).toEqual(saved)
+    const migrated = await import('../src/main/store')
+    expect(migrated.getSettings().shortcuts).toEqual([{ ...exact, id: 'window', vary: true }, { ...exact, id: 'none' }])
+    expect((readPreferences(state.folder, false) as Settings).shortcuts.some((one) => Object.hasOwn(one, 'startWindowMinutes'))).toBe(false)
+    expect(isDue(migrated.getSettings().shortcuts[1] ?? saved, (chosen ?? 0) + 86_400_000)).toBe(true)
   } finally { rmSync(state.folder, { recursive: true, force: true }) }
 })
 
@@ -100,14 +102,15 @@ it('preserves a Manager target and explicit paused timetable through disk reload
     const manual = await checkedSave({ save: async (draft) => main.saveShortcut(draft) }, store.getSettings(), { name: 'Recordings', root: '/fixture', prompt: 'Check recordings and create tasks', mode: 'auto', on: true, target: 'manager' })
     expect(manual.cron).toBeUndefined()
     expect(manual.recurrence).toBeUndefined()
-    const paused = await checkedSave({ save: async (draft) => main.saveShortcut(draft) }, store.getSettings(), { ...manual, cron: '0 10 * * *', on: false })
+    const { id: _id, since: _since, ...fresh } = manual
+    const paused = await checkedSave({ save: async (draft) => main.saveShortcut(draft) }, store.getSettings(), { ...fresh, cron: '0 10 * * *', on: false })
     expect(paused).toMatchObject({ target: 'manager', cron: '0 10 * * *', on: false })
     const disk = readPreferences(state.folder, false) as Settings
-    expect(disk.shortcuts).toEqual([paused])
+    expect(disk.shortcuts).toEqual([manual, paused])
     expect(disk.managerShortcutsVersion).toBeUndefined()
     vi.resetModules()
     const restored = await import('../src/main/store')
-    expect(restored.getSettings().shortcuts).toEqual([paused])
+    expect(restored.getSettings().shortcuts).toEqual([manual, paused])
     expect(restored.getSettings().managerShortcutsVersion).toBe(1)
   } finally { rmSync(state.folder, { recursive: true, force: true }) }
 })
@@ -119,7 +122,7 @@ it('persists stable destinations without retiming an existing random start windo
   try {
     const store = await import('../src/main/store')
     const main = await import('../src/main/shortcuts')
-    const legacy = main.saveShortcut({ name: 'Result', root: '/fixture', prompt: 'Inspect', mode: 'auto', on: true, cron: '0 9 * * *', startWindowMinutes: 60 })
+    const legacy = main.saveShortcut({ name: 'Result', root: '/fixture', prompt: 'Inspect', mode: 'auto', on: true, cron: '0 9 * * *', vary: true })
     const destination: NonNullable<ShortcutDraft['destination']> = { channel: 'channel:discord', destination: '123', label: '#general' }
     const saved = main.saveShortcut({ ...legacy, destination })
     expect(saved.since).toBe(legacy.since)

@@ -50,7 +50,7 @@ export async function runDropRegression(): Promise<readonly DropCheck[]> {
   const image = await imageFile()
   const backgroundPictures = (): number => document.querySelectorAll('.composer .pending-one img').length
   const picturesBefore = backgroundPictures()
-  for (const kind of ['New task', 'Ask a question']) {
+  for (const kind of ['New task', 'New quick chat']) {
     if (kind === 'New task') button('New task').click()
     else window.dispatchEvent(new KeyboardEvent('keydown', { key: 'N', metaKey: true, shiftKey: true, bubbles: true }))
     await settled()

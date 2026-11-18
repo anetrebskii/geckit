@@ -68,52 +68,6 @@ function onDay(table: Timetable, at: Date, utc = false): boolean {
 /** Far enough for the 29th of February. */
 const LOOK_AHEAD = 5 * 366 * 24 * 60 * 60_000
 
-export function startWindowError(shortcut: Pick<Shortcut, 'cron' | 'recurrence' | 'startWindowMinutes'>): string | undefined {
-  const minutes = shortcut.startWindowMinutes
-  if (minutes === undefined) return undefined
-  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) return 'Enter a whole number from 1 to 1,440.'
-  if (typeof shortcut.cron !== 'string' || shortcut.recurrence !== undefined || !isCron(shortcut.cron)) return 'Choose a CRON timetable for a start window.'
-  return undefined
-}
-
-function selectedStart(shortcut: Pick<Shortcut, 'id' | 'startWindowMinutes'>, anchor: number, following: number | undefined): number {
-  let hash = 2166136261
-  for (const character of `${shortcut.id}:${String(anchor)}`) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
-  hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b)
-  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35)
-  hash = (hash ^ (hash >>> 16)) >>> 0
-  const minutes = Math.min(shortcut.startWindowMinutes ?? 0, following === undefined ? 1440 : Math.max(0, Math.ceil((following - anchor) / 60_000) - 1))
-  return anchor + Math.floor((hash / 4294967296) * (minutes + 1)) * 60_000
-}
-
-function pendingAnchor(cron: string, after: number, since: number, minutes: number, zone?: string): number | undefined {
-  const table = timetable(cron)
-  if (table === undefined) return undefined
-  const earliest = Math.max(since + 1, after - minutes * 60_000)
-  if (earliest > after) return undefined
-  if (zone !== undefined && zone !== localCalendarZone()) {
-    const nowWall = civil(after, zone).getTime()
-    const earliestWall = civil(earliest, zone).getTime()
-    const wall = new Date(Math.max(nowWall, after + earliestWall - earliest))
-    wall.setUTCSeconds(0, 0)
-    const end = Math.min(nowWall, earliestWall) - 60_000
-    for (; wall.getTime() >= end; wall.setUTCMinutes(wall.getUTCMinutes() - 1)) {
-      if (!table.months.has(wall.getUTCMonth() + 1) || !onDay(table, wall, true) || !table.hours.has(wall.getUTCHours()) || !table.minutes.has(wall.getUTCMinutes())) continue
-      const candidate = atTime(wall, `${String(wall.getUTCHours()).padStart(2, '0')}:${String(wall.getUTCMinutes()).padStart(2, '0')}`, zone)
-      if (candidate !== undefined && candidate <= after) return candidate >= earliest ? candidate : undefined
-    }
-    return undefined
-  }
-  // Only the latest raw occurrence can still be pending because windows end before the next one.
-  for (let time = Math.floor(after / 60_000) * 60_000; time >= earliest; time -= 60_000) {
-    const at = new Date(time)
-    if (!table.months.has(at.getMonth() + 1) || !onDay(table, at) || !table.hours.has(at.getHours()) || !table.minutes.has(at.getMinutes())) continue
-    at.setHours(at.getHours(), at.getMinutes(), 0, 0)
-    if (at.getTime() === time) return time
-  }
-  return undefined
-}
-
 /** The first minute after `after` the timetable names, in local time, or nothing for a line cron would not take or a date that never comes. */
 export function nextRun(cron: string, after: number, zone?: string): number | undefined {
   const table = timetable(cron)
@@ -163,32 +117,88 @@ export function nextRun(cron: string, after: number, zone?: string): number | un
   return undefined
 }
 
-/** When a shortcut next runs by itself, or nothing for one run by hand or paused. */
-export function nextTimed(shortcut: Pick<Shortcut, 'id' | 'on' | 'since' | 'cron' | 'recurrence' | 'startWindowMinutes'>, after: number, zone?: string): number | undefined {
-  if (!shortcut.on || startWindowError(shortcut) !== undefined) return undefined
-  if (shortcut.recurrence !== undefined) return shortcut.cron === undefined ? nextRecurrence(shortcut.recurrence, Math.max(shortcut.since, after), zone) : undefined
-  if (shortcut.cron === undefined) return undefined
-  if (shortcut.startWindowMinutes !== undefined) {
-    const pending = pendingAnchor(shortcut.cron, after, shortcut.since, shortcut.startWindowMinutes, zone)
-    if (pending !== undefined) {
-      const chosen = selectedStart(shortcut, pending, nextRun(shortcut.cron, pending, zone))
-      if (chosen > after) return chosen
-    }
+const MINUTE = 60_000
+/** How far either side of its set time a varied run may start. */
+export const VARY_MINUTES = 30
+
+type Timed = Pick<Shortcut, 'id' | 'on' | 'since' | 'cron' | 'recurrence' | 'at' | 'vary' | 'outcome'>
+
+/** The first set time after `from`, or nothing for a prompt run by hand, a line cron would not take, or a timetable that ended. */
+function anchorAfter(shortcut: Timed, from: number, zone?: string): number | undefined {
+  if (shortcut.at !== undefined) return shortcut.at > from ? shortcut.at : undefined
+  if (shortcut.recurrence !== undefined) return shortcut.cron === undefined ? nextRecurrence(shortcut.recurrence, from, zone) : undefined
+  return shortcut.cron === undefined ? undefined : nextRun(shortcut.cron, from, zone)
+}
+
+/** How far either side of `anchor` it may start, in ms: 30 minutes, a quarter of the gap to the next occurrence when that is shorter, none when not varied. */
+export function spreadOf(shortcut: Pick<Shortcut, 'vary'>, anchor: number, following?: number): number {
+  if (shortcut.vary !== true) return 0
+  const most = VARY_MINUTES * MINUTE
+  return following === undefined ? most : Math.min(most, Math.floor((following - anchor) / 4 / MINUTE) * MINUTE)
+}
+
+function fraction(text: string): number {
+  let hash = 2166136261
+  for (const character of text) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
+  hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b)
+  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35)
+  return ((hash ^ (hash >>> 16)) >>> 0) / 4294967296
+}
+
+/** The moment a run set for `anchor` starts: drawn once per set time and save, so a restart keeps it, and never before the save. */
+export function drawnStart(shortcut: Pick<Shortcut, 'id' | 'since' | 'vary'>, anchor: number, following?: number): number {
+  const spread = spreadOf(shortcut, anchor, following)
+  if (spread === 0) return anchor
+  const low = Math.max(anchor - spread, shortcut.since + MINUTE)
+  const high = anchor + spread
+  if (low >= high) return Math.max(low, anchor)
+  const minutes = Math.floor((high - low) / MINUTE)
+  return low + Math.floor(fraction(`${shortcut.id}:${String(anchor)}:${String(shortcut.since)}`) * (minutes + 1)) * MINUTE
+}
+
+export interface TimedRun {
+  /** The set time, the only one ever shown. */
+  readonly anchor: number
+  readonly start: number
+  /** The latest the run may start: the set time plus the spread. */
+  readonly latest: number
+}
+
+/** The next run that has not started by `after`, or nothing for one run by hand, paused, done or ended. */
+export function upcoming(shortcut: Timed, after: number, zone?: string): TimedRun | undefined {
+  if (!shortcut.on || shortcut.outcome !== undefined) return undefined
+  if (shortcut.cron !== undefined && shortcut.recurrence === undefined && !isCron(shortcut.cron)) return undefined
+  let from = Math.max(shortcut.since, after - VARY_MINUTES * MINUTE)
+  for (let tries = 0; tries < 4; tries += 1) {
+    const anchor = anchorAfter(shortcut, from, zone)
+    if (anchor === undefined) return undefined
+    const following = anchorAfter(shortcut, anchor, zone)
+    const start = drawnStart(shortcut, anchor, following)
+    if (start > after) return { anchor, start, latest: anchor + spreadOf(shortcut, anchor, following) }
+    from = anchor
   }
-  const cronZone = shortcut.startWindowMinutes === undefined ? undefined : zone
-  const anchor = nextRun(shortcut.cron, Math.max(shortcut.since, after), cronZone)
-  return anchor === undefined || shortcut.startWindowMinutes === undefined ? anchor : selectedStart(shortcut, anchor, nextRun(shortcut.cron, anchor, cronZone))
+  return undefined
 }
 
-export function describeStartWindow(shortcut: Pick<Shortcut, 'startWindowMinutes'>): string {
-  return shortcut.startWindowMinutes === undefined ? '' : `Random start within ${String(shortcut.startWindowMinutes)} minutes`
+/** When a shortcut next starts by itself, or nothing for one run by hand or paused. For the scheduler only: what is shown is the set time, `nextSet`. */
+export function nextTimed(shortcut: Timed, after: number, zone?: string): number | undefined {
+  return upcoming(shortcut, after, zone)?.start
 }
 
-/** A run missed while the machine slept or the app was closed is one run once it is back, as launchd does it. */
+/** The set time of the next run, shown as "Next"; in the past while a varied run is due. */
+export function nextSet(shortcut: Timed, after: number, zone?: string): number | undefined {
+  return upcoming(shortcut, after, zone)?.anchor
+}
+
+/** The run that is due by `now`: a run missed while the machine slept or the app was closed is one run once it is back, as launchd does it. */
+export function dueRun(shortcut: Shortcut, now: number): TimedRun | undefined {
+  if (shortcut.recurrence !== undefined && recurrenceEnded(shortcut.recurrence, now)) return undefined
+  const next = upcoming(shortcut, shortcut.since)
+  return next !== undefined && next.start <= now ? next : undefined
+}
+
 export function isDue(shortcut: Shortcut, now: number): boolean {
-  if (shortcut.recurrence !== undefined && recurrenceEnded(shortcut.recurrence, now)) return false
-  const next = nextTimed(shortcut, shortcut.since)
-  return next !== undefined && next <= now
+  return dueRun(shortcut, now) !== undefined
 }
 
 /** The timetables the editor offers by name; anything else is edited as the cron line itself. */

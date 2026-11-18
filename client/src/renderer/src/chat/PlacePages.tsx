@@ -19,7 +19,8 @@ import { Menu } from '../ui/Menu'
 import { useManager } from './useManager'
 import type { Chat } from './useChat'
 import { computerChoices, computerName, useComputers } from '../remote/Computer'
-import { WORK_PLACES, WORKSPACE_PLACES, monogram, waitingCount, waitingSaid } from './places'
+import { PROMPT_PLACES, WORK_PLACES, WORKSPACE_PLACES, monogram, waitingCount, waitingSaid } from './places'
+import { needYou, needYouSaid } from '../../../shared/prompt-kinds'
 import type { Place, PlaceItem } from './places'
 import './places.css'
 
@@ -89,16 +90,18 @@ export function AppNav({
       <Icon name="sidebar" />
     </button>
   )
+  const needing = needYou(chat.settings.shortcuts)
   const item = (one: PlaceItem): React.JSX.Element => {
-    const count = one.id === 'tasks' ? waiting : 0
-    const name = count > 0 ? `${one.name}, ${String(count)} waiting` : one.name
+    const count = one.id === 'tasks' ? waiting : one.id === 'scheduled' ? needing : 0
+    const counted = one.id === 'scheduled' ? needYouSaid(count) : waitingSaid(count)
+    const name = count > 0 ? `${one.name}, ${one.id === 'scheduled' ? counted : `${String(count)} waiting`}` : one.name
     const tip = KEYS[one.id] === undefined ? name : `${name} (${KEYS[one.id] ?? ''})`
-    const said = folded ? name : count > 0 ? `${one.name}, ${waitingSaid(count)}` : undefined
+    const said = folded ? name : count > 0 ? `${one.name}, ${counted}` : undefined
     return (
       <button key={one.id} type="button" className={`nav-item no-drag${place === one.id ? ' on' : ''}`} aria-current={place === one.id ? 'page' : undefined} {...(said === undefined ? {} : { 'aria-label': said })} {...(folded ? { title: tip } : {})} onClick={() => onPlace(one.id)}>
         <Icon name={one.icon} />
         <span className="nav-name">{one.name}</span>
-        {count === 0 ? null : folded ? <span className="nav-dot" aria-hidden="true" /> : <span className="nav-count" aria-hidden="true" title={waitingSaid(count)}>{waitingCount(count)}</span>}
+        {count === 0 ? null : folded ? <span className={`nav-dot${one.id === 'scheduled' ? ' needs' : ''}`} aria-hidden="true" /> : <span className={`nav-count${one.id === 'scheduled' ? ' needs' : ''}`} aria-hidden="true" title={counted}>{waitingCount(count)}</span>}
       </button>
     )
   }
@@ -108,6 +111,8 @@ export function AppNav({
       <div className="nav-items">
         {switcher}
         {WORK_PLACES.map(item)}
+        <div className="nav-group" role="presentation">Prompts</div>
+        {PROMPT_PLACES.map(item)}
         <div className="nav-group" role="presentation">Workspace</div>
         {WORKSPACE_PLACES.map(item)}
         <span className="nav-space" />
@@ -218,13 +223,13 @@ function QuestionsPlace({ chat, openId, onAsk, onOpen }: { readonly chat: Pick<C
   }
   return (
     <>
-      <PageHead title="Questions">
-        <button type="button" className="quiet place-add no-drag" onClick={onAsk}><Icon name="plus" size={12} />Ask a question<span className="keys">{MOD}+Shift+N</span></button>
+      <PageHead title="Quick chats">
+        <button type="button" className="quiet place-add no-drag" onClick={onAsk}><Icon name="plus" size={12} />New quick chat<span className="keys">{MOD}+Shift+N</span></button>
       </PageHead>
       <div className="questions-split" style={{ '--side': `${String(chat.settings.sidebarWidth)}px` } as React.CSSProperties}>
         <div className="sidebar questions-list">
           <div className="sessions">
-            {questions.length === 0 ? <div className="empty">No questions. Ask one with {MOD}+Shift+N.</div> : groups.map((group) => (
+            {questions.length === 0 ? <div className="empty">No quick chats. Start one with {MOD}+Shift+N.</div> : groups.map((group) => (
               <div key={group.heading}>
                 <div className="group-head">
                   <button type="button" className="group" onClick={() => fold(group.heading)}>
@@ -240,7 +245,7 @@ function QuestionsPlace({ chat, openId, onAsk, onOpen }: { readonly chat: Pick<C
           </div>
           <p className="questions-note">Each is deleted a day after its last answer, unless kept.</p>
         </div>
-        {openId === undefined ? <div className="questions-none">{questions.length === 0 ? 'Ask a question and its answer shows here.' : 'Choose a question to read it here.'}</div> : null}
+        {openId === undefined ? <div className="questions-none">{questions.length === 0 ? 'Off the board. Each is deleted a day after its last answer, unless kept.' : 'Choose a quick chat to read it here.'}</div> : null}
       </div>
       {menu === undefined || menuFor === undefined ? null : (
         <Menu
@@ -306,8 +311,10 @@ export function PlacePage({
       return <QuestionsPlace chat={chat} openId={openId} onAsk={onAsk} onOpen={onOpenHere} />
     case 'team':
       return <div className="place-team"><Team key={teamFirst ?? ''} place chat={chat} first={teamFirst as Parameters<typeof Team>[0]['first']} onClose={() => onPlace('tasks')} onOpen={toTasks} onShortcut={onShortcut} /></div>
+    case 'repeating':
+    case 'scheduled':
     case 'shortcuts':
-      return <div className="place-body place-dialog-host"><ShortcutList place chat={chat} start="list" onTeam={() => onTeam()} onClose={() => onPlace('tasks')} /></div>
+      return <div className="place-body place-dialog-host"><ShortcutList key={place} place chat={chat} kind={place === 'shortcuts' ? 'shortcut' : place} start="list" onTeam={() => onTeam()} onClose={() => onPlace('tasks')} onShowScheduled={() => onPlace('scheduled')} /></div>
     case 'checklists':
     case 'browsers':
     case 'secrets':

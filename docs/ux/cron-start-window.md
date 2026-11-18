@@ -7,6 +7,8 @@ created: 2026-11-01
 
 # UX: Random start window for CRON shortcuts
 
+> Partly superseded on 2026-11-18 by [shortcut-kinds.md](shortcut-kinds.md): "Vary start time" stays as one switch with no minutes field; on, a run starts within 30 minutes either side of the set time; the drawn start time is never shown.
+
 ## 1. Purpose and journey
 
 Scheduled shortcuts currently start at the same minute on each occurrence. Let the person choose a window in which each occurrence starts once at a different, randomly selected time.

@@ -1,4 +1,4 @@
-export type PlaceId = 'tasks' | 'manager' | 'questions' | 'team' | 'shortcuts' | 'checklists' | 'browsers' | 'secrets' | 'settings'
+export type PlaceId = 'tasks' | 'manager' | 'questions' | 'repeating' | 'scheduled' | 'shortcuts' | 'team' | 'checklists' | 'browsers' | 'secrets' | 'settings'
 
 /** A place the Chat window shows: one of the sidebar's items. */
 export type Place = PlaceId
@@ -13,19 +13,25 @@ export interface PlaceItem {
 export const WORK_PLACES: readonly PlaceItem[] = [
   { id: 'tasks', name: 'Tasks', icon: 'board' },
   { id: 'manager', name: 'Manager', icon: 'manager' },
-  { id: 'questions', name: 'Questions', icon: 'chat' },
+  { id: 'questions', name: 'Quick chats', icon: 'chat' },
 ]
 
-/** The sidebar's second group, under "Workspace". */
+/** The sidebar's prompts, under "Prompts": what runs by itself, what runs once later, what is run by hand. */
+export const PROMPT_PLACES: readonly PlaceItem[] = [
+  { id: 'repeating', name: 'Repeating', icon: 'refresh' },
+  { id: 'scheduled', name: 'Scheduled', icon: 'clock' },
+  { id: 'shortcuts', name: 'Shortcuts', icon: 'bolt' },
+]
+
+/** The sidebar's third group, under "Workspace". */
 export const WORKSPACE_PLACES: readonly PlaceItem[] = [
   { id: 'team', name: 'Team', icon: 'team' },
-  { id: 'shortcuts', name: 'Shortcuts', icon: 'bolt' },
   { id: 'checklists', name: 'Checklists', icon: 'checklist' },
   { id: 'browsers', name: 'Browsers', icon: 'globe' },
   { id: 'secrets', name: 'Secrets', icon: 'key' },
 ]
 
-const PLACE_IDS: readonly string[] = [...WORK_PLACES, ...WORKSPACE_PLACES].map((one) => one.id).concat('settings')
+const PLACE_IDS: readonly string[] = [...WORK_PLACES, ...PROMPT_PLACES, ...WORKSPACE_PLACES].map((one) => one.id).concat('settings')
 
 /** Below this width the sidebar folds to its icons: the expanded sidebar (200), the list's sidebar at its default (264) and a conversation at its narrowest (420). */
 export const NAMES_FOLD = 884
@@ -65,7 +71,7 @@ export function menuDot(place: Place, waiting: boolean, unread: boolean): 'asks'
 }
 
 export const menuSaid = (dot: 'asks' | 'unread' | undefined): string =>
-  dot === 'asks' ? 'Menu, a conversation is waiting for you' : dot === 'unread' ? 'Menu, a question has an answer' : 'Menu'
+  dot === 'asks' ? 'Menu, a conversation is waiting for you' : dot === 'unread' ? 'Menu, a quick chat has an answer' : 'Menu'
 
 /** A computer's two letters in the folded sidebar: the first letters of its first two words, or its first two letters. */
 export function monogram(name: string): string {

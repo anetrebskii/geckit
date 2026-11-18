@@ -9,13 +9,12 @@ import { readPreferences, writePreferences } from '../core/configuration'
 
 import { DEFAULT_SETTINGS, sessionMode } from '../shared/api'
 import { newKey } from '../shared/pairing'
-import type { Settings } from '../shared/api'
+import type { Settings, Shortcut } from '../shared/api'
 import { NO_CRASHES } from '../shared/reporting'
 import type { CrashRecord } from '../shared/reporting'
 import { withColors } from '../shared/project-color'
 import { validateVpnIps, VPN_IP_CONFIGURATION_ERROR } from '../shared/vpn-ip'
 import { localCalendarZone, recurrenceError } from '../shared/recurrence'
-import { startWindowError } from '../shared/schedule'
 import { carriedOver } from './carry-over'
 import { withMoves } from './sessions'
 import { setBrowserConversationDone } from '../cli/browser-lifecycle'
@@ -92,6 +91,7 @@ export function getSettings(): Settings {
       calendarTimeZone: _storedZone,
       calendarRecurrenceVersion: _storedRecurrenceVersion,
       cronStartWindowVersion: _storedWindowVersion,
+      promptKindsVersion: _storedKindsVersion,
       managerShortcutsVersion: _storedManagerVersion,
       shortcutDestinationsVersion: _storedDestinationVersion,
       boardColumn: _boardColumn,
@@ -120,11 +120,15 @@ export function getSettings(): Settings {
       phoneKey: found.phoneKey === '' ? newKey() : found.phoneKey,
       // One column chosen on its own by an earlier build is that column ticked; In review, gone now, is every column.
       boardColumns: found.boardColumns.length === 0 && (_boardColumn === 'progress' || _boardColumn === 'done') ? [_boardColumn] : found.boardColumns,
+      scheduledView: found.scheduledView === 'month' || found.scheduledView === 'list' ? found.scheduledView : 'week',
+      // A start window of any minutes is Vary start time on, 30 minutes either side.
+      shortcuts: found.shortcuts.map(variedStart),
     }
     // Projects listed before colours were, and the phone's key, given once and for all.
     if (
       _legacyVpnStop !== undefined ||
       _boardColumn !== undefined ||
+      found.shortcuts.some((one) => Object.hasOwn(one, 'startWindowMinutes')) ||
       Object.keys(settings.projectColors).length !== Object.keys(found.projectColors).length ||
       settings.phoneKey !== found.phoneKey ||
       settings.welcomed !== welcomed
@@ -133,11 +137,17 @@ export function getSettings(): Settings {
     }
   }
   const calendarTimeZone = localCalendarZone()
-  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1 || settings.cronStartWindowVersion !== 1 || settings.managerShortcutsVersion !== 1 || settings.shortcutDestinationsVersion !== 1) {
-    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, managerShortcutsVersion: 1, shortcutDestinationsVersion: 1 }
+  if (settings.calendarTimeZone !== calendarTimeZone || settings.calendarRecurrenceVersion !== 1 || settings.cronStartWindowVersion !== 1 || settings.promptKindsVersion !== 1 || settings.managerShortcutsVersion !== 1 || settings.shortcutDestinationsVersion !== 1) {
+    settings = { ...settings, calendarTimeZone, calendarRecurrenceVersion: 1, cronStartWindowVersion: 1, promptKindsVersion: 1, managerShortcutsVersion: 1, shortcutDestinationsVersion: 1 }
     if (!loaded) for (const watcher of watchers) watcher(settings)
   }
   return settings
+}
+
+function variedStart(shortcut: Shortcut): Shortcut {
+  if (!Object.hasOwn(shortcut, 'startWindowMinutes')) return shortcut
+  const { startWindowMinutes: minutes, ...rest } = shortcut as Shortcut & { readonly startWindowMinutes?: unknown }
+  return typeof minutes === 'number' && minutes > 0 ? { ...rest, vary: true } : rest
 }
 
 export function setSettings(change: Partial<Settings>): Settings {
@@ -149,6 +159,7 @@ export function setSettings(change: Partial<Settings>): Settings {
   Reflect.deleteProperty(validated, 'calendarTimeZone')
   Reflect.deleteProperty(validated, 'calendarRecurrenceVersion')
   Reflect.deleteProperty(validated, 'cronStartWindowVersion')
+  Reflect.deleteProperty(validated, 'promptKindsVersion')
   Reflect.deleteProperty(validated, 'managerShortcutsVersion')
   Reflect.deleteProperty(validated, 'shortcutDestinationsVersion')
   if (change.shortcuts !== undefined) {
@@ -156,10 +167,7 @@ export function setSettings(change: Partial<Settings>): Settings {
       const destinationError = shortcutDestinationError(shortcut.destination)
       if (destinationError !== undefined) throw new Error(destinationError)
       const before = current.shortcuts.find((one) => one.id === shortcut.id)
-      if (before === undefined || before.cron !== shortcut.cron || before.startWindowMinutes !== shortcut.startWindowMinutes || !isDeepStrictEqual(before.recurrence, shortcut.recurrence)) {
-        const error = startWindowError(shortcut)
-        if (error !== undefined) throw new Error(error)
-      }
+      if (shortcut.at !== undefined && (shortcut.cron !== undefined || shortcut.recurrence !== undefined)) throw new Error('Choose one timetable.')
       if (shortcut.recurrence === undefined) continue
       if (before !== undefined && before.cron === shortcut.cron && isDeepStrictEqual(before.recurrence, shortcut.recurrence)) continue
       if (shortcut.cron !== undefined) throw new Error('Choose one timetable.')
@@ -177,7 +185,7 @@ export function setSettings(change: Partial<Settings>): Settings {
     validated = { ...validated, vpnAllowedIps: allowed.ips }
   }
   const next = { ...current, ...validated }
-  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, managerShortcutsVersion: _managerVersion, shortcutDestinationsVersion: _destinationVersion, ...persisted } = next
+  const { calendarTimeZone: _zone, calendarRecurrenceVersion: _recurrenceVersion, cronStartWindowVersion: _windowVersion, promptKindsVersion: _kindsVersion, managerShortcutsVersion: _managerVersion, shortcutDestinationsVersion: _destinationVersion, ...persisted } = next
   writePreferences(folder(), persisted)
   settings = next
   for (const watcher of watchers) watcher(settings)
@@ -187,8 +195,8 @@ export function setSettings(change: Partial<Settings>): Settings {
 const reloadSettings = (): void => {
   let found: Settings
   try { found = readSettings() } catch { return }
-  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, managerShortcutsVersion: _foundManagerVersion, shortcutDestinationsVersion: _foundDestinationVersion, ...disk } = found
-  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, managerShortcutsVersion: _currentManagerVersion, shortcutDestinationsVersion: _currentDestinationVersion, ...current } = getSettings()
+  const { calendarTimeZone: _foundZone, calendarRecurrenceVersion: _foundRecurrenceVersion, cronStartWindowVersion: _foundWindowVersion, promptKindsVersion: _foundKindsVersion, managerShortcutsVersion: _foundManagerVersion, shortcutDestinationsVersion: _foundDestinationVersion, ...disk } = found
+  const { calendarTimeZone: _currentZone, calendarRecurrenceVersion: _currentRecurrenceVersion, cronStartWindowVersion: _currentWindowVersion, promptKindsVersion: _currentKindsVersion, managerShortcutsVersion: _currentManagerVersion, shortcutDestinationsVersion: _currentDestinationVersion, ...current } = getSettings()
   if (isDeepStrictEqual(disk, current)) return
   const previous = settings
   settings = undefined

@@ -180,7 +180,7 @@ export function QuestionsMenu({
           <span style={{ width: 14, flexShrink: 0 }}>
             <Icon name="plus" size={13} />
           </span>
-          <span className="label">New question</span>
+          <span className="label">New quick chat</span>
         </button>
         <div className="menu-note">Each is deleted a day after its last answer, unless kept.</div>
       </div>

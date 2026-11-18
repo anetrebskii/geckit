@@ -18,7 +18,8 @@ import type { Employee } from '../shared/employees'
 import type { GeckoPose } from '../shared/gecko'
 import { isRemote } from '../shared/hosts'
 import { llmProviderInfo } from '../shared/providers'
-import { describeTime, nextTimed } from '../shared/schedule'
+import { describeTime, nextSet } from '../shared/schedule'
+import { kindOf, scheduledLead } from '../shared/prompt-kinds'
 import { getSettings, setSettings } from './store'
 
 export interface TrayDeps {
@@ -105,30 +106,33 @@ export function drawTray(): void {
   const settings = getSettings()
   const shown = shownProjects(settings)
   const rows = settings
-    .shortcuts.filter((one) => shown.includes(one.root))
+    .shortcuts.filter((one) => shown.includes(one.root) && kindOf(one) !== 'scheduled')
     .map((one) => {
       const provider = one.provider ?? 'claude'
       const available = one.target === 'manager' || assistantsIn(settings).includes(provider) && (llmProviderInfo(provider, 'stream', settings.providerPlugins).localOnly !== true || !isRemote(one.root))
-      const next = nextTimed(one, now)
+      const next = nextSet(one, now)
       const when =
         one.lastSession !== undefined && deps?.busy(one.lastSession) === true
           ? 'running now'
           : next === undefined
             ? undefined
             : `next ${describeTime(next, now).replace(/^[A-Z]/, (first) => first.toLowerCase())}`
-      return { one, available, says: !available ? `${basename(one.root)}, assistant unavailable` : when === undefined ? basename(one.root) : `${basename(one.root)}, ${when}` }
+      return { one, available, repeating: kindOf(one) === 'repeating', says: !available ? `${basename(one.root)}, assistant unavailable` : when === undefined ? basename(one.root) : `${basename(one.root)}, ${when}` }
     })
+  const repeating = rows.filter((row) => row.repeating)
+  const nextOnce = settings.shortcuts.filter((one) => shown.includes(one.root) && one.at !== undefined && one.outcome === undefined).sort((left, right) => (left.at ?? 0) - (right.at ?? 0))[0]
+  const nextLine = nextOnce?.at === undefined ? undefined : `Next: ${nextOnce.name}, ${scheduledLead(nextOnce.at, now)}`
   const team = new Map(deps.employees().map((one) => [one.id, one]))
   const owner = (one: (typeof rows)[number]['one']): Employee | undefined => (one.employeeId === undefined ? undefined : team.get(one.employeeId))
   const groups = [...team.values()].flatMap((employee) => {
-    const own = rows.filter(({ one }) => one.employeeId === employee.id)
+    const own = rows.filter(({ one, repeating: timed }) => !timed && one.employeeId === employee.id)
     return own.length === 0 ? [] : [{ title: employee.archived ? `${employee.name} (archived)` : employee.name, archived: employee.archived, rows: own }]
   })
-  const managerRows = rows.filter(({ one }) => one.target === 'manager')
+  const managerRows = rows.filter(({ one, repeating: timed }) => !timed && one.target === 'manager')
   if (managerRows.length > 0) groups.unshift({ title: 'Manager', archived: false, rows: managerRows })
-  const loose = rows.filter(({ one }) => one.target !== 'manager' && owner(one) === undefined)
-  const grouped = groups.length === 0 ? [{ title: 'Shortcuts', archived: false, rows: loose }] : [...groups, ...(loose.length === 0 ? [] : [{ title: 'No employee', archived: false, rows: loose }])]
-  const key = JSON.stringify([settings.showGecko, grouped.map(({ title, rows: list }) => [title, list.map(({ one, available, says }) => [one.id, one.name, available, says])])])
+  const loose = rows.filter(({ one, repeating: timed }) => !timed && one.target !== 'manager' && owner(one) === undefined)
+  const grouped = groups.length === 0 ? loose.length === 0 ? [] : [{ title: 'Shortcuts', archived: false, rows: loose }] : [...groups, ...(loose.length === 0 ? [] : [{ title: 'No employee', archived: false, rows: loose }])]
+  const key = JSON.stringify([settings.showGecko, nextLine, repeating.map(({ one, available, says }) => [one.id, one.name, available, says, one.on]), grouped.map(({ title, rows: list }) => [title, list.map(({ one, available, says }) => [one.id, one.name, available, says])])])
   if (key === drawn) return
   drawn = key
 
@@ -153,6 +157,17 @@ export function drawTray(): void {
         }),
       ),
     ]),
+    ...(repeating.length === 0 ? [] : [{
+      label: 'Repeating',
+      submenu: repeating.map(({ one, available, says }): MenuItemConstructorOptions => ({
+        label: mac ? one.name : `${one.name} (${says})`,
+        ...(mac ? { sublabel: says } : {}),
+        toolTip: one.prompt,
+        enabled: available && !(owner(one)?.archived ?? false),
+        click: () => deps?.run(one.id),
+      })),
+    }]),
+    ...(nextLine === undefined ? [] : [{ label: nextLine, enabled: false }]),
     { label: 'New Shortcut...', click: () => deps?.manage('new') },
     ...(rows.length === 0 ? [] : [{ label: 'Manage Shortcuts...', click: () => deps?.manage('list') }]),
     { type: 'separator' },

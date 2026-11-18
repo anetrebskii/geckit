@@ -153,7 +153,7 @@ describe('the shortcuts', () => {
     saveShortcut({ ...morning, cron: '0 10 * * *' })
     expect(held.shortcuts[0]?.since).toBe(at('2026-09-22T12:00'))
     const { cron: _cron, ...byHand } = morning
-    expect(saveShortcut(byHand).cron).toBeUndefined()
+    expect(() => saveShortcut(byHand)).toThrow('This prompt cannot change its kind.')
   })
 
   it('runs a finite custom series once after downtime, permits manual runs, and preserves progress on stale edits', async () => {
@@ -247,21 +247,24 @@ describe('the shortcuts', () => {
     expect(held.shortcuts).toEqual(before)
   })
 
-  it('runs a chosen window once across polling and manual starts, then catches up once after downtime', async () => {
-    const window: Shortcut = { ...morning, id: 'window-a', since: at('2026-09-22T08:59'), startWindowMinutes: 60 }
-    held.shortcuts = [window]
-    const chosen = nextTimed(window, window.since) ?? 0
-    expect(chosen).toBeGreaterThan(at('2026-09-22T09:01'))
+  it('runs a varied start once across polling and manual starts, then catches up once after downtime', async () => {
+    const candidates = Array.from({ length: 40 }, (_, index): Shortcut => ({ ...morning, id: `vary-${String(index)}`, since: at('2026-09-22T08:00'), vary: true }))
+    const varied = candidates.find((one) => (nextTimed(one, one.since) ?? 0) > at('2026-09-22T09:02'))
+    expect(varied).toBeDefined()
+    if (varied === undefined) return
+    held.shortcuts = [varied]
+    const chosen = nextTimed(varied, varied.since) ?? 0
     startShortcuts({ start, rename, busy: () => busy })
     await vi.advanceTimersByTimeAsync(20_000)
     expect(start).not.toHaveBeenCalled()
-    await runShortcut(window.id, 'hand')
-    expect(held.shortcuts[0]?.since).toBe(window.since)
+    await runShortcut(varied.id, 'hand')
+    expect(held.shortcuts[0]?.since).toBe(varied.since)
     vi.setSystemTime(chosen - 21_000)
     await vi.advanceTimersByTimeAsync(20_000)
     expect(start).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(20_000)
     expect(start).toHaveBeenCalledTimes(2)
+    expect(held.shortcuts[0]?.since).toBeGreaterThanOrEqual(at('2026-09-22T09:00'))
     await vi.advanceTimersByTimeAsync(60_000)
     expect(start).toHaveBeenCalledTimes(2)
     vi.setSystemTime(at('2026-09-28T12:00'))
@@ -269,33 +272,96 @@ describe('the shortcuts', () => {
     expect(start).toHaveBeenCalledTimes(3)
   })
 
-  it('preserves pending windows for unrelated edits and resets progress for window or schedule changes and resume', () => {
-    const window: Shortcut = { ...morning, startWindowMinutes: 60 }
-    held.shortcuts = [window]
-    const chosen = nextTimed(window, Date.now())
-    const renamed = saveShortcut({ ...window, name: 'Changed name', prompt: 'Changed prompt' })
-    expect(renamed.since).toBe(window.since)
+  it('keeps the drawn start for unrelated edits and draws again for a timing change, the switch or a resume', () => {
+    const varied: Shortcut = { ...morning, vary: true }
+    held.shortcuts = [varied]
+    const chosen = nextTimed(varied, Date.now())
+    const renamed = saveShortcut({ ...varied, name: 'Changed name', prompt: 'Changed prompt' })
+    expect(renamed.since).toBe(varied.since)
     expect(nextTimed(renamed, Date.now())).toBe(chosen)
-    expect(saveShortcut({ ...renamed, startWindowMinutes: 30 }).since).toBe(Date.now())
+    expect(saveShortcut({ ...renamed, vary: false }).since).toBe(Date.now())
     vi.setSystemTime(at('2026-09-22T10:00'))
-    expect(saveShortcut({ ...renamed, cron: '0 11 * * *', startWindowMinutes: 30 }).since).toBe(Date.now())
-    const paused = saveShortcut({ ...morning, startWindowMinutes: 30, on: false })
+    expect(saveShortcut({ ...renamed, cron: '0 11 * * *' }).since).toBe(Date.now())
+    const paused = saveShortcut({ ...morning, vary: true, on: false })
     vi.setSystemTime(at('2026-09-22T12:00'))
     expect(saveShortcut({ ...paused, on: true }).since).toBe(Date.now())
   })
 
-  it('rejects invalid incoming windows and skips malformed persisted windows alongside valid schedules', async () => {
-    for (const startWindowMinutes of [0, -1, 1.5, 1441, Number.NaN]) expect(() => saveShortcut({ ...morning, startWindowMinutes })).toThrow('whole number')
+  it('takes an older client\'s start window as Vary start time, and never a kind change', () => {
+    expect(saveShortcut({ ...morning, startWindowMinutes: 60 }).vary).toBe(true)
     const { cron: _cron, ...manual } = morning
-    expect(() => saveShortcut({ ...manual, startWindowMinutes: 30 })).toThrow('CRON timetable')
-    expect(() => saveShortcut({ ...manual, recurrence: custom, startWindowMinutes: 30 })).toThrow('CRON timetable')
-    held.shortcuts = [{ ...morning, id: 'invalid', startWindowMinutes: 0 }, morning]
-    startShortcuts({ start, rename, busy: () => busy })
-    await vi.waitFor(() => expect(rename).toHaveBeenCalled())
-    expect(start).toHaveBeenCalledTimes(1)
-    expect(held.shortcuts[0]?.lastRun).toBeUndefined()
-    expect(held.shortcuts[1]?.lastSession).toBe('session-1')
+    const { id: _id, ...fresh } = manual
+    expect(saveShortcut({ ...fresh, startWindowMinutes: 30 }).vary).toBeUndefined()
+    held.shortcuts = [morning]
+    expect(() => saveShortcut({ ...manual, id: 'm' })).toThrow('cannot change its kind')
+    expect(() => saveShortcut({ ...manual, id: 'm', at: Date.now() + 3_600_000 })).toThrow('cannot change its kind')
   })
+
+  describe('a Scheduled prompt', () => {
+    const notice = vi.fn()
+    const { cron: _cron, ...byHand } = morning
+    const once = (change: Partial<Shortcut> = {}): Shortcut => ({ ...byHand, id: 'once', at: at('2026-09-22T09:00'), since: at('2026-09-21T12:00'), ...change })
+    const clean = (one: Shortcut): Shortcut => one
+    beforeEach(() => notice.mockClear())
+
+    it('starts at its time and records that it ran, once', async () => {
+      held.shortcuts = [clean(once())]
+      startShortcuts({ start, rename, busy: () => busy, notice })
+      await vi.waitFor(() => expect(held.shortcuts[0]?.outcome?.state).toBe('ran'))
+      expect(held.shortcuts[0]?.outcome).toMatchObject({ state: 'ran', session: 'session-1' })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(start).toHaveBeenCalledTimes(1)
+      expect(notice).not.toHaveBeenCalled()
+    })
+
+    it('says why it did not start, with one notice, and is never dropped', async () => {
+      held.chatProviders = ['codex']
+      held.shortcuts = [clean(once())]
+      startShortcuts({ start, rename, busy: () => busy, notice })
+      await vi.waitFor(() => expect(held.shortcuts[0]?.outcome?.state).toBe('didnt-start'))
+      expect(held.shortcuts[0]?.outcome).toEqual({ state: 'didnt-start', reason: "Claude isn't available" })
+      expect(notice).toHaveBeenCalledExactlyOnceWith("Morning review didn't start", "Claude isn't available. Run it or postpone it in Scheduled.")
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(notice).toHaveBeenCalledTimes(1)
+      expect(start).not.toHaveBeenCalled()
+    })
+
+    it('runs late within 12 hours and is missed after, without running', async () => {
+      vi.setSystemTime(at('2026-09-22T10:00'))
+      held.shortcuts = [clean(once())]
+      startShortcuts({ start, rename, busy: () => busy, notice })
+      await vi.waitFor(() => expect(held.shortcuts[0]?.outcome?.state).toBe('ran'))
+      expect(held.shortcuts[0]?.outcome).toMatchObject({ lateMinutes: 60 })
+      start.mockClear()
+      vi.setSystemTime(at('2026-09-22T21:01'))
+      held.shortcuts = [clean(once())]
+      startShortcuts({ start, rename, busy: () => busy, notice })
+      expect(held.shortcuts[0]?.outcome).toEqual({ state: 'missed' })
+      expect(start).not.toHaveBeenCalled()
+    })
+
+    it('postpones to a new time, keeping the first set time and clearing a problem', async () => {
+      const { postponeShortcut } = await import('../src/main/shortcuts')
+      held.shortcuts = [clean(once({ outcome: { state: 'missed' } }))]
+      const moved = postponeShortcut('once', at('2026-09-23T09:00'))
+      expect(moved).toMatchObject({ at: at('2026-09-23T09:00'), postponedFrom: at('2026-09-22T09:00'), since: Date.now() })
+      expect(moved.outcome).toBeUndefined()
+      expect(postponeShortcut('once', at('2026-09-24T09:00')).postponedFrom).toBe(at('2026-09-22T09:00'))
+      expect(() => postponeShortcut('once', Date.now())).toThrow('Pick a time from now on.')
+      expect(() => postponeShortcut('m', at('2026-09-24T09:00'))).toThrow()
+    })
+
+    it('records a run by hand and forgets a ran prompt after 24 hours', async () => {
+      held.shortcuts = [clean(once({ at: at('2026-09-23T09:00') }))]
+      startShortcuts({ start, rename, busy: () => busy, notice })
+      expect(await runShortcut('once', 'hand')).toBe('session-1')
+      expect(held.shortcuts[0]?.outcome).toMatchObject({ state: 'ran' })
+      vi.setSystemTime(Date.now() + 24 * 60 * 60_000 + 60_000)
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(held.shortcuts).toEqual([])
+    })
+  })
+
   it('persists Manager targets and uses its real routing dependency for hand and cron runs', async () => {
     const manager = vi.fn(async () => 'manager-session')
     held.shortcuts = [{ ...morning, cron: '0 9 * * *', since: at('2026-09-22T08:00'), target: 'manager', provider: 'codex', model: 'unused', reasoning: 'high', goal: 'unused' }]

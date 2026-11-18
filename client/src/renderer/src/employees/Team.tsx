@@ -10,7 +10,8 @@ import { EmployeeAvatar, EmployeeBadge, EmployeeConversations, EmployeeTasks, Ta
 import { EMPLOYEE_AVATARS } from './avatars'
 import { useEmployees } from './useEmployees'
 import { newEmployeeDraft, savedEmployeeId } from './draft'
-import { EmployeeShortcut, shortcutDraft } from './shortcuts'
+import { EmployeeShortcut, KIND_HEADS, shortcutDraft } from './shortcuts'
+import { kindOf } from '../../../shared/prompt-kinds'
 import { useShortcutRuns } from '../chat/ShortcutDestinations'
 import { useManager } from '../chat/useManager'
 import { managerStand } from '../chat/manager-label'
@@ -200,7 +201,10 @@ export function Team({ chat, first, onClose, onOpen, onShortcut, place = false }
           <span><h3>Shortcuts <span className="employee-count">{shortcuts.length}</span></h3><p className="employee-note">What {current.name} does by hand or on a schedule. Each run is a new task assigned to them.</p></span>
           <button type="button" className="quiet employee-new" disabled={current.archived} onClick={() => onShortcut({ name: '', root: shortcuts[0]?.root ?? chat.settings.projects[0] ?? '', prompt: '', mode: 'auto', on: true, employeeId: current.id })}><Icon name="plus" size={11} />New shortcut</button>
         </div>
-        {shortcuts.length === 0 ? <p className="employee-empty">No shortcuts yet. Add what this employee does by hand or on a schedule.</p> : <div className="team-box">{shortcuts.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={current.archived} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div>}
+        {shortcuts.length === 0 ? <p className="employee-empty">No shortcuts yet. Add what this employee does by hand or on a schedule.</p> : <>{KIND_HEADS.map((head) => {
+          const list = shortcuts.filter((one) => kindOf(one) === head.kind)
+          return list.length === 0 ? null : <div key={head.kind} className="team-kind"><div className="team-kind-head">{head.title}</div><div className="team-box">{list.map((one) => <EmployeeShortcut key={one.id} shortcut={one} lastRun={lastRuns.get(one.id)} chat={chat} archived={current.archived} now={now} onEdit={onShortcut} onOpen={openTask} />)}</div></div>
+        })}</>}
       </section>}
       {tasks === undefined || current === undefined ? null : <EmployeeTasks key={`tasks-${current.id}`} tasks={tasks} settings={chat.settings} onOpen={openTask} />}
       <section className="team-section" aria-label="About">

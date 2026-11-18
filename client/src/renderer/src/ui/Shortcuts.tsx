@@ -27,7 +27,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
     title: 'Chat',
     keys: [
       [`${MOD}+N`, 'New task: the folder, what to do and a goal'],
-      [`${MOD}+Shift+N`, 'Ask a general question, kept off the board'],
+      [`${MOD}+Shift+N`, 'New quick chat, kept off the board'],
       [`${MOD}+P`, 'Search conversations, folders and what was said'],
       [`${MOD}+F`, 'Find in this conversation; Enter goes to an earlier match, Shift+Enter a later one'],
       [`${MOD}+K`, 'Switch folder: type a few letters of it, then Enter'],

@@ -73,7 +73,7 @@ describe('menuDot', () => {
     expect(menuDot('tasks', true, false)).toBeUndefined()
     expect(menuDot('questions', false, true)).toBeUndefined()
     expect(menuDot('tasks', true, true)).toBe('unread')
-    expect(menuSaid('unread')).toBe('Menu, a question has an answer')
+    expect(menuSaid('unread')).toBe('Menu, a quick chat has an answer')
     expect(menuSaid(undefined)).toBe('Menu')
   })
 })

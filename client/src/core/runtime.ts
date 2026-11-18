@@ -33,7 +33,7 @@ import { browserBridgeOn } from '../cli/browser'
 import { stopCamoufoxPreparation } from '../cli/camoufox'
 import { Manager, runManagerCli } from '../main/manager'
 import { projectSaid } from '../main/orders'
-import { removeShortcut, resumeOwned, runShortcut, saveShortcut, startShortcuts } from '../main/shortcuts'
+import { postponeShortcut, removeShortcut, resumeOwned, runShortcut, saveShortcut, startShortcuts } from '../main/shortcuts'
 import { forgetRoots, getSettings, notesStore, onSettings, rememberProject, setSettings } from '../main/store'
 import type { Sessions } from '../main/sessions'
 import { hostOf, isRemote } from '../shared/hosts'
@@ -114,7 +114,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         return root
       },
       projectName: (root) => projectSaid(root, hostNamed),
-      saveShortcut, removeShortcut,
+      saveShortcut, postponeShortcut, removeShortcut,
       runShortcut: (id) => runShortcut(id, 'hand'),
       assign: (id, employee) => sessions?.assignEmployee(id, employee),
       title: (id) => notes.all()[id]?.title,
@@ -285,6 +285,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
         rename: (id, title) => started.rename(id, title),
         busy: (id) => started.busy(id),
         employee: (id) => employees.list().employees.find((one) => one.id === id),
+        notice: (title, body) => events.emit('chat:notice', { session: '', title, subtitle: '', body, asks: false }),
       }, (look) => { resumeSchedule = look; return () => { resumeSchedule = undefined } })
       await started.resumeQueues()
       runs.changed()

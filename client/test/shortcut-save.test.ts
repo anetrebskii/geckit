@@ -50,21 +50,24 @@ describe('shortcut save acknowledgment', () => {
     expect(save).toHaveBeenCalledTimes(2)
   })
 
-  it('refuses windows before calling an older host, checks acknowledgment and accepts a supported save', async () => {
+  it('sends a varied start to an older host as its start window, and checks a current host kept the time', async () => {
     const { recurrence: _recurrence, ...manual } = draft
-    const window: ShortcutDraft = { ...manual, cron: '0 9 * * *', startWindowMinutes: 60 }
+    const varied: ShortcutDraft = { ...manual, cron: '0 9 * * *', vary: true }
     const save = vi.fn<Geckit['shortcuts']['save']>(async (next) => ({ ...next, id: 'review', since: 1 }))
-    await expect(saveShortcut({ save }, {}, window)).rejects.toThrow('does not support random start windows')
-    expect(save).not.toHaveBeenCalled()
-    expect((await saveShortcut({ save }, { cronStartWindowVersion: 1 }, window)).startWindowMinutes).toBe(60)
-    save.mockImplementationOnce(async (next) => {
-      const { startWindowMinutes: _minutes, ...stripped } = next
-      return { ...stripped, id: 'review', since: 1 }
-    })
-    await expect(saveShortcut({ save }, { cronStartWindowVersion: 1 }, window)).rejects.toThrow('did not save this start window')
-    save.mockImplementationOnce(async (next) => ({ ...next, id: 'review', since: 1, startWindowMinutes: 30 }))
-    await expect(saveShortcut({ save }, { cronStartWindowVersion: 1 }, window)).rejects.toThrow('did not save this start window')
+    await saveShortcut({ save }, { cronStartWindowVersion: 1 }, varied)
+    expect(save).toHaveBeenLastCalledWith({ ...manual, cron: '0 9 * * *', startWindowMinutes: 30 })
+    expect((await saveShortcut({ save }, { promptKindsVersion: 1 }, varied)).vary).toBe(true)
+    save.mockImplementationOnce(async (next) => { const { vary: _vary, ...stripped } = next; return { ...stripped, id: 'review', since: 1 } })
+    await expect(saveShortcut({ save }, { promptKindsVersion: 1 }, varied)).rejects.toThrow('did not save this time')
   })
+
+  it('refuses a Scheduled prompt before calling an older host', async () => {
+    const { recurrence: _recurrence, ...manual } = draft
+    const save = vi.fn<Geckit['shortcuts']['save']>(async (next) => ({ ...next, id: 'review', since: 1 }))
+    await expect(saveShortcut({ save }, { cronStartWindowVersion: 1 }, { ...manual, at: 5 })).rejects.toThrow('does not support Scheduled prompts')
+    expect(save).not.toHaveBeenCalled()
+  })
+
   it('rejects old hosts or acknowledgments that drop a Manager target', async () => {
     const manager: ShortcutDraft = { name: 'Recordings', root: '/fixture', prompt: 'Check recordings', mode: 'auto', on: true, target: 'manager' }
     const save = vi.fn<Geckit['shortcuts']['save']>(async (next) => ({ ...next, id: 'manager', since: 1 }))

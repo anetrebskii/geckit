@@ -1,98 +1,84 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { assistantFor, assistantsIn, modelName, shownProjects } from '../../../shared/api'
-import { isCodexProvider, llmProviderInfo, providerModel, selectableProviders } from '../../../shared/providers'
-import type { ClaudeModel, ModelsSaid, SessionProvider, Shortcut, ShortcutDraft } from '../../../shared/api'
-import type { Employee } from '../../../shared/employees'
-import { isRemote } from '../../../shared/hosts'
-import { cronOf, describeCron, describeStartWindow, describeTime, nextRun, nextTimed, startWindowError, WEEKDAYS, whenOf } from '../../../shared/schedule'
-import type { When } from '../../../shared/schedule'
-import { defaultRecurrence, describeRecurrence, nextRecurrence, recurrenceError } from '../../../shared/recurrence'
+import { assistantFor, shownProjects } from '../../../shared/api'
+import { isCodexProvider, providerModel } from '../../../shared/providers'
+import type { ScheduledView, Shortcut, ShortcutDraft } from '../../../shared/api'
+import { againDraft, defaultOnce, duplicateDraft, isProblem, kindOf, ranLine, runLaterDraft, scheduledLead, UNDO_FOR } from '../../../shared/prompt-kinds'
+import type { PromptKind } from '../../../shared/prompt-kinds'
+import { nextSet } from '../../../shared/schedule'
 import { saveShortcut } from '../../../shared/shortcut-save'
-import { shortcutChecklist } from '../../../shared/checklists'
-import { ChecklistField } from './ChecklistField'
-import { CustomRecurrence } from './CustomRecurrence'
-import { destinationSummary, ShortcutDelivery, ShortcutDestinationFields, useShortcutDestination, useShortcutRuns } from './ShortcutDestinations'
+import { useShortcutRuns } from './ShortcutDestinations'
 import { Icon } from '../ui/Icon'
-import { Picker } from '../ui/Menu'
-import { MOD } from '../ui/Shortcuts'
-import { projectColor } from '../../../shared/project-color'
-import { homePath, projectLabel, tint } from './project'
-import type { Chat } from './useChat'
-import { EmployeeAvatar, EmployeeBadge, EmployeeSelect } from '../employees/Employees'
+import { projectLabel } from './project'
+import { FIRST_CRON, NEW_LABEL, PromptEditor } from './PromptEditor'
+import type { ShortcutChat } from './PromptEditor'
+import { assigneeSearch, PromptRow, WhoMark } from './PromptRow'
+import { ScheduledCalendar } from './ScheduledCalendar'
+import './scheduled.css'
 
-export type ShortcutChat = Pick<Chat, 'settings' | 'root' | 'everyone' | 'goTo' | 'employees'>
+export type { Repeats, ShortcutChat } from './PromptEditor'
+export { FIRST_CRON, REPEATS, turned } from './PromptEditor'
 
-/** Saved prompts, each run a new conversation in its project: by hand, from here or the menu bar, or on a timetable. */
-
-export type Repeats = 'never' | 'custom' | When['kind']
-
-export const REPEATS: readonly { readonly value: Repeats; readonly label: string }[] = [
-  { value: 'never', label: 'Never, only by hand' },
-  { value: 'hour', label: 'Every hour' },
-  { value: 'day', label: 'Every day' },
-  { value: 'weekdays', label: 'Every weekday' },
-  { value: 'week', label: 'Every week' },
-  { value: 'custom', label: 'Custom...' },
-  { value: 'cron', label: 'Cron' },
-]
-
-/** Where a new timetable starts. */
-export const FIRST_CRON = '0 9 * * 1-5'
-
-/** The same time of day, as another kind of timetable. */
-export function turned(when: When, kind: When['kind']): When {
-  const hour = 'hour' in when ? when.hour : 9
-  const minute = 'minute' in when ? when.minute : 0
-  switch (kind) {
-    case 'hour':
-      return { kind, minute }
-    case 'day':
-    case 'weekdays':
-      return { kind, hour, minute }
-    case 'week':
-      return { kind, weekday: 'weekday' in when ? when.weekday : 1, hour, minute }
-    case 'cron':
-      return { kind, cron: cronOf(when) }
-  }
+const TITLE: Record<PromptKind, string> = { repeating: 'Repeating', scheduled: 'Scheduled', shortcut: 'Shortcuts' }
+const ABOUT: Record<PromptKind, string> = {
+  repeating: 'Prompts that run by themselves on a timetable while GeckIt is running.',
+  scheduled: "Prompts that run once at their time. Postpone one until you're ready for it.",
+  shortcut: 'Saved prompts for a new task or Manager. Run them here or from the gecko in the menu bar.',
 }
-
-const clock = (hour: number, minute: number): string => `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+const EMPTY: Record<PromptKind, readonly [string, string]> = {
+  repeating: ['No repeating jobs', 'Run a prompt every day, weekday or week, like a morning plan.'],
+  scheduled: ['Nothing scheduled', 'Plan a prompt to run once, later. You can postpone it until the time comes.'],
+  shortcut: ['No shortcuts yet', 'Save a prompt you send often, like a code review.'],
+}
+const GLYPH: Record<PromptKind, string> = { repeating: 'refresh', scheduled: 'clock', shortcut: 'bolt' }
+const VIEWS: readonly { readonly value: ScheduledView; readonly label: string; readonly icon: string; readonly tip: string }[] = [
+  { value: 'week', label: 'Week', icon: 'week', tip: "Week: each day's runs with full names, who runs them and the model" },
+  { value: 'month', label: 'Month', icon: 'calendar', tip: 'Month: the runs by day, drag one to another day to postpone it' },
+  { value: 'list', label: 'List', icon: 'list', tip: 'List: the runs one under another, soonest first' },
+]
 
 const busy = (chat: ShortcutChat, session: string | undefined): boolean =>
   session !== undefined && chat.everyone.some((one) => one.id === session && (one.state === 'working' || one.state === 'asks'))
 
-function shortcutGroups(chat: Pick<ShortcutChat, 'employees'>, shortcuts: readonly Shortcut[]): readonly { readonly key: string; readonly employee: Employee | null; readonly list: readonly Shortcut[] }[] {
-  const groups = [...chat.employees.filter((one) => !one.archived), ...chat.employees.filter((one) => one.archived)]
-    .map((employee) => ({ key: employee.id, employee, list: shortcuts.filter((one) => one.employeeId === employee.id) }))
-    .filter((group) => group.list.length > 0)
-  const owned = new Set(chat.employees.map((one) => one.id))
-  const rest = shortcuts.filter((one) => one.target !== 'manager' && (one.employeeId === undefined || !owned.has(one.employeeId)))
-  const managers = shortcuts.filter((one) => one.target === 'manager')
-  return [...(managers.length === 0 ? [] : [{ key: 'manager', employee: null, list: managers }]), ...groups, ...(rest.length === 0 ? [] : [{ key: 'none', employee: null, list: rest }])]
+/** The prompts of one kind, in the order the page lists them. */
+export function promptsOf(prompts: readonly Shortcut[], kind: PromptKind, now: number): readonly Shortcut[] {
+  const list = prompts.filter((one) => kindOf(one) === kind && one.outcome?.state !== 'ran')
+  if (kind === 'scheduled') return [...list].sort((a, b) => Number(isProblem(b)) - Number(isProblem(a)) || (a.at ?? 0) - (b.at ?? 0))
+  if (kind === 'repeating') return [...list].sort((a, b) => Number(b.on) - Number(a.on) || (nextSet(a, now) ?? Infinity) - (nextSet(b, now) ?? Infinity))
+  return list
 }
 
+/** Saved prompts of one kind, each run a new conversation or a message to Manager: Repeating on a timetable, Scheduled once at a set time, Shortcuts by hand. */
 export function ShortcutList({
   chat,
+  kind: placeKind,
   start,
   only = false,
   onTeam,
   onClose,
+  onShowScheduled,
   place = false,
 }: {
   readonly chat: ShortcutChat
-  /** The list, `new`, a shortcut's id to edit, or a new one already filled in. */
+  /** The page's kind; a prompt opened from elsewhere brings its own. */
+  readonly kind?: PromptKind
+  /** The list, `new`, a prompt's id to edit, or a new one already filled in. */
   readonly start: string | ShortcutDraft
-  /** Opened for one shortcut from Team: saving or cancelling closes it rather than showing the list. */
+  /** Opened for one prompt from Team: saving or cancelling closes it rather than showing the list. */
   readonly only?: boolean
   readonly onTeam?: () => void
   readonly onClose: () => void
+  /** Run later's Show. */
+  readonly onShowScheduled?: () => void
   /** Shown as a place of the Chat window, not over it: no scrim, no Done, and Escape leaves it where it is. */
   readonly place?: boolean
 }): React.JSX.Element {
-  // Another profile's shortcuts are kept and run, and listed only where that profile is in use.
+  // Another profile's prompts are kept and run, and listed only where that profile is in use.
   const shortcuts = chat.settings.shortcuts.filter((one) => shownProjects(chat.settings).includes(one.root))
-  const blank = (): ShortcutDraft => {
+  const startsOn = typeof start !== 'string' ? start : shortcuts.find((one) => one.id === start)
+  const kind: PromptKind = startsOn !== undefined ? kindOf(startsOn) : placeKind ?? 'shortcut'
+  const zone = chat.settings.calendarTimeZone
+  const blank = (at?: number): ShortcutDraft => {
     const root = chat.root ?? shownProjects(chat.settings)[0] ?? ''
     const provider = assistantFor(chat.settings, root)
     return {
@@ -104,12 +90,10 @@ export function ShortcutList({
       model: providerModel(chat.settings, provider),
       ...(isCodexProvider(provider) ? { reasoning: chat.settings.codexReasoning } : {}),
       on: true,
+      ...(kind === 'scheduled' ? { at: at ?? defaultOnce(Date.now(), zone), vary: true } : kind === 'repeating' ? { cron: FIRST_CRON, vary: true } : {}),
     }
   }
-  const [editing, setEditing] = useState<ShortcutDraft | undefined>(() =>
-    typeof start !== 'string' ? start : start === 'new' ? blank() : shortcuts.find((one) => one.id === start),
-  )
-  // "Next today at 9:00" goes on being true for a minute at most.
+  const [editing, setEditing] = useState<ShortcutDraft | undefined>(() => start === 'new' ? blank() : startsOn)
   const opener = useRef(document.activeElement)
   const returnTo = useRef<string | undefined>(undefined)
   const rowButtons = useRef(new Map<string, HTMLButtonElement>())
@@ -119,12 +103,26 @@ export function ShortcutList({
   const [search, setSearch] = useState('')
   const [runError, setRunError] = useState('')
   const [runningId, setRunningId] = useState<string>()
-  const found = shortcuts.filter((one) => `${one.name} ${one.prompt} ${projectLabel(one.root)}`.toLowerCase().includes(search.trim().toLowerCase()))
+  const [deleted, setDeleted] = useState<Shortcut>()
+  const [later, setLater] = useState<{ readonly id: string; readonly at: number }>()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 20_000)
     return () => clearInterval(tick)
   }, [])
+  useEffect(() => {
+    if (deleted === undefined) return
+    const timer = setTimeout(() => { window.geckit.shortcuts.remove(deleted.id); setDeleted(undefined) }, UNDO_FOR)
+    return () => clearTimeout(timer)
+  }, [deleted])
+  const flushing = useRef<Shortcut | undefined>(undefined)
+  useEffect(() => { flushing.current = deleted }, [deleted])
+  useEffect(() => () => { if (flushing.current !== undefined) window.geckit.shortcuts.remove(flushing.current.id) }, [])
+  useEffect(() => {
+    if (later === undefined) return
+    const timer = setTimeout(() => setLater(undefined), 4_000)
+    return () => clearTimeout(timer)
+  }, [later])
 
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
@@ -134,451 +132,141 @@ export function ShortcutList({
     return () => window.removeEventListener('keydown', key)
   }, [onClose, place])
 
+  const settings = chat.settings
+  const ordered = useMemo(() => promptsOf(settings.shortcuts.filter((one) => shownProjects(settings).includes(one.root)), kind, now), [settings, kind, now])
+  const all = ordered.filter((one) => one.id !== deleted?.id)
+  const query = search.trim().toLowerCase()
+  const found = query === '' ? all : all.filter((one) => assigneeSearch(chat, one).includes(query))
+  const ran = kind === 'scheduled' ? shortcuts.filter((one) => one.at !== undefined && one.outcome?.state === 'ran' && one.id !== deleted?.id) : []
+  const view: ScheduledView = chat.settings.scheduledView
+  const canAdd = kind !== 'scheduled' || chat.settings.promptKindsVersion === 1
+  const calendar = kind === 'scheduled' && canAdd && view !== 'list' && query === ''
+
   const run = (one: Shortcut): void => {
+    const failed = one.target === 'manager' ? 'Could not run. Check Manager in Team.' : 'Could not run. Check the assistant and folder.'
     setRunningId(one.id)
     setRunError('')
     void window.geckit.shortcuts.run(one.id).then((session) => {
-      if (session === undefined) { setRunError(one.target === 'manager' ? 'Could not run. Check Manager in Team.' : 'Could not run. Check the assistant and folder.'); return }
+      if (session === undefined) { setRunError(failed); return }
       chat.goTo(session)
       onClose()
-    }).catch(() => setRunError(one.target === 'manager' ? 'Could not run. Check Manager in Team.' : 'Could not run. Check the assistant and folder.')).finally(() => setRunningId(undefined))
+    }).catch(() => setRunError(failed)).finally(() => setRunningId(undefined))
   }
+  const remove = (one: Shortcut): void => {
+    if (deleted !== undefined) window.geckit.shortcuts.remove(deleted.id)
+    setDeleted(one)
+  }
+  const edit = (one: Shortcut | ShortcutDraft): void => {
+    if (one.id !== undefined) returnTo.current = one.id
+    setEditing(one)
+  }
+  const employeeOf = (one: Shortcut): ShortcutChat['employees'][number] | undefined => one.employeeId === undefined ? undefined : chat.employees.find((employee) => employee.id === one.employeeId)
+
+  const undoRow = deleted === undefined || kindOf(deleted) !== kind ? null : (
+    <div className="undo-row" role="status">{`Deleted ${deleted.name}.`}<button type="button" onClick={() => setDeleted(undefined)}>Undo</button></div>
+  )
+
+  const rows = (
+    <div className="shortcut-rows">
+      {found.map((one) => (
+        <PromptRow
+          key={one.id}
+          chat={chat}
+          prompt={one}
+          now={now}
+          run={lastRuns.get(one.id)}
+          running={busy(chat, one.lastSession)}
+          starting={runningId === one.id}
+          archived={employeeOf(one)?.archived === true}
+          hit={false}
+          rowRef={(node) => { if (node === null) rowButtons.current.delete(one.id); else rowButtons.current.set(one.id, node) }}
+          onEdit={() => edit(one)}
+          onRun={() => run(one)}
+          onOpen={() => { if (one.lastSession !== undefined) chat.goTo(one.lastSession); onClose() }}
+          onDuplicate={() => setEditing(duplicateDraft(one, Date.now(), zone))}
+          onDelete={() => remove(one)}
+          onPostpone={(at) => { void window.geckit.shortcuts.postpone(one.id, at).catch(() => setRunError('Pick a time from now on.')) }}
+          onRunLater={(at) => {
+            void saveShortcut(window.geckit.shortcuts, chat.settings, { ...runLaterDraft(one, Date.now(), zone), at }).then(() => setLater({ id: one.id, at })).catch(() => setRunError('Pick a time from now on.'))
+          }}
+          note={later?.id === one.id ? <div className="row-note" role="status">{`Scheduled for ${scheduledLead(later.at, now, zone)}.`}{onShowScheduled === undefined ? null : <button type="button" onClick={onShowScheduled}>Show</button>}</div> : undefined}
+        />
+      ))}
+      {undoRow}
+    </div>
+  )
+
+  const [emptyTitle, emptyLine] = EMPTY[kind]
+  const body = calendar ? (
+    <>
+      <ScheduledCalendar
+        chat={chat}
+        prompts={all}
+        view={view === 'month' ? 'month' : 'week'}
+        now={now}
+        onEdit={edit}
+        onRun={run}
+        onDuplicate={(draft) => setEditing(draft)}
+        onDelete={remove}
+        onNew={(at) => setEditing(blank(at))}
+      />
+      {undoRow === null ? null : <div className="shortcut-rows cal-undo">{undoRow}</div>}
+    </>
+  ) : all.length === 0 && undoRow === null ? (
+    <div className="shortcut-empty"><Icon name={GLYPH[kind]} size={18} /><strong>{emptyTitle}</strong><span>{emptyLine}</span>{canAdd ? <button type="button" className="primary" onClick={() => setEditing(blank())}>{NEW_LABEL[kind]}</button> : null}</div>
+  ) : found.length === 0 && undoRow === null ? (
+    <div className="shortcut-empty"><span>Nothing matches.</span></div>
+  ) : rows
 
   return (
     <div className={place ? 'place-dialog' : 'dialog-scrim'} onMouseDown={place ? undefined : onClose}>
-      <div className={`dialog shortcut-list${place ? ' in-place' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
+      <div className={`dialog shortcut-list${place ? ' in-place' : ''}${calendar ? ' cal-mode' : ''}`} onMouseDown={(event) => event.stopPropagation()}>
         {editing === undefined ? (
           <>
-            <header className="shortcut-list-head">
-              <h2>Shortcuts{shortcuts.length === 0 ? null : <span className="employee-count">{shortcuts.length}</span>}</h2>
-              <span className="spacer" />
-              {shortcuts.length > 5 ? <label className="employee-find shortcut-find"><Icon name="search" size={13} /><input type="search" aria-label="Search shortcuts" placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />{search === '' ? null : <button type="button" className="find-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" size={8} /></button>}</label> : null}
-              <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={12} />New shortcut</button>
-            </header>
-            <p className="shortcut-list-about">Saved prompts for a new task or Manager: by hand here or from the gecko in the menu bar, or on a timetable while GeckIt is open.</p>
-            {shortcuts.length === 0 ? <div className="shortcut-empty"><Icon name="bolt" size={18} /><strong>No shortcuts yet</strong><span>Save a prompt you send often, like a daily plan or a code review.</span><button type="button" className="primary" onClick={() => setEditing(blank())}>New shortcut</button></div> : null}
-            {shortcuts.length > 0 && found.length === 0 ? <div className="shortcut-empty"><span>No shortcuts match.</span></div> : null}
-            {shortcutGroups(chat, found).map(({ key, employee, list }) => <Fragment key={key}>
-            {key !== 'manager' && employee === null && list.length === found.length ? null : <div className="shortcut-group">{employee === null ? null : <EmployeeAvatar employee={employee} />}{key === 'manager' ? 'Manager' : employee === null ? list.some((one) => one.employeeId !== undefined) ? 'Other shortcuts' : 'No employee' : employee.name}{employee?.archived === true ? <small>Archived, timetables paused</small> : null}</div>}
-            <div className="shortcut-rows">
-            {list.map((one) => {
-              const next = nextTimed(one, now, chat.settings.calendarTimeZone)
-              const running = busy(chat, one.lastSession)
-              const provider = one.provider ?? 'claude'
-              const info = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
-              const available = one.target === 'manager' || assistantsIn(chat.settings).includes(provider) && (info.localOnly !== true || !isRemote(one.root))
-              const timed = one.recurrence !== undefined || one.cron !== undefined
-              const timetable = one.recurrence !== undefined ? describeRecurrence(one.recurrence) : one.cron === undefined ? '' : [describeCron(one.cron), describeStartWindow(one)].filter(Boolean).join(' · ')
-              const paused = timed && (!one.on || employee?.archived === true)
-              return (
-                <div key={one.id} className={`shortcut-row${running ? ' running' : ''}`}>
-                  <span className={`shortcut-mark${timed && !paused ? ' timed' : ''}`} style={tint(projectColor(one.root, chat.settings))} aria-hidden="true"><Icon name={timed ? 'refresh' : 'bolt'} size={13} /></span>
-                  <button type="button" className="shortcut-text" title="Edit" ref={(node) => { if (node === null) rowButtons.current.delete(one.id); else rowButtons.current.set(one.id, node) }} onClick={() => { returnTo.current = one.id; setEditing(one) }}>
-                    <span className="shortcut-title-line">
-                      <span className="shortcut-name">{one.name}</span>
-                      {timed ? <span className={`shortcut-chip${paused ? ' paused' : ''}`} title={timetable}>{paused ? employee?.archived === true ? 'Paused while archived' : 'Timetable paused' : timetable}</span> : null}
-                    </span>
-                    <span className="shortcut-when">
-                      <span className="tinted" style={tint(projectColor(one.root, chat.settings))}>{projectLabel(one.root)}</span>
-                      {one.employeeId === undefined ? null : <span>{employee === null ? 'Employee unavailable' : <EmployeeBadge employee={employee} />}</span>}
-                      <span>{one.target === 'manager' ? 'Manager' : info.name}</span>
-                      {available ? null : <span className="trouble">Assistant unavailable</span>}
-                      {one.recurrence !== undefined && one.on && next === undefined ? <span>Timetable ended</span> : null}
-                      {running ? (
-                        <span className="live">Running now</span>
-                      ) : next !== undefined && !paused ? (
-                        <span>{`Next ${describeTime(next, now, one.recurrence === undefined && one.startWindowMinutes === undefined ? undefined : chat.settings.calendarTimeZone)}`}</span>
-                      ) : one.lastRun === undefined ? null : (
-                        <span>{`Last run ${describeTime(one.lastRun, now)}`}</span>
-                      )}
-                    </span>
-                    <span className="shortcut-prompt">{one.prompt}</span>
-                    {one.destination === undefined ? null : <span className="shortcut-destination-summary">{destinationSummary(one.destination)}</span>}
-                  </button>
-                  <span className="shortcut-actions">
-                    <ShortcutDelivery run={lastRuns.get(one.id)} />
-                    {one.lastSession === undefined ? null : (
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label="Open the last run"
-                        title={one.target === 'manager' ? 'Open Manager' : 'Open the conversation the last run started'}
-                        onClick={() => {
-                          if (one.lastSession !== undefined) chat.goTo(one.lastSession)
-                          onClose()
-                        }}
-                      >
-                        <Icon name="right" size={13} />
-                      </button>
-                    )}
-                    <button type="button" className="quiet shortcut-run" title={one.target === 'manager' ? 'Send this prompt to Manager' : 'Start a new conversation with this prompt'} disabled={runningId === one.id || !available || employee?.archived === true} onClick={() => run(one)}>
-                      <Icon name="send" size={11} />Run
-                    </button>
-                  </span>
+            <header className="shortcut-list-head board-head">
+              {kind === 'scheduled' && canAdd ? <div className="board-views" role="group" aria-label="View controls">
+                <div className="views" role="radiogroup" aria-label="View">
+                  {VIEWS.map((one) => <button key={one.value} type="button" role="radio" aria-checked={view === one.value} className={view === one.value ? 'on' : undefined} title={one.tip} onClick={() => chat.change?.({ scheduledView: one.value })}><Icon name={one.icon} /><span>{one.label}</span></button>)}
                 </div>
-              )
-            })}
-            </div>
-            </Fragment>)}
+              </div> : null}
+              {all.length === 0 ? null : <label className="employee-find shortcut-find"><Icon name="search" size={13} /><input type="search" aria-label={`Search ${TITLE[kind].toLowerCase()}`} placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />{search === '' ? null : <button type="button" className="find-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" size={8} /></button>}</label>}
+              <span className="spacer" />
+              {canAdd ? <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={12} />{NEW_LABEL[kind]}</button> : null}
+            </header>
+            {calendar ? null : <div className="prompt-page-title">
+              <h2>{TITLE[kind]}{all.length === 0 ? null : <span className="employee-count">{all.length}</span>}</h2>
+              <p className="shortcut-list-about">{ABOUT[kind]}</p>
+            </div>}
+            {body}
+            {kind !== 'scheduled' || calendar || query !== '' || ran.length === 0 ? null : <>
+              <div className="shortcut-group ran">Ran today</div>
+              <div className="shortcut-rows ran">
+                {ran.map((one) => (
+                  <div key={one.id} className="shortcut-row">
+                    <WhoMark chat={chat} prompt={one} />
+                    <span className="shortcut-text">
+                      <span className="shortcut-name">{one.name}</span>
+                      <span className="shortcut-when"><span>{projectLabel(one.root)}</span>{one.outcome?.state === 'ran' ? <span>{ranLine(one.outcome, zone)}</span> : null}</span>
+                    </span>
+                    <span className="shortcut-actions">
+                      <button type="button" className="quiet" onClick={() => setEditing(againDraft(one, Date.now(), zone))}>Schedule again</button>
+                      {one.outcome?.state === 'ran' && one.outcome.session !== undefined ? <button type="button" className="quiet shortcut-run" onClick={() => { if (one.outcome?.state === 'ran' && one.outcome.session !== undefined) chat.goTo(one.outcome.session); onClose() }}>Open<Icon name="right" size={11} /></button> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>}
             {runError === '' ? null : <p className="shortcut-next wrong" role="alert">{runError}</p>}
-            <div className="dialog-actions">
+            {(onTeam === undefined || calendar) && place ? null : <div className="dialog-actions">
               {onTeam === undefined ? null : <button type="button" className="quiet" onClick={onTeam}>Manage in Team</button>}
               <span className="spacer" />
-              {place ? null : <button type="button" className="quiet" onClick={onClose}>
-                Done
-              </button>}
-            </div>
+              {place ? null : <button type="button" className="quiet" onClick={onClose}>Done</button>}
+            </div>}
           </>
         ) : (
-          <Editor key={editing.id ?? 'new'} chat={chat} given={editing} now={now} onDone={only ? onClose : () => setEditing(undefined)} />
+          <PromptEditor key={editing.id ?? `new-${kindOf(editing)}-${editing.name}`} chat={chat} given={editing} now={now} onDone={only ? onClose : () => setEditing(undefined)} />
         )}
       </div>
-    </div>
-  )
-}
-
-function Editor({
-  chat,
-  given,
-  now,
-  onDone,
-}: {
-  readonly chat: ShortcutChat
-  readonly given: ShortcutDraft
-  readonly now: number
-  readonly onDone: () => void
-}): React.JSX.Element {
-  const [draft, setDraft] = useState<ShortcutDraft>(() => {
-    const { goal: _goal, checklist: _checklist, ...rest } = given
-    const checklist = shortcutChecklist(given)
-    return checklist === undefined ? rest : { ...rest, checklist }
-  })
-  const destination = useShortcutDestination(chat.settings, draft.destination, (destination) => {
-    const { destination: _destination, ...rest } = draft
-    setDraft(destination === undefined ? rest : { ...rest, destination })
-  })
-  const [windowMinutes, setWindowMinutes] = useState(() => String(given.startWindowMinutes ?? 30))
-  const manager = draft.target === 'manager'
-  const provider = draft.provider ?? 'claude'
-  const enabled = assistantsIn(chat.settings)
-  const info = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
-  const available = enabled.includes(provider) && (info.localOnly !== true || !isRemote(draft.root))
-  const assistant = info.name
-  const [askedModels, setAskedModels] = useState<{ readonly provider: SessionProvider; readonly root: string; readonly said: ModelsSaid }>()
-  useEffect(() => {
-    if (manager || !available) return
-    let current = true
-    void window.geckit.chat.models(draft.root || undefined, provider).then((said) => {
-      if (current) setAskedModels({ provider, root: draft.root, said: said ?? 'unsaid' })
-    }).catch(() => {
-      if (current) setAskedModels({ provider, root: draft.root, said: 'unsaid' })
-    })
-    return () => { current = false }
-  }, [draft.root, provider, available, manager])
-  const modelsSaid = available && askedModels?.provider === provider && askedModels.root === draft.root ? askedModels.said : 'unasked'
-  const catalog: readonly ClaudeModel[] | undefined = Array.isArray(modelsSaid) ? modelsSaid : undefined
-  // Kept apart from the line itself, so a cron being typed that happens to spell "every day" stays a cron line.
-  const [repeats, setRepeats] = useState<Repeats>(() => given.recurrence !== undefined ? 'custom' : given.cron === undefined ? 'never' : whenOf(given.cron).kind)
-  const [custom, setCustom] = useState(false)
-  const repeatTrigger = useRef<HTMLDivElement>(null)
-  const customOpener = useRef<HTMLElement | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [failedDraft, setFailedDraft] = useState<ShortcutDraft>()
-  const saveError = failedDraft === draft
-  const [sure, setSure] = useState(false)
-  const cron = draft.cron ?? FIRST_CRON
-  const when = repeats === 'cron' ? ({ kind: 'cron', cron } as const) : turned(whenOf(cron), repeats === 'never' || repeats === 'custom' ? 'weekdays' : repeats)
-  const setWhen = (next: When): void => setDraft({ ...draft, cron: cronOf(next) })
-  const zone = chat.settings.calendarTimeZone
-  const ruleError = useMemo(() => draft.recurrence === undefined ? undefined : recurrenceError(draft.recurrence, zone), [draft.recurrence, zone])
-  const windowError = startWindowError(draft)
-  const kept = chat.settings.shortcuts.find((one) => one.id === draft.id)
-  const keptId = kept?.id
-  const since = draft.cron === kept?.cron && draft.startWindowMinutes === kept?.startWindowMinutes ? kept?.since ?? now : now
-  const next = useMemo(() => {
-    if (draft.recurrence !== undefined) return nextRecurrence(draft.recurrence, now, zone)
-    if (draft.cron === undefined) return undefined
-    if (draft.startWindowMinutes === undefined || keptId === undefined) return nextRun(draft.cron, now, draft.startWindowMinutes === undefined ? undefined : zone)
-    return nextTimed({ cron: draft.cron, startWindowMinutes: draft.startWindowMinutes, id: keptId, on: true, since }, now, zone)
-  }, [draft.recurrence, draft.cron, draft.startWindowMinutes, keptId, since, now, zone])
-  const change = (change: Partial<ShortcutDraft>): void => { setFailedDraft(undefined); setDraft({ ...draft, ...change }) }
-  const closeCustom = (): void => { setCustom(false); (customOpener.current?.isConnected === true ? customOpener.current : repeatTrigger.current?.querySelector('button'))?.focus() }
-
-  const models = [
-    { value: '', label: 'Default', says: `As ${assistant} is set up` },
-    ...(catalog !== undefined
-      ? catalog.map((one) => ({ value: one.value, label: one.name, ...(one.disabled === true ? { disabled: true } : {}), ...(one.id === undefined ? {} : { says: modelName(one.id) }) }))
-      : [{ value: '__asking', label: !available ? 'Assistant unavailable' : modelsSaid === 'unsaid' ? 'Models unavailable' : `Asking ${assistant}...`, disabled: true }]),
-  ]
-  const model = draft.model ?? ''
-  const selectedModel = model === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === model)
-  const modelLabel = model === '' ? 'Default' : selectedModel?.name ?? model
-  const reasoning = draft.reasoning ?? ''
-  const reasoningChoices = [
-    { value: '', label: selectedModel?.defaultReasoning === undefined ? 'Default' : `Default (${selectedModel.defaultReasoning === 'xhigh' ? 'Extra high' : selectedModel.defaultReasoning.charAt(0).toUpperCase() + selectedModel.defaultReasoning.slice(1)})` },
-    ...(selectedModel?.reasoning?.map((one) => ({ value: one.value, label: one.value === 'xhigh' ? 'Extra high' : one.value.charAt(0).toUpperCase() + one.value.slice(1), says: one.says })) ?? []),
-  ]
-  const reasoningLabel = reasoningChoices.find((one) => one.value === reasoning)?.label ?? reasoning
-
-  const name = draft.name.trim() || (draft.prompt.trim().split('\n')[0] ?? '').slice(0, 60)
-  const ready = destination.valid && !saving && windowError === undefined && name !== '' && draft.root !== '' && draft.prompt.trim() !== '' && (draft.recurrence !== undefined ? ruleError === undefined : draft.cron === undefined || next !== undefined)
-  const save = (): void => {
-    if (!ready) return
-    setSaving(true)
-    setFailedDraft(undefined)
-    void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, mode: 'auto', ...(manager ? {} : { provider }), ...(manager || !isCodexProvider(provider) ? {} : { reasoning }), name, prompt: draft.prompt.trim() }).then(onDone).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
-  }
-
-  const pickRepeats = (picked: Repeats): void => {
-    if (picked === 'custom') { setCustom(true); return }
-    setRepeats(picked)
-    setFailedDraft(undefined)
-    if (picked === 'never') {
-      const { cron: _cron, recurrence: _recurrence, startWindowMinutes: _windowMinutes, ...rest } = draft
-      setDraft(rest)
-    } else {
-      const { recurrence: _recurrence, ...rest } = draft
-      setDraft({ ...rest, cron: cronOf(turned(when, picked)) })
-    }
-  }
-  const scheduled = repeats !== 'never'
-  const owner = draft.employeeId === undefined ? undefined : chat.employees.find((one) => one.id === draft.employeeId)
-  const summary = [
-    manager ? `Sends this prompt to Manager with ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)} as context. Manager uses its configured assistant and approvals.` : `Each run starts a new task in ${draft.root === '' ? 'the folder you choose' : projectLabel(draft.root)}${owner === undefined ? '' : `, assigned to ${owner.name}`}, with ${assistant}.`,
-    !scheduled ? 'It runs when you start it.' : draft.recurrence !== undefined ? ruleError === undefined ? next === undefined ? 'Its timetable has ended.' : draft.on ? `Next run ${describeTime(next, now, zone)}.` : 'Its timetable is paused.' : '' : next === undefined ? '' : !draft.on ? 'Its timetable is paused.' : draft.startWindowMinutes !== undefined && kept === undefined ? `${describeStartWindow(draft)}.` : `Next run ${describeTime(next, now, draft.startWindowMinutes === undefined ? undefined : zone)}.`,
-  ].filter((one) => one !== '').join(' ')
-
-  const time = (
-    <input
-      type="time"
-      aria-label="At"
-      value={'hour' in when ? clock(when.hour, when.minute) : '09:00'}
-      onChange={(event) => {
-        const [hour = 9, minute = 0] = event.target.value.split(':').map(Number)
-        if (when.kind === 'day' || when.kind === 'weekdays' || when.kind === 'week') setWhen({ ...when, hour, minute })
-      }}
-    />
-  )
-
-  return (
-    <div
-      className="shortcut-editor"
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); save() }
-      }}
-    >
-      <header className="shortcut-editor-head">
-        <span className="shortcut-kicker">{given.id === undefined ? 'New shortcut' : 'Shortcut'}</span>
-        <input
-          className="shortcut-title"
-          autoFocus={given.id !== undefined || given.prompt !== ''}
-          type="text"
-          aria-label="Name"
-          value={draft.name}
-          placeholder={name || 'Name it'}
-          onChange={(event) => change({ name: event.target.value })}
-        />
-      </header>
-
-      <div className="shortcut-editor-body">
-        <div className="shortcut-editor-main">
-          <label htmlFor="shortcut-prompt" className="shortcut-label">Prompt</label>
-          <textarea
-            id="shortcut-prompt"
-            autoFocus={given.id === undefined && given.prompt === ''}
-            value={draft.prompt}
-            placeholder="Look through the pull requests waiting for my review and tell me which ones need me first."
-            onChange={(event) => change({ prompt: event.target.value })}
-          />
-          {manager ? null : <ChecklistField checklists={chat.settings.checklists ?? []} root={draft.root} value={draft.checklist ?? { items: [] }} onChange={(checklist) => change({ checklist })} />}
-        </div>
-
-        <aside className="shortcut-editor-side" aria-label="Settings">
-          <div className="shortcut-setting">
-            <span>Target</span>
-            <Picker label={manager ? 'Manager' : 'New task'} chosen={manager ? 'manager' : 'task'} choices={[{ value: 'task', label: 'New task' }, { value: 'manager', label: 'Manager' }]} className="select" onPick={(value) => {
-              const { target: _target, employeeId: _employee, provider: _provider, model: _model, reasoning: _reasoning, checklist: _checklist, ...rest } = draft
-              setFailedDraft(undefined)
-              setDraft(value === 'manager' ? { ...rest, target: 'manager' } : rest)
-            }} />
-          </div>
-          <div className="shortcut-setting">
-            <span>Folder</span>
-            <Picker
-              label={draft.root === '' ? 'Choose a folder' : projectLabel(draft.root)}
-              choices={shownProjects(chat.settings).map((one) => ({ value: one, label: projectLabel(one), says: homePath(one) }))}
-              chosen={draft.root}
-              {...(draft.root === '' ? {} : { tip: homePath(draft.root) })}
-              className="select"
-              onPick={(root) => change({ root })}
-            />
-          </div>
-          {manager ? null : <>
-          <div className="shortcut-setting">
-            <span>Employee</span>
-            <EmployeeSelect
-              employees={chat.employees.filter((one) => !one.archived || one.id === draft.employeeId)}
-              value={draft.employeeId ?? ''}
-              className="select employee-select"
-              onPick={(id) => {
-                const { employeeId: _employeeId, ...rest } = draft
-                setFailedDraft(undefined)
-                setDraft(id === '' ? rest : { ...rest, employeeId: id })
-              }}
-            />
-          </div>
-          <div className="shortcut-setting">
-            <span>Assistant</span>
-            <Picker
-              label={assistant}
-              chosen={provider}
-              choices={[
-                ...(enabled.includes(provider) ? [] : [{ value: provider, label: assistant, disabled: true, says: 'Disabled in Settings' }]),
-                ...selectableProviders(chat.settings).map((one) => ({ value: one.family, label: one.name, icon: one.icon, ...(one.localOnly === true && isRemote(draft.root) ? { disabled: true, says: 'Local folders only' } : {}) })),
-              ]}
-              className="select"
-              disabled={enabled.length === 1 && enabled.includes(provider)}
-              onPick={(value) => {
-                if (value === provider) return
-                const { model: _model, reasoning: _reasoning, ...rest } = draft
-                const nextProvider = value as SessionProvider
-                setDraft({ ...rest, provider: nextProvider, model: providerModel(chat.settings, nextProvider), ...(isCodexProvider(nextProvider) ? { reasoning: chat.settings.codexReasoning } : {}) })
-              }}
-            />
-          </div>
-          {available ? null : <span className="shortcut-next wrong">{enabled.includes(provider) ? 'Codex supports local folders only.' : `Will not run while ${assistant} is off in Settings.`}</span>}
-          <div className="shortcut-setting">
-            <span>Model</span>
-            <Picker
-              label={modelLabel}
-              choices={models}
-              chosen={model}
-              className="select"
-              onPick={(value) => {
-                if (value === '__asking') return
-                const { model: _model, ...rest } = draft
-                const picked = value === '' ? catalog?.find((one) => one.isDefault) : catalog?.find((one) => one.value === value)
-                setDraft({ ...rest, ...(value === '' ? {} : { model: value }), ...(!isCodexProvider(provider) ? {} : { reasoning: picked?.reasoning?.some((one) => one.value === reasoning) === true ? reasoning : '' }) })
-              }}
-            />
-          </div>
-          {!isCodexProvider(provider) ? null : <div className="shortcut-setting">
-            <span>Reasoning</span>
-            <Picker label={reasoningLabel} choices={reasoningChoices} chosen={reasoning} className="select" onPick={(value) => change({ reasoning: value as NonNullable<Shortcut['reasoning']> })} />
-          </div>}
-          </>}
-
-          <ShortcutDestinationFields editor={destination} />
-          <div className="shortcut-when-block">
-            <div className="views shortcut-runs" role="radiogroup" aria-label="Runs">
-              <button type="button" role="radio" aria-checked={!scheduled} className={!scheduled ? 'on' : ''} onClick={() => pickRepeats('never')}>By hand</button>
-              <button type="button" role="radio" aria-checked={scheduled} className={scheduled ? 'on' : ''} onClick={() => { if (!scheduled) pickRepeats('weekdays') }}>On a schedule</button>
-            </div>
-            {!scheduled ? <span className="shortcut-next">Run it from Shortcuts, Team or the gecko in the menu bar.</span> : <>
-              <div ref={repeatTrigger} className="shortcut-repeat">
-                <Picker
-                  label={REPEATS.find((one) => one.value === repeats)?.label ?? 'Cron'}
-                  choices={REPEATS.filter((one) => one.value !== 'never')}
-                  chosen={repeats}
-                  className="select"
-                  onOpen={() => { customOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null }}
-                  onPick={(value) => pickRepeats(value as Repeats)}
-                />
-                {repeats === 'custom' ? <button type="button" className="quiet" onClick={(event) => { customOpener.current = event.currentTarget; setCustom(true) }}>Edit</button> : when.kind === 'hour' ? (
-                  <label className="shortcut-minute">
-                    at
-                    <input
-                      type="number"
-                      min={0}
-                      max={59}
-                      aria-label="Minutes past the hour"
-                      value={when.minute}
-                      onChange={(event) => setWhen({ ...when, minute: Math.min(59, Math.max(0, Math.round(Number(event.target.value)) || 0)) })}
-                    />
-                    past
-                  </label>
-                ) : when.kind === 'cron' ? null : time}
-              </div>
-              {when.kind === 'week' && repeats !== 'custom' ? (
-                <Picker
-                  label={WEEKDAYS[when.weekday] ?? 'Monday'}
-                  choices={[1, 2, 3, 4, 5, 6, 0].map((day) => ({ value: String(day), label: WEEKDAYS[day] ?? '' }))}
-                  chosen={String(when.weekday)}
-                  className="select"
-                  onPick={(day) => setWhen({ ...when, weekday: Number(day) })}
-                />
-              ) : null}
-              {when.kind === 'cron' && repeats === 'cron' ? (
-                <input type="text" className="shortcut-cron" aria-label="Cron line" value={cron} placeholder={FIRST_CRON} spellCheck={false} onChange={(event) => change({ cron: event.target.value })} />
-              ) : null}
-              {draft.recurrence !== undefined ? <span className={`shortcut-next${ruleError === undefined ? '' : ' wrong'}`}>{ruleError ?? describeRecurrence(draft.recurrence)}</span> : null}
-              {repeats === 'custom' ? null : <>
-                <label className="check shortcut-on">
-                  <input type="checkbox" checked={draft.startWindowMinutes !== undefined} onChange={(event) => {
-                    const { startWindowMinutes: _windowMinutes, ...rest } = draft
-                    setWindowMinutes('30')
-                    setFailedDraft(undefined)
-                    setDraft(event.target.checked ? { ...rest, startWindowMinutes: 30 } : rest)
-                  }} />
-                  Vary start time
-                </label>
-                {draft.startWindowMinutes === undefined ? null : <>
-                  <label className="shortcut-minute">Within<input type="number" min={1} max={1440} step={1} aria-label="Start window in minutes" aria-invalid={windowError !== undefined} value={windowMinutes} onChange={(event) => {
-                    setWindowMinutes(event.target.value)
-                    change({ startWindowMinutes: event.target.value === '' ? Number.NaN : Number(event.target.value) })
-                  }} />minutes after scheduled time</label>
-                  <span className="shortcut-next">One random start per occurrence, before the next scheduled time.</span>
-                  {windowError === undefined ? null : <span className="shortcut-next wrong" role="alert">{windowError}</span>}
-                </>}
-              </>}
-              {draft.recurrence === undefined && next === undefined && windowError === undefined ? (
-                <span className="shortcut-next wrong">Cron takes five fields: minute, hour, day of the month, month and day of the week, such as {FIRST_CRON}.</span>
-              ) : (
-                <label className="check shortcut-on">
-                  <input type="checkbox" checked={draft.on} onChange={(event) => change({ on: event.target.checked })} />
-                  Timetable on
-                </label>
-              )}
-            </>}
-          </div>
-        </aside>
-      </div>
-
-      <p className="shortcut-summary">{summary}</p>
-      {saveError ? <p className="shortcut-next wrong" role="alert">Couldn't save the shortcut. Try again.</p> : null}
-      <div className="dialog-actions">
-        {given.id === undefined ? null : sure ? (
-          <button
-            type="button"
-            className="primary danger"
-            onClick={() => {
-              if (given.id !== undefined) window.geckit.shortcuts.remove(given.id)
-              onDone()
-            }}
-          >
-            Delete it
-          </button>
-        ) : (
-          <button type="button" className="icon-button" aria-label="Delete" title="Delete this shortcut" onClick={() => setSure(true)}>
-            <Icon name="trash" />
-          </button>
-        )}
-        <span className="spacer" />
-        <span className="together">
-          <button type="button" className="quiet" onClick={onDone}>
-            Cancel
-          </button>
-          <button type="button" className="primary" disabled={!ready} title={`Save (${MOD}+Enter)`} onClick={save}>
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </span>
-      </div>
-      {custom ? <CustomRecurrence given={draft.recurrence !== undefined && ruleError === undefined ? draft.recurrence : defaultRecurrence(now, 'hour' in when ? clock(when.hour, when.minute) : '09:00', zone)} now={now} {...(zone === undefined ? {} : { zone })} onCancel={closeCustom} onDone={(recurrence) => {
-        const { cron: _cron, startWindowMinutes: _windowMinutes, ...rest } = draft
-        setDraft({ ...rest, recurrence })
-        setRepeats('custom')
-        closeCustom()
-      }} /> : null}
     </div>
   )
 }
