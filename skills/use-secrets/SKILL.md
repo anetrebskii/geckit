@@ -5,18 +5,18 @@ description: Ask the person for a password, API key, token or SSH key through a 
 
 # Use secrets through GeckIt
 
-Never ask the person to paste a password, key or token into the conversation, and never read one from a file, an environment variable or the screen. Ask for it by link and use it by name; you never see the value.
+Never ask the person to paste a password, key or token into the conversation, or read one from a file, an environment variable or the screen. Ask by link, use by name; you never see the value.
 
 ## Purpose
 
-Get a credential the work needs from the person and use it only where it is allowed. Creating accounts, rotating keys at a provider and changing where a secret may be used are left to the person.
+Get a credential the work needs from the person and use it only where it is allowed. Creating accounts, rotating keys and changing a secret's places are left to the person.
 
 ## Inputs
 
 - What the work needs: which credential, for which site, host, program or SSH server.
 - `{{said}} secrets list` shows saved secrets with their use, places and keeping period. A saved one with the right use and places is used as it is.
 - A new secret gets a name in lowercase and hyphens naming the service and account, such as `github-work` or `openai-key`, and one use:
-  - `website`: a password typed into a sign-in page; places are origins, such as `https://github.com`; `--user` keeps the username or email it signs in as, which is not secret;
+  - `website`: a sign-in, the password and the username or email it signs in as, in one secret; places are origins, such as `https://github.com`;
   - `http`: an API key or token sent in requests; places are hosts, such as `api.openai.com` or `*.stripe.com`;
   - `command`: a value a program reads from its environment; places are program names, such as `psql`;
   - `ssh`: a private key; places are hosts, such as `github.com`.
@@ -24,7 +24,9 @@ Get a credential the work needs from the person and use it only where it is allo
 
 ## Work
 
-1. `{{said}} secrets request <name> --use <use> --for <places> --note "<what for>"` prints a link; for a website, add `--user <account>` when the account is known; without it the page asks the person for an optional username, so do not ask for it in the conversation. `--field "<element>"` names the field for a website secret; `--replace` sends a new link for a saved one.
+1. `{{said}} secrets request <name> --use <use> --for <places> --note "<what for>"` prints a link; `--field "<element>"` names a website's password field, `--replace` sends a new link for a saved one.
+
+   A website sign-in is one request and one link. Add `--user <account>` when the account is known; without it, the same page asks for the username or email beside the password. Never request a username or email as a secret of its own, never send two links for one sign-in, and do not ask for the username in the conversation.
 2. Put the link, as it is printed, in the final message of this turn, or in the thread the person wrote from, never only in a command's output or a note between steps, which the chat folds away. Say what it is for, and that it opens once, for the minutes the command printed.
 3. `{{said}} secrets wait <name>` waits up to 15 minutes. If it runs in the background, end the turn with the link still in that final message.
 4. Use it by name:

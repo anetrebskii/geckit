@@ -12,7 +12,8 @@ export const SECRETS_HELP = `geckit secrets: keys and passwords a conversation u
   request <name> --use website|http|command|ssh --for <places> --note "<what for>" [--user <account>] [--field "<element>"] [--replace]
                                 sends the person a link to enter the secret; give the link to them as it is printed.
                                 places: website https://github.com; http api.openai.com or *.stripe.com; command psql; ssh github.com
-                                --user: for website, the username or email it signs in as; not secret, shown in list
+                                --user: for website, the username or email it signs in as; not secret, shown in list.
+                                Without it the same page asks for the username beside the password: one link per sign-in, never a second one for the username.
   wait <name>                   waits up to 15 minutes until the person has saved it
   list                          the secrets here: use, places, how long each is kept, last use. Never a value.
   show <name>                   one secret and its last 20 uses
@@ -71,7 +72,7 @@ export async function secrets(rest: readonly string[]): Promise<SecretsAnswer> {
       if (!told.ok) return refused(told.error)
       if (typeof told['link'] !== 'string') return { ok: true, said: `${name} is already saved (${String(told['kept'])}); nothing was sent. Add --replace to send a link anyway.` }
       const minutes = Math.max(1, Math.round((Number(told['expiresAt']) - Date.now()) / 60_000))
-      return { ok: true, said: `${told['link']}\nPut this link, as it is, in your final reply to the person in this turn, not only in a note between steps, which the chat folds away. It works for ${minutes} minutes, once; they type the secret there. Then run geckit secrets wait ${name}. You never see the value: use it by name with geckit secrets run or geckit browser type --secret.` }
+      return { ok: true, said: `${told['link']}\nPut this link, as it is, in your final reply to the person in this turn, not only in a note between steps, which the chat folds away. It works for ${minutes} minutes, once; they type the secret there${kind === 'website' ? ', the username or email too, so send no other link for this sign-in' : ''}. Then run geckit secrets wait ${name}. You never see the value: use it by name with geckit secrets run or geckit browser type --secret.` }
     }
     case 'wait': {
       const name = words[0]

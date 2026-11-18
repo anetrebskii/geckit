@@ -58,6 +58,7 @@ export const setRunningSecrets = (secrets: Secrets | undefined): void => { runni
 
 export class Secrets {
   private readonly waiting = new Map<string, NodeJS.Timeout>()
+  private readonly asked = new Map<string, { readonly ask: SecretAsk; readonly expiresAt: number }>()
   constructor(private readonly host: SecretsHost) {}
 
   private now(): number { return this.host.now?.() ?? Date.now() }
@@ -69,6 +70,8 @@ export class Secrets {
     const broker = this.host.broker()
     const existing = (await broker.list()).secrets.find((one) => one.name === ask.name)
     if (existing !== undefined && ask.replace !== true) return { existing }
+    const signIn = ask.kind === 'website' ? [...this.asked.values()].find((one) => one.expiresAt >= this.now() && one.ask.kind === 'website' && one.ask.taskId === ask.taskId && one.ask.name !== ask.name && one.ask.places.some((place) => ask.places.includes(place))) : undefined
+    if (signIn !== undefined) throw new BrokerRefusal('sign-in', `${signIn.ask.name} already asks for this sign-in: its one link takes the username or email and the password. Send that link, not a second one.`)
     const id = token()
     const linkKey = token()
     const owner = token()
@@ -77,6 +80,7 @@ export class Secrets {
     const opened = await (this.host.relay ?? postRelay)({ action: 'open', id, linkKey, owner, card })
     if (opened.status !== 200) throw new BrokerRefusal('relay', `The secret link could not be made (${String(opened.json['error'] ?? opened.status)}).`)
     const expiresAt = Number(opened.json['expiresAt'] ?? this.now() + LINK_LIFE)
+    this.asked.set(id, { ask, expiresAt })
     this.watch(id, owner, ask, expiresAt)
     return { link: `${process.env['GECKIT_SIGNAL_URL'] ?? VIEWER}/s/#${id}.${linkKey}.${await keyHashOf(brokerKey)}`, expiresAt }
   }
@@ -88,6 +92,7 @@ export class Secrets {
       try { answer = await (this.host.relay ?? postRelay)({ action: 'collect', id, owner }) } catch { answer = { status: 0, json: {} } }
       const state = answer.json['state']
       if (state === 'saved') {
+        this.asked.delete(id)
         try {
           const typed = ask.kind === 'website' && (ask.user ?? '') === '' && typeof answer.json['user'] === 'string' ? answer.json['user'].trim().slice(0, 200) : ''
           const kept = await this.host.broker().accept({ requestId: id, ciphertext: answer.json['ciphertext'] as SealedValue, lifetime: answer.json['lifetime'] as SecretLifetime, ...(typed === '' ? {} : { user: typed }) })
@@ -99,7 +104,7 @@ export class Secrets {
         }
         return
       }
-      if (state === 'expired' || state === 'collected' || answer.status === 404 || this.now() > expiresAt + 60_000) return
+      if (state === 'expired' || state === 'collected' || answer.status === 404 || this.now() > expiresAt + 60_000) { this.asked.delete(id); return }
       this.waiting.set(id, setTimeout(() => { void tick() }, POLL))
     }
     this.waiting.set(id, setTimeout(() => { void tick() }, POLL))
@@ -145,5 +150,5 @@ export class Secrets {
   clean(text: string): Promise<string> { return this.host.broker().clean({ text }).then((one) => one.text) }
   run(request: RunRequest, onChunk: (chunk: RunChunk) => void): Promise<{ exit: number }> { return this.host.broker().run(request, onChunk) }
 
-  dispose(): void { for (const timer of this.waiting.values()) clearTimeout(timer); this.waiting.clear() }
+  dispose(): void { for (const timer of this.waiting.values()) clearTimeout(timer); this.waiting.clear(); this.asked.clear() }
 }
