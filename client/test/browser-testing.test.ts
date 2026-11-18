@@ -12,7 +12,7 @@ describe('test browsers', () => {
   })
   it('runs the extension own page functions, read out of background.js', () => {
     const scope = new Function(`${pageScript()}; return geckitPage`)() as Record<string, unknown>
-    expect(Object.keys(scope).sort()).toEqual(['pageBox', 'pageCenter', 'pageClick', 'pageOverlay', 'pagePointer', 'pageRead', 'pageScroll', 'pageSecretField', 'pageSecrets', 'pageSlow', 'pageStyle', 'pageText', 'pageType', 'pageTypeSecret'])
+    expect(Object.keys(scope).sort()).toEqual(['pageBox', 'pageCenter', 'pageChoose', 'pageField', 'pageOverlay', 'pagePointer', 'pageRead', 'pageScroll', 'pageSecretField', 'pageSecrets', 'pageSlow', 'pageStyle', 'pageText', 'pageTyped'])
     expect(extensionSource('lzw')).toMatch(/^function lzw\(indexes\) \{[\s\S]*\n\}$/)
     expect(extensionSource('LZW_CODES')).toBe('const LZW_CODES = new Int32Array(4096 * 256)')
     expect(() => extensionSource('nothingLikeThis')).toThrow('background.js has no nothingLikeThis')

@@ -21,6 +21,8 @@ When a conversation acts in a tab through `geckit browser`, the person watching 
 - With reduced motion asked for, the pointer appears at the element without travelling and the ring does not grow, it only fades.
 - A tab in the background is drawn the same way; the person sees the resting state if they switch to it within 3 s.
 - The overlay is drawn by the extension, not the conversation, so a page cannot fake it and a conversation cannot hide it.
+- Every `click` in the person's Chrome is a real mouse move and press through Chrome's debugger, so Chrome shows its debugging bar while it runs. There is no simulated click and no option to choose one.
+- `type`, in the person's Chrome and in test browsers, clicks into the field with the real mouse, clears what it held with select all and Backspace, then presses one key per character with a short uneven pause, the whole text taking at most about 30 s. A secret is typed the same way. Only a `<select>` is still set directly, since its list is drawn outside the page.
 
 ## Which tabs GeckIt works in
 
@@ -39,7 +41,7 @@ Alex requested natural movement in Chrome for Testing after watching Camoufox's 
 
 ### Behavior and states
 
-Automated `click`, `hover`, `type` and `scroll <ref>` move Chrome's actual mouse along a curved path with acceleration and deceleration before performing the action. Ordinary test-browser clicks use native mouse press/release events, including when `--real` is omitted. The existing overlay follows those actual mouse events instead of running a second straight-line animation. Position belongs to the tab, and another tab starts independently. The first move starts from the browser's initial mouse position at the top left.
+Automated `click`, `hover`, `type` and `scroll <ref>` move Chrome's actual mouse along a curved path with acceleration and deceleration before performing the action. Test-browser clicks use native mouse press/release events. The existing overlay follows those actual mouse events instead of running a second straight-line animation. Position belongs to the tab, and another tab starts independently. The first move starts from the browser's initial mouse position at the top left.
 
 | From | Event | To | What the user sees |
 | --- | --- | --- | --- |
@@ -55,7 +57,7 @@ Every point stays inside the page's content viewport, excluding browser scrollba
 
 There are no new messages or settings: paths and timing are internal to the command. Existing result wording and error wording remain. Read-only commands show nothing. Closing a tab drops its stored position. Resizing clamps the starting position and path to the new viewport. Missing refs fail before mouse input. A disabled or covered target receives the same native mouse behavior as a person's click; the driver does not synthesize an extra DOM click.
 
-The test tab uses focus emulation so native input finishes while it stays in the background; the driver does not bring the tab or window forward. The person's live sign-in mouse input stays direct because it already comes from their own movements. Recording triggers retain their immediate input timing so existing animation recordings do not consume their capture window waiting for cursor travel. Ordinary Chrome through the extension retains its current movement. This change uses GeckIt's own path generator rather than importing Camoufox's Firefox engine or controlling the system pointer. Dragging, keystroke timing, fingerprint changes and promises of avoiding bot detection are deliberately absent.
+The test tab uses focus emulation so native input finishes while it stays in the background; the driver does not bring the tab or window forward. The person's live sign-in mouse input stays direct because it already comes from their own movements. Recording triggers retain their immediate input timing so existing animation recordings do not consume their capture window waiting for cursor travel. Ordinary Chrome through the extension retains its current movement. This change uses GeckIt's own path generator rather than importing Camoufox's Firefox engine or controlling the system pointer. Dragging, fingerprint changes and promises of avoiding bot detection are deliberately absent.
 
 ### Acceptance
 

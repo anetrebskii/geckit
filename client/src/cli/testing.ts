@@ -22,7 +22,7 @@ export const currentProfile = (value: string): string => value === 'test' ? TEST
 export const testName = (label: string): string | undefined => { const current = currentProfile(label); return current.startsWith(TEST_PREFIX) ? current.slice(TEST_PREFIX.length) : undefined }
 export const validTestName = (name: string): boolean => /^[a-z0-9][a-z0-9-]{0,39}$/.test(name)
 
-const PAGE_FUNCTIONS = ['pageSlow', 'pageOverlay', 'pageBox', 'pageStyle', 'pageText', 'pageRead', 'pageCenter', 'pageClick', 'pageType', 'pageScroll', 'pagePointer', 'pageSecrets', 'pageSecretField', 'pageTypeSecret'] as const
+const PAGE_FUNCTIONS = ['pageSlow', 'pageOverlay', 'pageBox', 'pageStyle', 'pageText', 'pageRead', 'pageCenter', 'pageField', 'pageChoose', 'pageTyped', 'pageScroll', 'pagePointer', 'pageSecrets', 'pageSecretField'] as const
 const MEDIA_FUNCTIONS = ['base64', 'bitmaps', 'contactSheet', 'animation', 'lzw'] as const
 const MEDIA_LINES = ['bytesOf', 'LZW_CODES', 'LZW_STAMPS', 'lzwGeneration'] as const
 
@@ -230,9 +230,19 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   const mouse = async (page: Page, at: Pick<Center, 'x' | 'y'>, click: boolean): Promise<void> => { await page.mouse.move(at.x, at.y); if (click) { await page.mouse.down(); await page.mouse.up() } }
   const moveTo = async (id: number | undefined, ref: string | undefined, kind: 'click' | 'hover' | 'type' | 'scroll'): Promise<string> => {
     const at = await inPage(id, 'pageCenter', ref) as Center
-    await mouse(targetOf(id), at, kind === 'click')
+    await mouse(targetOf(id), at, kind === 'click' || kind === 'type')
     await inPage(id, 'pagePointer', ref, kind, { x: at.x, y: at.y })
     return at.label
+  }
+  const typeKeys = async (id: number | undefined, ref: string | undefined, text: string, secret: boolean): Promise<PageValue | undefined> => {
+    const field = await inPage(id, 'pageField', ref, secret) as { select?: boolean; filled?: boolean }
+    if (field.select === true) return inPage(id, 'pageChoose', ref, text)
+    await moveTo(id, ref, 'type')
+    const page = targetOf(id)
+    if (field.filled === true) { await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.press('Backspace') }
+    const pause = Math.min(140, 30_000 / Math.max(1, text.length))
+    for (const one of text) { await page.keyboard.type(one); await wait(pause * (0.4 + Math.random() * 0.8)) }
+    return inPage(id, 'pageTyped', ref)
   }
   const withoutPointer = async <T>(id: number | undefined, keep: boolean | undefined, steps: () => Promise<T>): Promise<T> => {
     if (!keep) await inPage(id, 'pageOverlay', false)
@@ -296,7 +306,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       case 'style': return inPage(id, 'pageStyle', request.ref)
       case 'click': return { clicked: await moveTo(id, request.ref ?? undefined, 'click') }
       case 'hover': return { hovered: await moveTo(id, request.ref ?? undefined, 'hover') }
-      case 'type': await moveTo(id, request.ref ?? undefined, 'type'); return inPage(id, 'pageType', request.ref, request.text)
+      case 'type': return typeKeys(id, request.ref ?? undefined, request.text ?? '', false)
       case 'secret-key': {
         const field = await inPage(id, 'pageSecretField', request.ref) as Record<string, PageValue>
         const key = await receiver()
@@ -309,8 +319,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
         const open = secretKeys.get(String(request.keyId))
         secretKeys.delete(String(request.keyId))
         if (open === undefined) throw new Error('The secret took too long to arrive. Try again.')
-        await moveTo(id, request.ref ?? undefined, 'type')
-        return inPage(id, 'pageTypeSecret', request.ref, await open(request.sealed ?? { epk: '', iv: '', data: '' }, 'geckit-fill-v1'))
+        return typeKeys(id, request.ref ?? undefined, await open(request.sealed ?? { epk: '', iv: '', data: '' }, 'geckit-fill-v1'), true)
       }
       case 'scroll': if (request.ref != null) await moveTo(id, request.ref, 'scroll'); else await inPage(id, 'pagePointer', null, 'scroll'); return inPage(id, 'pageScroll', request.ref ?? null, request.by)
       case 'key': await inPage(id, 'pagePointer', null, 'key'); return { pressed: await press(targetOf(id), request.key ?? '') }

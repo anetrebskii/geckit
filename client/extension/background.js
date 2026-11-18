@@ -227,6 +227,31 @@ async function mouse(send, at, click) {
   for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 })
 }
 
+// Clicks into the field and types it key by key, as a person would, after clearing what it held.
+async function typeKeys(id, ref, text, secret) {
+  const field = await inPage(id, pageField, ref, secret)
+  if (field.select) return inPage(id, pageChoose, ref, text)
+  await debug(id, async (send) => {
+    await mouse(send, field, true)
+    if (field.filled) {
+      const all = { key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: navigator.userAgent.includes('Mac') ? 4 : 2 }
+      await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...all, commands: ['selectAll'] })
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', ...all })
+      await press(send, 'Backspace')
+    }
+    const pause = Math.min(140, 30000 / Math.max(1, text.length))
+    for (const one of text) {
+      if (one === '\n') await press(send, 'Enter')
+      else {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: one, text: one, unmodifiedText: one })
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: one })
+      }
+      await wait(pause * (0.4 + Math.random() * 0.8))
+    }
+  })
+  return inPage(id, pageTyped, ref)
+}
+
 function loaded(id) {
   return new Promise((resolve) => {
     const done = () => { chrome.tabs.onUpdated.removeListener(listen); clearTimeout(timer); resolve() }
@@ -296,7 +321,6 @@ async function answer(request) {
     case 'read': return inPage(id, pageRead)
     case 'click': {
       await inPage(id, pagePointer, request.ref, 'click')
-      if (!request.real) return inPage(id, pageClick, request.ref)
       const at = await inPage(id, pageCenter, request.ref)
       return debug(id, async (send) => { await mouse(send, at, true); return { clicked: at.label } })
     }
@@ -305,14 +329,14 @@ async function answer(request) {
       const at = await inPage(id, pageCenter, request.ref)
       return debug(id, async (send) => { await mouse(send, at, false); return { hovered: at.label } })
     }
-    case 'type': await inPage(id, pagePointer, request.ref, 'type'); return inPage(id, pageType, request.ref, request.text)
+    case 'type': await inPage(id, pagePointer, request.ref, 'type'); return typeKeys(id, request.ref, request.text, false)
     case 'secret-key': {
       const field = await inPage(id, pageSecretField, request.ref)
       return { ...field, ...await secretKey() }
     }
     case 'type-secret': {
       await inPage(id, pagePointer, request.ref, 'type')
-      return inPage(id, pageTypeSecret, request.ref, await openSecret(request.keyId, request.sealed))
+      return typeKeys(id, request.ref, await openSecret(request.keyId, request.sealed), true)
     }
     case 'scroll': await inPage(id, pagePointer, request.ref ?? null, 'scroll'); return inPage(id, pageScroll, request.ref ?? null, request.by)
     case 'key': {
@@ -727,56 +751,6 @@ function pageCenter(ref) {
   return { x: box.left + box.width / 2, y: box.top + box.height / 2, label: (el.getAttribute('aria-label') || el.innerText || el.tagName).replace(/\s+/g, ' ').trim().slice(0, 60) }
 }
 
-function pageClick(ref) {
-  const find = (root) => {
-    const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
-    if (hit) return hit
-    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
-    return null
-  }
-  const el = find(document)
-  if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
-  el.scrollIntoView({ block: 'center', inline: 'center' })
-  const box = el.getBoundingClientRect()
-  const at = { bubbles: true, cancelable: true, composed: true, clientX: box.left + box.width / 2, clientY: box.top + box.height / 2, button: 0, view: window }
-  el.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', isPrimary: true }))
-  el.dispatchEvent(new MouseEvent('mousedown', at))
-  if (typeof el.focus === 'function') el.focus()
-  el.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse', isPrimary: true }))
-  el.dispatchEvent(new MouseEvent('mouseup', at))
-  el.click()
-  return { clicked: (el.getAttribute('aria-label') || el.innerText || el.tagName).replace(/\s+/g, ' ').trim().slice(0, 60) }
-}
-
-function pageType(ref, text) {
-  const find = (root) => {
-    const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
-    if (hit) return hit
-    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
-    return null
-  }
-  const el = find(document)
-  if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
-  el.scrollIntoView({ block: 'center' })
-  el.focus()
-  if (el.isContentEditable) {
-    const range = document.createRange()
-    range.selectNodeContents(el)
-    const selection = window.getSelection()
-    selection.removeAllRanges()
-    selection.addRange(range)
-    document.execCommand(text === '' ? 'delete' : 'insertText', false, text)
-    return { typed: el.innerText.replace(/\s+/g, ' ').trim().slice(0, 100) }
-  }
-  if (!('value' in el)) return { error: `Element ${ref} is not a field you can type into.` }
-  delete el.dataset.geckitSecret
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, text)
-  el.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
-  el.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
-  return { typed: el.type === 'password' ? (el.value ? 'secret, filled' : '') : String(el.value).slice(0, 100) }
-}
-
 function pageSecretField(ref) {
   const find = (root) => {
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
@@ -792,7 +766,7 @@ function pageSecretField(ref) {
   return { origin: location.origin, password: el.type === 'password', field: el.type === 'password' ? 'password' : field }
 }
 
-function pageTypeSecret(ref, value) {
+function pageField(ref, secret) {
   const find = (root) => {
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
@@ -801,13 +775,42 @@ function pageTypeSecret(ref, value) {
   }
   const el = find(document)
   if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
-  el.focus()
-  el.dataset.geckitSecret = ''
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value)
+  el.scrollIntoView({ block: 'center', inline: 'center' })
+  if (el instanceof HTMLSelectElement) return { select: true }
+  if (!el.isContentEditable && !('value' in el)) return { error: `Element ${ref} is not a field you can type into.` }
+  if (secret) el.dataset.geckitSecret = ''
+  else delete el.dataset.geckitSecret
+  const box = el.getBoundingClientRect()
+  return { x: box.left + box.width / 2, y: box.top + box.height / 2, filled: el.isContentEditable ? el.innerText.trim() !== '' : el.value !== '' }
+}
+
+function pageChoose(ref, text) {
+  const find = (root) => {
+    const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
+    if (hit) return hit
+    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
+    return null
+  }
+  const el = find(document)
+  if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
+  el.value = text
   el.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
   el.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
-  return { typed: 'secret, filled' }
+  return { typed: String(el.value).slice(0, 100) }
+}
+
+function pageTyped(ref) {
+  const find = (root) => {
+    const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
+    if (hit) return hit
+    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
+    return null
+  }
+  const el = find(document)
+  if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
+  if (el.isContentEditable) return { typed: el.innerText.replace(/\s+/g, ' ').trim().slice(0, 100) }
+  if (el.type === 'password' || 'geckitSecret' in el.dataset) return { typed: el.value ? 'secret, filled' : '' }
+  return { typed: String(el.value).slice(0, 100) }
 }
 
 function pageSecrets(mode) {

@@ -487,8 +487,8 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
   text <tab> [--max <n>]        the page's main text, 6000 characters unless --max
   read <tab> [--all]            headings and what can be clicked or typed into, as [ref] role "name"; 200 lines unless --all
   find <tab> <what>             the lines of read that match a description, picked by a small local model
-  click <tab> <ref> [--real]    click; --real clicks like a mouse, Chrome shows a debugging bar meanwhile
-  type <tab> <ref> <text>       replace what the field holds
+  click <tab> <ref>             move the mouse to an element and click it
+  type <tab> <ref> <text>       click into a field, clear it and type the text key by key
   key <tab> <key>               Enter, Tab, Escape, Backspace, arrows, PageDown or one character
   scroll <tab> [<ref>|up|down]  bring an element into view, or a screen down or up
   eval <tab> <js>               run JavaScript in the page, - reads it from stdin; prints the value as JSON
@@ -553,7 +553,7 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
         case 'text': return { cmd: 'text', tab: tabOf(words[0]) }
         case 'read': return { cmd: 'read', tab: tabOf(words[0]) }
         case 'find': if (words.length < 2) throw new Error('Give the tab and what to find, in words.'); return { cmd: 'find', tab: tabOf(words[0]), query: words.slice(1).join(' ') }
-        case 'click': return { cmd: 'click', tab: tabOf(words[0]), ref: refOf(words[1]), real: rest.includes('--real') }
+        case 'click': return { cmd: 'click', tab: tabOf(words[0]), ref: refOf(words[1]) }
         case 'type': {
           const secret = option(rest, '--secret')
           if (secret !== undefined) { if (words.length < 2) throw new Error('Give the tab and the ref of the password field.'); return { cmd: 'secret-key', tab: tabOf(words[0]), ref: refOf(words[1]), secret } }

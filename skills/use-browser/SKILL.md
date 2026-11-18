@@ -43,8 +43,9 @@ For profile creation or account reuse, load `{{profilesSkill}}` from {{profilesP
 ```
 
 - Start with `find`: it returns only the matching `[ref] role "name"` lines, picked by a model on this computer. `read` lists every heading and control, with `--- item N ---` at each post or card; use it when `find` misses.
-- One command per call, nothing chained. `text` is the main text; `shot` saves a PNG and prints its path. `{{said}} browser help` lists open, go, close, key, scroll and eval.
-- Refs hold until the page reloads; after a click that changes the page, read again.
+- One command per call. `text` gives the main text; `shot` prints a PNG's path. `{{said}} browser help` lists open, go, close, key, scroll and eval.
+- Always behave as a real user: reach every control by pointer with `click`, `hover`, `type` or `scroll <ref>`. `eval` only reads, never clicks or fills.
+- Refs hold until reload; after a click changes the page, read again.
 - For a design, layout or animation check, read [design checks](references/design-checks.md). When the work needs a password, API key or SSH key, use {{secrets}}.
 
 ## Unknowns
