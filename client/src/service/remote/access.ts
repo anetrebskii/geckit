@@ -214,6 +214,12 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
                 if (!ended) send(channel, { type: 'core-result', id: request.id, value: null })
                 return
               }
+              // A device with full access may invite another one, which gets no more than it has.
+              if ((method as string) === 'remote:pair') {
+                const value = await pair()
+                if (!ended) send(channel, { type: 'core-result', id: request.id, value })
+                return
+              }
               const owned = view?.call(method, args)
               if (owned !== undefined) {
                 const value = await owned as RemoteResult
@@ -274,18 +280,19 @@ export async function remoteAccess(runtime: ObservationRuntime, directory: strin
       } else { stop(); record = { ...record, enabled: true, signal } }
       save(); start(); return { server: record.server, enabled: true, signal }
   }
+  const pair = async () => {
+    if (!record?.enabled) await enable()
+    const current = active()
+    if (invitations.size >= 16) throw new Error('Cancel an outstanding invitation first.')
+    const key = newKey(); const id = randomUUID(); const expires = Date.now() + CODE_TTL
+    const invitation: Invitation = { id, key, expires, projects: [], manager: true, full: true, consumed: undefined, stop: nodeListen({ key, signal: current.signal }, (channel) => serve(channel, invitation), (error) => console.warn(`Invitation signaling unavailable: ${error.message}`)) }
+    invitations.set(id, invitation)
+    return { code: current.signal === SIGNAL ? key : invitationLink(key, current.signal), expires }
+  }
   return {
     server: (): RemoteServer | undefined => record?.enabled === true && record.devices.some((one) => one.revoked === undefined) ? record.server : undefined,
     enable,
-    pair: async () => {
-      if (!record?.enabled) await enable()
-      const current = active()
-      if (invitations.size >= 16) throw new Error('Cancel an outstanding invitation first.')
-      const key = newKey(); const id = randomUUID(); const expires = Date.now() + CODE_TTL
-      const invitation: Invitation = { id, key, expires, projects: [], manager: true, full: true, consumed: undefined, stop: nodeListen({ key, signal: current.signal }, (channel) => serve(channel, invitation), (error) => console.warn(`Invitation signaling unavailable: ${error.message}`)) }
-      invitations.set(id, invitation)
-      return { code: current.signal === SIGNAL ? key : invitationLink(key, current.signal), expires }
-    },
+    pair,
     disable: () => { const current = active(); record = { ...current, enabled: false }; save(); stop(); return { enabled: false } },
     create: (chosen: readonly string[], manager = false, ttl = CODE_TTL) => {
       const current = active()

@@ -249,6 +249,22 @@ it('pairs an empty server without enable or approval and grants live whole-serve
   await vi.waitFor(() => expect(rejected.responses.some((one) => one.type === 'error' && one.code === 'revoked')).toBe(true))
 })
 
+it('lets a device with full control make a code that pairs another device', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'geckit-pair-from-device-'))
+  folders.push(directory)
+  const security = serviceSecurity(directory, { key: Buffer.alloc(32, 97).toString('base64') })
+  const result = await remoteAccess(runtime, directory, security, {})
+  opened.push(result)
+  const first = await enroll((await result.pair()).code)
+  await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'trusted')).toBe(true))
+  first.send({ type: 'core-call', id: 50, call: { method: 'remote:pair', args: [] } as never })
+  await vi.waitFor(() => expect(first.responses.some((one) => one.type === 'core-result' && one.id === 50)).toBe(true))
+  const made = first.responses.find((one) => one.type === 'core-result' && one.id === 50)
+  const code = made?.type === 'core-result' ? (made.value as { code: string }).code : ''
+  const second = await enroll(code)
+  await vi.waitFor(() => expect(second.responses.some((one) => one.type === 'trusted')).toBe(true))
+})
+
 it('does not silently upgrade an existing scoped device to full control', async () => {
   const { result } = await access()
   const invitation = result.create(['/srv/allowed'])

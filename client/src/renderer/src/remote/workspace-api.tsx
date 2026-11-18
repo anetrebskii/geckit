@@ -1,10 +1,12 @@
 import { createRoot } from 'react-dom/client'
 import type { CoreMethods } from '../../../core/application'
 import type { HostView } from '../../../shared/hosts'
-import type { Settings, UpdateView } from '../../../shared/api'
+import type { PhoneView, Settings, UpdateView } from '../../../shared/api'
 import { createRendererApi } from '../../../shared/renderer-api'
 import type { RendererArgument, RendererTransport } from '../../../shared/renderer-api'
+import { invitationLink } from '../../../shared/remote/protocol'
 import type { RemoteServer } from '../../../shared/remote/protocol'
+import { SIGNAL } from '../../../shared/pairing'
 import { clientOwn } from '../../../shared/client-own'
 import { phoneErrors } from '../phone-errors'
 import { countEvent } from '../../../shared/counting'
@@ -17,6 +19,7 @@ import { keep, readKept } from '../kept'
 
 // Long enough to read a sentence, short enough not to linger over the work.
 const NOTICE_FOR = 6000
+const CODE_SHOWN = 60_000
 
 export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean) {
   // A server older than service:about answers only the whole bootstrap.
@@ -72,11 +75,26 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     root.render(<HostFolders host={folderHost} onClose={close} onAdded={(path) => { selected = path }} />)
     })
   }
-  const localInvoke = async (channel: string): Promise<RendererArgument> => {
+  // A code the server makes for another device, shown a minute as on the computer itself.
+  let pairing: { view: PhoneView; made: number } | undefined
+  const phoneView = async (fresh: boolean): Promise<PhoneView> => {
+    if (!fresh && pairing !== undefined && Date.now() - pairing.made < CODE_SHOWN) return pairing.view
+    try {
+      const { code } = await call<{ code: string }>('remote:pair')
+      const { default: QRCode } = await import('qrcode')
+      const qr = await QRCode.toDataURL(code.startsWith('geckit://') ? code : invitationLink(code, SIGNAL), { margin: 1, width: 400 })
+      pairing = { view: { qr, code, count: 0 }, made: Date.now() }
+      return pairing.view
+    } catch (error) {
+      const said = error instanceof Error ? error.message : String((error as { message?: unknown } | null)?.message ?? error)
+      return { count: 0, trouble: said === 'Unknown GeckIt method.' ? 'GeckIt on the server cannot make a code from here yet. Update it there, or run geckit pair on the server.' : said }
+    }
+  }
+  const localInvoke = async (channel: string, fresh = false): Promise<RendererArgument> => {
     switch (channel) {
       case 'chat:addProject': return chooseFolder()
       case 'settings:accessibility': return true
-      case 'phone:state': return { count: 0, trouble: 'Use geckit pair on the server to connect another device.' }
+      case 'phone:state': return phoneView(fresh)
       case 'update:view': return { state: 'off', version: await serverVersion(), offered: '', channel: 'stable', percent: 0, message: 'Update the GeckIt service on the server.', waitingFor: [] } satisfies UpdateView
       default: throw new Error('This action requires a desktop on the server.')
     }
@@ -121,6 +139,10 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
         const root = args[0]
         const path = args[1]
         if (typeof root === 'string' && typeof path === 'string') void showFile(root, path).catch(report)
+        return
+      }
+      if (channel === 'phone:newCode') {
+        void localInvoke('phone:state', true).then((view) => { window.dispatchEvent(new CustomEvent('remote:phone:state', { detail: view })) })
         return
       }
       if (channel === 'errors:hold') { console.error(...args); return }
