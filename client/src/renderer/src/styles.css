@@ -16770,23 +16770,32 @@ html.phone .secret-form .secret-form-label { text-align: start; }
 .checklist-check { display: inline-flex; flex: none; align-items: center; gap: 4px; padding: 2px 6px 2px 8px; color: var(--text-faint); font-size: 11px; background: none; border: 0; border-radius: var(--radius); }
 .checklist-check:hover:not(:disabled),
 .checklist-check.on { color: var(--text); background: var(--fill); }
-.checklist-check.set { color: var(--text-dim); background: var(--fill); }
-.checklist-remove { flex: none; width: 22px; height: 22px; opacity: .45; }
+.checklist-check.set { color: var(--text-dim); }
+.checklist-remove { flex: none; width: 22px; height: 22px; opacity: 0; }
+.checklist-check.bare { padding: 3px; color: var(--text-faint); background: none; opacity: 0; }
+.checklist-item:hover .checklist-check.bare,
+.checklist-item:focus-within .checklist-check.bare,
+.checklist-check.bare.on,
+.checklist-check.bare:focus-visible { opacity: 1; }
+.checklist-check.bare:hover:not(:disabled),
+.checklist-check.bare.on { color: var(--accent); background: none; }
 .checklist-item:hover .checklist-remove,
 .checklist-item:focus-within .checklist-remove { opacity: 1; }
-.checklist-details { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 10px 30px; }
+.checklist-details { display: flex; flex-direction: column; gap: 8px; padding: 6px 12px 12px 34px; }
+.checklist-settings { display: flex; flex-direction: column; background: var(--field); border: 1px solid var(--border); border-radius: var(--radius); }
+.checklist-setting { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 4px 6px 4px 10px; color: var(--text); font-size: 12px; }
+.checklist-setting > span { flex: 1; min-width: 0; }
+.checklist-settings > * + * { border-top: 1px solid var(--border); }
+.checklist-settings .checklist-command { width: auto; margin: 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; padding: 8px 10px; }
+.checklist-settings .checklist-command:focus { border-color: var(--border); box-shadow: inset 0 0 0 2px var(--accent); }
+.checklist-check-picker { flex: none; font-size: 12px; }
 .checklist-description,
-.checklist-command { width: 100%; min-width: 0; padding: 6px 8px; font: inherit; font-size: 12px; line-height: 1.45; color: var(--text); background: var(--field); border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
+.checklist-command { width: 100%; min-width: 0; padding: 6px 8px; font: inherit; font-size: 12px; line-height: 1.45; color: var(--text); background: var(--field); border: 1px solid var(--border); border-radius: var(--radius); resize: none; }
 .checklist-command { font-family: var(--font-code); }
 .checklist-description:focus,
 .checklist-command:focus { border-color: var(--accent); outline: none; }
-.checklist-check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.checklist-check-row .checklist-label { color: var(--text-dim); font-size: 12px; }
-.checklist-checks button { padding: 2px 9px; font-size: 12px; }
 /* The inspector can be as narrow as 280 px: details start under the box, and the Check control takes the row and shares it evenly, so no choice is cut off. */
 .task-checklist-panel .checklist-details { padding-left: 10px; }
-.task-checklist-panel .checklist-checks { display: flex; flex: 1 1 100%; min-width: 0; }
-.task-checklist-panel .checklist-checks button { flex: 1 1 auto; min-width: 0; padding: 0 4px; }
 /* Narrow, each row keeps room for its title: the current goal shows by its highlight alone, and the check chip loses its chevron. */
 .task-checklist-panel { container-type: inline-size; }
 @container (max-width: 340px) {
@@ -16795,8 +16804,6 @@ html.phone .secret-form .secret-form-label { text-align: start; }
   .checklist-check > svg:last-child { display: none; }
 }
 .checklist-hint { color: var(--text-faint); font-size: 11px; }
-.checklist-final { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
-.browser-profiles-form label.checklist-final { text-align: start; }
 .checklist-notes { display: flex; flex-direction: column; gap: 2px; }
 .checklist-notes p { margin: 0; }
 .checklist-warn { color: var(--warning-text); font-size: 11px; }
@@ -16823,16 +16830,19 @@ html.phone .checklist-title { font-size: 17px; }
 html.phone .checklist-handle { width: 24px; height: 44px; font-size: 13px; }
 html.phone .checklist-check { min-height: 32px; font-size: 13px; }
 html.phone .checklist-remove { width: 44px; height: 44px; opacity: 1; }
+html.phone .checklist-check.bare { min-width: 44px; justify-content: center; opacity: 1; }
 html.phone .checklist-add { min-height: 44px; font-size: 15px; }
 .browser-profiles-field .checklist-title { width: auto; padding: 5px 4px; background: none; border-radius: 0; }
-.browser-profiles-field .checklist-final input { width: auto; padding: 0; }
-.browser-profiles-field .checklist-final { align-self: flex-start; }
 html.phone .phone-checklist-sheet .checklist-field { padding: 0 0 12px; }
 html.phone .phone-checklist-done { width: 100%; min-height: 50px; font-size: 17px; border-radius: 12px; }
 
 /* A running task's checklist, in chat */
-.checklist-tick { flex: none; width: 14px; height: 14px; margin: 0 2px 0 6px; accent-color: var(--accent); }
-.checklist-item.passed .checklist-title { color: var(--text-faint); text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.checklist-tick { flex: none; width: 18px; height: 18px; margin: 0 2px 0 6px; appearance: none; background: none center / 12px no-repeat; border: 1.5px solid var(--text-faint); border-radius: 50%; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.checklist-tick:hover:not(:disabled) { border-color: var(--text-dim); }
+.checklist-tick:checked { background-color: var(--accent); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); border-color: var(--accent); }
+.checklist-tick:disabled { cursor: default; opacity: .4; }
+.checklist-tick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.checklist-item.passed .checklist-title { color: var(--text-faint); }
 .checklist-item.current .checklist-handle { color: var(--accent); }
 .checklist-now { flex: none; padding: 1px 6px; color: var(--accent); font-size: 11px; font-weight: 600; }
 .checklist-approve { flex: none; padding: 2px 8px; color: var(--accent); font-size: 11px; font-weight: 600; background: var(--fill); border: 0; border-radius: var(--radius); }
@@ -16858,19 +16868,16 @@ html.phone .task-checklist-phone .checklist-tick { margin-left: 4px; }
 .talk-main > .task-checklist-panel,
 .talk-main > .panel-grip { flex: none; }
 .task-checklist-panel { display: flex; flex-direction: column; width: var(--panel, 380px); max-width: calc(100% - 360px); min-width: 280px; min-height: 0; border-left: 1px solid var(--border); background: var(--bg); }
-.task-checklist-panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px 16px; }
-.task-checklist-panel-head h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.task-checklist-panel-head { display: flex; align-items: center; gap: 8px; padding: 14px 12px 10px 16px; }
+.task-checklist-panel-title { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.task-checklist-panel-title h3 { margin: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.task-checklist-panel-title span { color: var(--text-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
 .task-checklist-panel .task-checklist-body { flex: 1; padding: 0 16px 12px; }
-.task-checklist-panel-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); }
-.task-checklist-panel-actions .danger { color: var(--danger); }
-.checklist-item.current.goal { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.checklist-item.current.goal > .checklist-row { background: var(--accent-soft); }
 .checklist-item.current.goal .checklist-title { font-weight: 600; }
 .checklist-item.current.goal .checklist-handle { color: var(--accent); font-weight: 600; }
 .checklist-item.current:not(.goal) .checklist-handle { color: var(--text-dim); }
 .checklist-now:not(.goal) { color: var(--text-faint); font-weight: 500; }
-.checklist-move { display: flex; gap: 4px; }
-.checklist-move button { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; font-size: 12px; }
-html.phone .checklist-move button { height: 44px; padding: 0 12px; font-size: 14px; }
 .icon-button.inspector-toggle.on { color: var(--accent); background: var(--accent-soft); }
 .panel-grip { position: relative; z-index: 2; flex: none; width: 6px; margin: 0 -3px; cursor: col-resize; -webkit-app-region: no-drag; }
 .panel-grip::after { position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; content: ''; transition: background-color var(--quick) var(--ease); }
@@ -17043,6 +17050,20 @@ html input.phone-field.computer-code {
 .phone-settings .phone-error {
   margin: 8px 0 0;
 }
+
+/* An item's details as grouped rows: on the phone also where it is moved and deleted, as Reminders does. */
+.checklist-action { width: 100%; color: var(--accent); text-align: start; background: none; border: 0; border-radius: 0; }
+.checklist-action.danger { color: var(--danger); }
+.checklist-action:disabled { opacity: .4; }
+html.phone .checklist-details { gap: 10px; padding: 8px 12px 14px; }
+html.phone .checklist-description { font-size: 17px; }
+html.phone .checklist-settings { border-radius: 10px; }
+html.phone .checklist-setting { min-height: 44px; padding: 0 12px 0 16px; font-size: 17px; }
+html.phone .checklist-settings .checklist-command { padding: 11px 16px; font-size: 15px; }
+html.phone .checklist-check-picker { font-size: 17px; }
+html.phone .checklist-hint { font-size: 13px; }
+html.phone .task-checklist-phone .phone-head { margin-top: 0; }
+.checklist-settings > .checklist-action + .checklist-action { border-top: 1px solid var(--border); }
 
 /* The link being made again, over the desktop workspace: a capsule under the title bar, clear of the window controls. */
 .remote-dropped { position: fixed; top: 52px; left: 50%; z-index: 60; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 7px 16px 7px 12px; color: var(--text); background: color-mix(in srgb, var(--bg-raised) 88%, transparent); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow); backdrop-filter: blur(20px) saturate(1.6); transform: translateX(-50%); animation: remote-dropped-in .2s ease-out; }

@@ -4,7 +4,8 @@ import type { ChecklistItem, TaskChecklist } from '../../../shared/checklists'
 import { checklistDone, checklistProgress, currentItem, itemCondition, newItem } from '../../../shared/checklists'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
-import { Sheet } from '../ui/Sheet'
+import { Menu } from '../ui/Menu'
+import { Cell, FullSheet } from './PhoneKit'
 import { ChecklistItems, ChecklistNotes } from './ChecklistField'
 
 /** A task's checklist as the chat shows it: its own, or its plain goal as one item. */
@@ -48,6 +49,8 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
   const [waiting, setWaiting] = useState(false)
   const [seen, setSeen] = useState(checklist)
   const [focus, setFocus] = useState<string | undefined>()
+  const [more, setMore] = useState<DOMRect | undefined>()
+  const [clearing, setClearing] = useState(false)
   const typing = useRef(false)
   const held = useRef(false)
   if (seen !== checklist) {
@@ -141,25 +144,49 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
       <p className="checklist-hint task-checklist-hint">Changes save as you make them. Each item becomes the goal in turn; when its goal is met, GeckIt ticks it and sets the next.</p>
     </>
   )
+  const { passed, all } = checklistProgress(draft)
   const title = checklist.from === undefined ? 'Checklist' : `Checklist: ${checklist.from.name}`
   const clearButton = checklist.items.length === 0 ? null : <button type="button" className="quiet danger" onClick={clear}>Clear checklist</button>
   if (panel) return (
     <aside className="task-checklist-panel" aria-label={title}>
       <header className="task-checklist-panel-head">
-        <h3>{title}</h3>
+        <div className="task-checklist-panel-title">
+          <h3>{title}</h3>
+          {all === 0 ? null : <span>{checklistDone(draft) ? 'All done' : `${String(passed)} of ${String(all)} done`}</span>}
+        </div>
+        {checklist.items.length === 0 ? null : (
+          <button type="button" className="icon-button" aria-label="Checklist actions" aria-haspopup="menu" title="More" onClick={(event) => setMore(event.currentTarget.getBoundingClientRect())}>
+            <Icon name="more" size={14} />
+          </button>
+        )}
       </header>
       <div className="task-checklist-body">{body}</div>
-      {clearButton === null ? null : <div className="task-checklist-panel-actions">{clearButton}</div>}
+      {more === undefined ? null : <Menu anchor={more} choices={[{ value: 'clear', label: 'Clear Checklist…', danger: true }]} onPick={() => setClearing(true)} onClose={() => setMore(undefined)} />}
+      {clearing ? (
+        <div className="dialog-scrim" onMouseDown={() => setClearing(false)}>
+          <div className="dialog" role="alertdialog" aria-label="Clear this checklist?" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') setClearing(false) }}>
+            <h2>Clear this checklist?</h2>
+            <p className="add-host-lead">Every item and tick is removed from this task, and its goal is no longer set from the checklist.</p>
+            <div className="dialog-actions">
+              <button type="button" className="quiet" autoFocus onClick={() => setClearing(false)}>Cancel</button>
+              <button type="button" className="primary danger" onClick={() => { setClearing(false); clear() }}>Clear</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </aside>
   )
   if (ON_PHONE) return (
-    <Sheet title={title} onClose={onClose} cancel={false}>
+    <FullSheet title={title} saved onClose={onClose}>
       <div className="task-checklist-phone">
+        {all === 0 ? null : <div className="phone-head">{checklistDone(draft) ? 'All done' : `${String(passed)} of ${String(all)} done`}</div>}
         {body}
-        <button type="button" className="primary" onClick={onClose}>Done</button>
-        {clearButton}
+        {checklist.items.length === 0 ? null : (
+          <div className="phone-group"><Cell label="Clear Checklist" danger onPress={() => setClearing(true)} /></div>
+        )}
       </div>
-    </Sheet>
+      {clearing ? <Menu anchor={new DOMRect()} title="Clear this checklist?" choices={[{ value: 'clear', label: 'Clear Checklist', says: 'Every item and tick is removed from this task.', danger: true }]} onPick={clear} onClose={() => setClearing(false)} /> : null}
+    </FullSheet>
   )
   return (
     <div className="dialog-scrim" onMouseDown={onClose}>

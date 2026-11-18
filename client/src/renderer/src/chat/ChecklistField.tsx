@@ -3,7 +3,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { Checklist, ChecklistCheck, ChecklistItem, TaskChecklist } from '../../../shared/checklists'
 import { CHECK_LABELS, CHECKLIST_HINT_AT, CHECKLIST_WARN_AT, checklistGoal, checklistsFor, copyChecklist, newItem } from '../../../shared/checklists'
 import { Icon } from '../ui/Icon'
-import { Menu } from '../ui/Menu'
+import { Menu, Picker } from '../ui/Menu'
+import { ON_PHONE } from '../on-phone'
 import type { Choice } from '../ui/Menu'
 
 const CHECKS: readonly ChecklistCheck[] = ['none', 'command', 'review', 'person']
@@ -67,6 +68,8 @@ export function ChecklistItems({ items, onChange, disabled = false, focus, curre
       {items.map((item, at) => {
         const expanded = open === item.id
         const detailsId = `checklist-details-${item.id}`
+        // Reminders shows only an info button on a row; the check it names is read in the details.
+        const bare = ON_PHONE || (item.check === 'none' && (item.description ?? '').trim() === '')
         return (
           <li
             key={item.id}
@@ -142,22 +145,27 @@ export function ChecklistItems({ items, onChange, disabled = false, focus, curre
               ) : current === item.id && onTick !== undefined ? <span className={`checklist-now${active ? ' goal' : ''}`}>{active ? 'Goal' : 'Next'}</span> : null}
               <button
                 type="button"
-                className={`checklist-check${item.check === 'none' ? '' : ' set'}${expanded ? ' on' : ''}`}
+                className={`checklist-check${item.check === 'none' ? '' : ' set'}${bare ? ' bare' : ''}${expanded ? ' on' : ''}`}
+                aria-label={bare ? (expanded ? 'Hide details' : 'Details') : undefined}
                 aria-expanded={expanded}
                 aria-controls={detailsId}
                 disabled={disabled}
                 title={expanded ? 'Hide details' : 'Description and check'}
                 onClick={() => setOpen(expanded ? undefined : item.id)}
               >
-                {item.check === 'none' ? (item.description ?? '').trim() === '' ? 'Details' : 'Described' : CHECK_LABELS[item.check]}
-                {item.final === true && item.check !== 'person' ? <Icon name="refresh" size={10} /> : null}
-                <Icon name={expanded ? 'up' : 'down'} size={10} />
+                {bare ? <Icon name="info" size={ON_PHONE ? 22 : 15} /> : (
+                  <>
+                    {item.check === 'none' ? 'Described' : CHECK_LABELS[item.check]}
+                    {item.final === true && item.check !== 'person' ? <Icon name="refresh" size={10} /> : null}
+                    <Icon name={expanded ? 'up' : 'down'} size={10} />
+                  </>
+                )}
               </button>
-              <button type="button" className="icon-button checklist-remove" aria-label={`Remove item ${String(at + 1)}`} title="Remove" disabled={disabled} onClick={() => remove(at)}>
+              {ON_PHONE ? null : <button type="button" className="icon-button checklist-remove" aria-label={`Remove item ${String(at + 1)}`} title="Remove" disabled={disabled} onClick={() => remove(at)}>
                 <Icon name="close" size={11} />
-              </button>
+              </button>}
             </div>
-            {expanded ? <ItemDetails id={detailsId} item={item} alone={items.filter((one) => one.title.trim() !== '').length < 2} disabled={disabled} onChange={(change) => update(item.id, change)} onUp={at === 0 ? undefined : () => move(at, at - 1)} onDown={at === items.length - 1 ? undefined : () => move(at, at + 1)} /> : null}
+            {expanded ? <ItemDetails id={detailsId} item={item} alone={items.filter((one) => one.title.trim() !== '').length < 2} disabled={disabled} onChange={(change) => update(item.id, change)} onUp={at === 0 ? undefined : () => move(at, at - 1)} onDown={at === items.length - 1 ? undefined : () => move(at, at + 1)} onRemove={() => { setOpen(undefined); remove(at) }} /> : null}
           </li>
         )
       })}
@@ -165,7 +173,7 @@ export function ChecklistItems({ items, onChange, disabled = false, focus, curre
   )
 }
 
-function ItemDetails({ id, item, alone, disabled, onChange, onUp, onDown }: {
+function ItemDetails({ id, item, alone, disabled, onChange, onUp, onDown, onRemove }: {
   readonly id: string
   readonly item: ChecklistItem
   /** No other item yet, so nothing comes after this one to break it. */
@@ -174,6 +182,7 @@ function ItemDetails({ id, item, alone, disabled, onChange, onUp, onDown }: {
   readonly onChange: (change: Partial<ChecklistItem>) => void
   readonly onUp: (() => void) | undefined
   readonly onDown: (() => void) | undefined
+  readonly onRemove: () => void
 }): React.JSX.Element {
   const base = useId()
   return (
@@ -187,51 +196,48 @@ function ItemDetails({ id, item, alone, disabled, onChange, onUp, onDown }: {
         aria-label="Description"
         onChange={(event) => onChange({ description: event.target.value })}
       />
-      <div className="checklist-check-row">
-        <span className="checklist-label" id={`${base}-check`}>Check</span>
-        <div className="views checklist-checks" role="radiogroup" aria-labelledby={`${base}-check`}>
-          {CHECKS.map((one) => (
-            <button key={one} type="button" role="radio" aria-checked={item.check === one} className={item.check === one ? 'on' : ''} disabled={disabled} onClick={() => onChange({ check: one })}>
-              {CHECK_LABELS[one]}
-            </button>
-          ))}
+      <div className="checklist-settings">
+        <div className="checklist-setting">
+          <span id={`${base}-check`}>Check</span>
+          <Picker
+            className="picker checklist-check-picker"
+            label={CHECK_LABELS[item.check]}
+            title="Check"
+            choices={CHECKS.map((one) => ({ value: one, label: CHECK_LABELS[one], says: CHECK_HINT[one] }))}
+            chosen={item.check}
+            explained
+            disabled={disabled}
+            onPick={(value) => onChange({ check: value as ChecklistCheck })}
+          />
         </div>
-      </div>
-      {item.check === 'command' ? (
-        <input
-          className="checklist-command"
-          value={item.command ?? ''}
-          disabled={disabled}
-          placeholder="npm test"
-          aria-label="Command"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onChange={(event) => onChange({ command: event.target.value })}
-        />
-      ) : null}
-      <span className="checklist-hint">{CHECK_HINT[item.check]}</span>
-      {item.check === 'person' ? null : (
-        <>
-          <label className="checklist-final">
-            <input type="checkbox" checked={item.final === true} disabled={disabled || alone} onChange={(event) => onChange({ final: event.target.checked || undefined })} />
-            Recheck after the last item
+        {item.check === 'command' ? (
+          <input
+            className="checklist-command"
+            value={item.command ?? ''}
+            disabled={disabled}
+            placeholder="npm test"
+            aria-label="Command"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(event) => onChange({ command: event.target.value })}
+          />
+        ) : null}
+        {item.check === 'person' ? null : (
+          <label className="checklist-setting">
+            <span>Recheck after the last item</span>
+            <input className="assistant-toggle" type="checkbox" role="switch" checked={item.final === true} disabled={disabled || alone} onChange={(event) => onChange({ final: event.target.checked || undefined })} />
           </label>
-          <span className="checklist-hint">{alone ? 'Needs a later item.' : 'Later steps can break this. After the last item, the assistant confirms it still holds.'}</span>
-        </>
-      )}
-      {onUp === undefined && onDown === undefined ? null : (
-        <div className="checklist-move">
-          <button type="button" className="quiet" disabled={disabled || onUp === undefined} onClick={onUp}>
-            <Icon name="up" size={11} />
-            Move up
-          </button>
-          <button type="button" className="quiet" disabled={disabled || onDown === undefined} onClick={onDown}>
-            <Icon name="down" size={11} />
-            Move down
-          </button>
+        )}
+      </div>
+      <span className="checklist-hint">{CHECK_HINT[item.check]}.{item.check === 'person' ? '' : alone ? ' Recheck needs a later item.' : ' Recheck: after the last item, the assistant confirms this still holds.'}</span>
+      {ON_PHONE ? (
+        <div className="checklist-settings">
+          {onUp === undefined ? null : <button type="button" className="checklist-setting checklist-action" disabled={disabled} onClick={onUp}>Move Up</button>}
+          {onDown === undefined ? null : <button type="button" className="checklist-setting checklist-action" disabled={disabled} onClick={onDown}>Move Down</button>}
+          <button type="button" className="checklist-setting checklist-action danger" disabled={disabled} onClick={onRemove}>Delete Item</button>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
