@@ -856,7 +856,8 @@ async function pagePointer(ref, kind, position) {
     const host = document.createElement('geckit-pointer')
     host.style.cssText = 'all: initial; position: fixed; inset: 0; pointer-events: none; z-index: 2147483647;'
     const root = host.attachShadow({ mode: 'closed' })
-    root.innerHTML = `<style>
+    const style = document.createElement('style')
+    style.textContent = `
       :host { --accent: #1f8031; --ease: cubic-bezier(0.2, 0.8, 0.3, 1); --settle: ${SETTLE}ms; --travel: ${TRAVEL}ms; }
       .edge { position: fixed; inset: 0; box-shadow: inset 0 0 0 2px var(--accent); opacity: 0; transition: opacity var(--settle) var(--ease); }
       .pointer { position: fixed; left: 0; top: 0; width: 20px; height: 24px; margin: -2px 0 0 -2px; opacity: 0; transition: transform var(--travel) var(--ease), opacity var(--settle) var(--ease); }
@@ -865,9 +866,18 @@ async function pagePointer(ref, kind, position) {
       :host(.still) .pointer, :host(.native) .pointer { transition: opacity var(--settle) var(--ease); }
       @keyframes ring { from { opacity: 0.9; transform: var(--at) scale(0.4); } to { opacity: 0; transform: var(--at) scale(1.4); } }
       @keyframes ring-still { from { opacity: 0.9; transform: var(--at); } to { opacity: 0; transform: var(--at); } }
-    </style>
-    <div class="edge"></div><div class="ring"></div>
-    <svg class="pointer" viewBox="0 0 20 24" aria-hidden="true"><path d="M2 2 L2 19 L6.5 15 L9.5 22 L12.5 20.7 L9.6 14 L16 14 Z" fill="black" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg>`
+    `
+    const edgeLayer = document.createElement('div')
+    edgeLayer.className = 'edge'
+    const ringLayer = document.createElement('div')
+    ringLayer.className = 'ring'
+    const SVG = 'http://www.w3.org/2000/svg'
+    const arrow = document.createElementNS(SVG, 'svg')
+    for (const [name, value] of [['class', 'pointer'], ['viewBox', '0 0 20 24'], ['aria-hidden', 'true']]) arrow.setAttribute(name, value)
+    const path = document.createElementNS(SVG, 'path')
+    for (const [name, value] of [['d', 'M2 2 L2 19 L6.5 15 L9.5 22 L12.5 20.7 L9.6 14 L16 14 Z'], ['fill', 'black'], ['stroke', 'white'], ['stroke-width', '1.5'], ['stroke-linejoin', 'round']]) path.setAttribute(name, value)
+    arrow.append(path)
+    root.append(style, edgeLayer, ringLayer, arrow)
     document.documentElement.append(host)
     overlay = { host, root, x: innerWidth / 2, y: innerHeight - 40, timer: 0 }
     window.geckitPointer = overlay

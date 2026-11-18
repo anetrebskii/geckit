@@ -17,6 +17,9 @@ describe('test browsers', () => {
     expect(extensionSource('LZW_CODES')).toBe('const LZW_CODES = new Int32Array(4096 * 256)')
     expect(() => extensionSource('nothingLikeThis')).toThrow('background.js has no nothingLikeThis')
   })
+  it('builds page markup without HTML strings, which a Trusted Types default policy rewrites', () => {
+    expect(pageScript()).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/)
+  })
 
   it('names a test profile with lowercase letters, digits and hyphens only', () => {
     expect(['store', 'stage-2'].every(validTestName)).toBe(true)
