@@ -97,3 +97,7 @@ A saved token is distinct from a connected gateway. Ready requires a valid token
 Covers Alex's request of 2026-11-07: Discord as a place to talk to Manager and worker sessions with Telegram and Slack parity, and the addendum asking for a designed setup with onboarding, server and channel choice, allowed people and visible connection states. Not covered: live Discord, which needs Alex's own bot and server.
 
 The correction of 2026-11-15 supersedes the former four-step permissions form and optional channel/direct-message restrictions. Only token and allowed users remain configurable.
+
+## Sequential approval update - 2026-11-18
+
+[Channel approvals](channel-approvals.md) supersedes the simultaneous-question and restart behavior above. One delivered prompt per thread or DM accepts native buttons and typed values; accepted answers show who chose what and Manager's actual outcome before the next request appears. Reconnect and restart pull the current Manager snapshot, including requests an older adapter saved without delivering. Old multiple-prompt records are retired. Request, message, thread and actor checks remain mandatory.

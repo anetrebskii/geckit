@@ -673,8 +673,8 @@ export class Channels {
           thread(conversation)
           const authorized = may(conversation, options?.authorized)
           const found = this.#decisionsFor(conversation).find((one) => one.id === decision)
-          if (found === undefined && this.#deps.manager.threadRecord(conversation)?.shared === true) throw new Error('This decision belongs to another thread.')
-          if (found === undefined || found.kind === 'native' || found.choices.some((one) => one.value === choice)) {
+          if (found === undefined) return 'This request is no longer pending. Use /status to see current requests.'
+          if (found.kind === 'native' || found.choices.some((one) => one.value === choice)) {
             if (options?.by !== undefined) log.write('info', 'decision.answered', { decision, by: options.by.id })
             return (await this.#deps.manager.answer(decision, choice, authorized)).answer
           }

@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import { ApprovalQueue } from './approval-queue'
+import type { ApprovalPrompt } from './approval-queue'
 import { containsSecret } from '../../shared/channel-safety'
 import { channelDownload } from './channel-files'
 import type { ChannelFileSender } from './channel-files'
@@ -18,7 +21,7 @@ export const SLACK_INFO: ChannelInfo = {
   capabilities: ['conversations', 'manager', 'delivery', 'files'],
   fields: [
     { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, channels:read, groups:read, users:read, files:read, files:write, reactions:write.' },
-    { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode.' },
+    { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode. Enable Interactivity & Shortcuts in the Slack app for approval buttons.' },
   ],
 }
 
@@ -60,7 +63,19 @@ interface SlackMessage {
   readonly text?: string
   readonly ts?: string
   readonly files?: readonly { readonly name?: string; readonly permalink?: string }[]
+  readonly blocks?: readonly { readonly block_id?: string }[]
 }
+
+interface SlackAction {
+  readonly type?: string
+  readonly user?: { readonly id?: string }
+  readonly channel?: { readonly id?: string }
+  readonly container?: { readonly message_ts?: string; readonly thread_ts?: string; readonly channel_id?: string }
+  readonly message?: { readonly ts?: string; readonly thread_ts?: string }
+  readonly actions?: readonly { readonly action_id?: string; readonly value?: string }[]
+}
+
+const approvalId = (id: string): string => `gk:${createHash('sha256').update(id).digest('hex').slice(0, 20)}`
 
 const CONTEXT_LIMIT = 30_000
 const PAGES = 10
@@ -136,11 +151,12 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   let stopped = false
   let retry: ReturnType<typeof setTimeout> | undefined
   const watching = new Map<string, () => void>()
+  const approvals = new Map<string, ApprovalQueue>()
   const names = new Map<string, string>()
   const members = new Map<string, { readonly user: SlackUser; readonly at: number }>()
   let me: string | undefined
   let team: string | undefined
-  let chain: Promise<void> = Promise.resolve()
+  const incoming = new Map<string, Promise<void>>()
 
   const slack = async (method: string, body: object = {}, token = context.secret('botToken')): Promise<SlackReply> => {
     // Slack's read methods ignore a JSON body and answer invalid_arguments, so they get a form.
@@ -238,10 +254,6 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
   }
 
   const keyOf = (channel: string, thread: string): string => `${channel}:${thread}`
-  const pending = (key: string): readonly { readonly id: string; readonly values: readonly string[] }[] => {
-    const value = context.store.get(`decisions:${key}`)
-    return Array.isArray(value) ? value.flatMap((one) => one !== null && typeof one === 'object' && !Array.isArray(one) && typeof one['id'] === 'string' && Array.isArray(one['values']) ? [{ id: one['id'], values: one['values'].filter((item): item is string => typeof item === 'string') }] : []) : []
-  }
 
   const places = (): readonly { readonly key: string; readonly channel: string; readonly ts: string }[] => {
     const ordinary = context.store.get('threads')
@@ -316,7 +328,6 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       return { channel: 'channel:slack', destination: `${channel}:${ts}`, fileId: prepared.file_id }
     }
     context.files?.bind(thread, upload)
-    const shown = new Set(pending(key).map((one) => one.id))
     let busy = false
     const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     const status = new StatusMessage({
@@ -329,6 +340,36 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       edit: async (id, text) => { if (!current()) return; await slack('chat.update', { channel, ts: id, text: plain(text) }) },
       remove: async (id) => { if (!current()) return; await slack('chat.delete', { channel, ts: id }) },
     }, { failed: (error) => context.log.write('warn', 'slack.status.failed', { reason: said(error) }) })
+    const queue = new ApprovalQueue({
+      context, thread, key, current,
+      post: async (decision) => {
+        const marker = approvalId(decision.id)
+        if (context.store.get(`approval-posting:${key}`) === decision.id) {
+          let cursor = ''
+          for (let page = 0; page < PAGES; page++) {
+            const reply = await slack('conversations.replies', { channel, ts, limit: 200, ...(cursor === '' ? {} : { cursor }) })
+            const found = reply.messages?.find((one) => one.user === me && one.blocks?.some((block) => block.block_id === marker))
+            if (found?.ts !== undefined) return found.ts
+            cursor = reply.response_metadata?.next_cursor ?? ''
+            if (reply.has_more !== true || cursor === '') break
+            if (page === PAGES - 1) throw new Error('Slack approval delivery could not be reconciled.')
+          }
+        }
+        const buttons = decision.choices.length > 0 && decision.choices.length <= 40
+        const text = decision.choices.length === 0 ? decision.title : `${decision.title}\n${buttons ? 'Press a button or reply' : 'Reply'} with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`
+        const sections = (text.slice(0, 39_000).match(/[\s\S]{1,3000}/g) ?? []).map((part, index) => ({ type: 'section', ...(index === 0 ? { block_id: marker } : {}), text: { type: 'plain_text', text: part } }))
+        const actions = buttons ? Array.from({ length: Math.ceil(decision.choices.length / 25) }, (_, row) => ({ type: 'actions', elements: decision.choices.slice(row * 25, row * 25 + 25).map((choice, index) => ({ type: 'button', text: { type: 'plain_text', text: (choice.label || choice.value).slice(0, 75) }, action_id: `${marker}:${String(row * 25 + index)}`, value: decision.id })) })) : []
+        context.store.set(`approval-posting:${key}`, decision.id)
+        const reply = await slack('chat.postMessage', { channel, thread_ts: ts, text: text.slice(0, 39_000), mrkdwn: false, blocks: [...sections, ...actions] }).catch((error: Error) => { if (error instanceof SlackApiFailure) context.store.set(`approval-posting:${key}`, undefined); throw error })
+        if (reply.ts === undefined) throw new Error('Slack approval has no message receipt.')
+        context.store.set(`approval-posting:${key}`, undefined)
+        return reply.ts
+      },
+      close: async (prompt, note) => { await slack('chat.update', { channel, ts: prompt.message, text: `${prompt.title}\n${note}`.slice(0, 39_000), mrkdwn: false, blocks: [] }) },
+      notify: async (text) => { await post(channel, ts, text) },
+      failed: (error) => context.log.write('warn', 'slack.decision.failed', { reason: said(error) }),
+    })
+    approvals.set(key, queue)
     watching.set(thread, context.conversations.watch(thread, (event: ChannelEvent) => {
       if (event.kind === 'history') {
         context.store.set(`reset:${key}`, event.change.revision)
@@ -336,7 +377,8 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         const cutoffAt = (event.change.at / 1000).toFixed(6)
         context.store.set(`seen:${key}`, typeof seen === 'string' && after(seen, cutoffAt) ? seen : cutoffAt)
         context.store.set(`decisions:${key}`, [])
-        shown.clear()
+        queue.clear()
+        approvals.delete(key)
         if (event.change.action === 'delete') {
           context.store.set('threads', places().filter((one) => one.key !== key))
           context.store.set('shortcut-threads', places().filter((one) => one.key !== key))
@@ -352,18 +394,12 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         status.update(event.activity)
       }
       if (event.kind === 'answer') { unmark(thread); status.after(posted(channel, ts, event.text)) }
-      if (event.kind === 'decisions') {
-        context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, values: one.choices.map((choice) => choice.value) })))
-        for (const decision of event.decisions) {
-          if (shown.has(decision.id)) continue
-          shown.add(decision.id)
-          status.after(posted(channel, ts, decision.choices.length === 0 ? `*${decision.title}*` : `*${decision.title}*\nReply with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`))
-        }
-      }
+      if (event.kind === 'decisions') queue.update(event.decisions)
     }))
+    queue.refresh()
   }
 
-  const heard = async (event: SlackEvent): Promise<void> => {
+  const heard = async (event: SlackEvent, received: ApprovalPrompt | undefined): Promise<void> => {
     if (event.bot_id !== undefined || event.subtype !== undefined && event.subtype !== 'file_share' || event.channel === undefined || event.ts === undefined || event.user === undefined || event.user === me) return
     const direct = event.type === 'message' && event.channel_type === 'im'
     const mention = event.type === 'app_mention'
@@ -385,7 +421,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     }
     const text = await named(event.text ?? '')
     if (text === '' && event.thread_ts === undefined && (event.files?.length ?? 0) === 0) return
-    if (!mention && !direct && context.store.get(`shortcut:${key}`) !== true && !pending(key).some((one) => one.values.includes(text.toLowerCase())) && (event.files?.length ?? 0) === 0 && fileLinks(event.text ?? '').length === 0) return
+    if (!mention && !direct && context.store.get(`shortcut:${key}`) !== true && !approvals.get(key)?.matches(text) && received?.choices.some((one) => one.value.toLowerCase() === text.toLowerCase()) !== true && (event.files?.length ?? 0) === 0 && fileLinks(event.text ?? '').length === 0) return
     if (containsSecret(text)) { await post(event.channel, ts, say(speechOf(text)).secret); return }
     const from = await person(event.user)
     const link = known ? undefined : await slack('chat.getPermalink', { channel: event.channel, message_ts: ts }).then((reply) => reply.permalink, () => undefined)
@@ -398,10 +434,11 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     }
     context.store.set(`writer:${key}`, event.user)
     follow(thread, event.channel, ts, key)
-    const choice = text.toLowerCase()
-    const decision = pending(key).find((one) => one.values.includes(choice))
-    if (decision !== undefined && ((event.files?.length ?? 0) > 0 || fileLinks(event.text ?? '').length > 0)) { await post(event.channel, ts, 'A file cannot answer an approval or question. Use its buttons or a text reply, then send the file as a new message.'); return }
-    if (decision !== undefined && await context.conversations.answer(thread, decision.id, choice)) { context.store.set(`seen:${key}`, event.ts); return }
+    const queue = approvals.get(key)
+    const answering = received?.choices.some((one) => one.value.toLowerCase() === text.toLowerCase()) === true || queue?.matches(text) === true
+    if (answering && ((event.files?.length ?? 0) > 0 || fileLinks(event.text ?? '').length > 0)) { await post(event.channel, ts, 'A file cannot answer an approval or question. Use its buttons or a text reply, then send the file as a new message.'); return }
+    if (answering) context.store.set(`seen:${key}`, event.ts)
+    if (await queue?.reply(text, received, { id: event.user, name: from }, current)) return
     const before = event.thread_ts === undefined ? '' : await earlier(event.channel, ts, last, event.ts)
     if (!current()) return
     let attachments: readonly string[]
@@ -413,20 +450,48 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     context.store.set(`seen:${key}`, event.ts)
   }
 
+  const pressed = async (action: SlackAction): Promise<void> => {
+    if (action.type !== 'block_actions') return
+    const user = action.user?.id
+    const channel = action.channel?.id ?? action.container?.channel_id
+    const message = action.message?.ts ?? action.container?.message_ts
+    const place = places().find((one) => one.channel === channel && approvals.get(one.key)?.prompt?.message === message)
+    const ts = action.message?.thread_ts ?? action.container?.thread_ts ?? place?.ts
+    const button = action.actions?.[0]
+    if (user === undefined || channel === undefined || ts === undefined || message === undefined || button?.value === undefined) return
+    if (!await allowed(user)) { await slack('chat.postEphemeral', { channel, thread_ts: ts, user, text: say(speechOf('')).notAllowed }); return }
+    const key = keyOf(channel, ts)
+    const queue = approvals.get(key)
+    const prompt = queue?.prompt
+    const index = Number(button.action_id?.split(':').at(-1))
+    const value = prompt?.choices[index]?.value
+    if (prompt === undefined || prompt.message !== message || button.value !== prompt.id || button.action_id !== `${approvalId(prompt.id)}:${String(index)}` || value === undefined) {
+      await slack('chat.postEphemeral', { channel, thread_ts: ts, user, text: 'This request is no longer pending.' })
+      return
+    }
+    const revision = boundary(key)
+    await queue?.reply(value, prompt, { id: user, name: await person(user) }, () => !stopped && revision === boundary(key) && allowedNow(user))
+  }
+
   const connect = async (): Promise<void> => {
     const { url } = await slack('apps.connections.open', {}, context.secret('appToken'))
     if (stopped || url === undefined) return
     const opened = new transport.WebSocket(url)
     socket = opened
     opened.addEventListener('message', (message) => {
-      let envelope: { readonly type?: string; readonly envelope_id?: string; readonly payload?: { readonly event?: SlackEvent } }
+      let envelope: { readonly type?: string; readonly envelope_id?: string; readonly payload?: SlackAction & { readonly event?: SlackEvent } }
       try { envelope = JSON.parse(String(message.data)) as typeof envelope } catch { return }
-      if (envelope.type === 'hello') context.status('connected', 'Listening')
+      if (envelope.type === 'hello') { context.status('connected', 'Listening'); for (const queue of approvals.values()) queue.refresh() }
       if (envelope.type === 'disconnect') opened.close()
       if (envelope.envelope_id !== undefined) opened.send(JSON.stringify({ envelope_id: envelope.envelope_id }))
+      if (envelope.type === 'interactive' && envelope.payload !== undefined) void pressed(envelope.payload).catch((error: Error) => context.log.write('warn', 'slack.interaction.failed', { reason: said(error) }))
       if (envelope.type === 'events_api' && envelope.payload?.event !== undefined) {
         const event = envelope.payload.event
-        chain = chain.then(() => heard(event)).catch((error: unknown) => context.log.write('error', 'slack.event.failed', { reason: said(error) }))
+        const received = approvals.get(keyOf(event.channel ?? '', event.thread_ts ?? event.ts ?? ''))?.prompt
+        const route = keyOf(event.channel ?? '', event.thread_ts ?? event.ts ?? '')
+        const next = (incoming.get(route) ?? Promise.resolve()).then(() => heard(event, received)).catch((error: Error) => context.log.write('error', 'slack.event.failed', { reason: said(error) }))
+        incoming.set(route, next)
+        void next.then(() => { if (incoming.get(route) === next) incoming.delete(route) })
       }
     })
     opened.addEventListener('close', () => {
@@ -481,7 +546,13 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       team = auth.team_id
       for (const place of places()) {
         const reset = context.conversations.historyBoundary?.(place.key)
-        if (reset?.action === 'delete') { context.store.set(`thread:${place.key}`, undefined); continue }
+        if (reset?.action === 'delete') {
+          context.store.set(`thread:${place.key}`, undefined)
+          const prompt = context.store.get(`approval:${place.key}`)
+          if (prompt !== null && typeof prompt === 'object' && 'message' in prompt && typeof prompt.message === 'string') await slack('chat.update', { channel: place.channel, ts: prompt.message, text: 'This request is no longer pending.', blocks: [] }).catch((error: Error) => context.log.write('warn', 'slack.prompt.close.failed', { reason: said(error) }))
+          context.store.set(`approval:${place.key}`, undefined)
+          continue
+        }
         if (reset !== undefined && context.store.get(`reset:${place.key}`) !== reset.revision) {
           const seen = context.store.get(`seen:${place.key}`)
           const cutoffAt = (reset.at / 1000).toFixed(6)
@@ -499,6 +570,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
       clearTimeout(retry)
       for (const unwatch of watching.values()) unwatch()
       watching.clear()
+      approvals.clear()
       socket?.close()
     },
   }

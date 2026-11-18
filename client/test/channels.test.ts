@@ -10,7 +10,7 @@ vi.mock('../src/core/platform', () => ({ dataDirectory: () => process.env['GECKI
 import { Channels } from '../src/main/channels/channels'
 import { flushPluginLogs } from '../src/main/sessions/plugin-logs'
 import type { ChannelsDeps } from '../src/main/channels/channels'
-import type { ChannelContext, ChannelEvent, ChannelMigration } from '../src/main/channels/channel-api'
+import type { ChannelContext, ChannelEvent, ChannelMigration, ManagerDecision } from '../src/main/channels/channel-api'
 import { channelManifest, loadChannel } from '../src/main/channels/libraries'
 import type { CoreEvent } from '../src/core/events'
 import type { ChatSession, Settings } from '../src/shared/api'
@@ -289,14 +289,24 @@ class FakeSocket {
   emit(envelope: object): void { this.listeners.message?.({ data: JSON.stringify(envelope) }) }
 }
 
-function slackHarness(manager = true, history: { ts: string; user?: string; text: string; files?: { name: string; permalink: string }[] }[] = [], allow: readonly string[] = ['U1', 'U2'], people: { readonly [user: string]: object } = {}) {
-  const posted: { channel: string; thread_ts?: string; text: string }[] = []
+interface SlackPost {
+  readonly channel: string
+  readonly thread_ts?: string
+  readonly text: string
+  readonly blocks?: readonly { readonly block_id?: string; readonly elements?: readonly { readonly action_id: string; readonly value: string; readonly text: { readonly text: string } }[] }[]
+}
+
+function slackHarness(manager = true, history: { ts: string; user?: string; text: string; files?: { name: string; permalink: string }[]; blocks?: SlackPost['blocks'] }[] = [], allow: readonly string[] = ['U1', 'U2'], people: { readonly [user: string]: object } = {}) {
+  const posted: SlackPost[] = []
+  let postFailures = 0
+  let uncertain = false
   const updated: { channel: string; ts?: string; text: string }[] = []
   const deleted: { channel: string; ts: string }[] = []
   const reactions: [string, { channel: string; timestamp: string; name: string }][] = []
   const sent: [string, unknown][] = []
   const answered: [string, string, unknown][] = []
   const opened: unknown[] = []
+  const decisions = new Map<string, readonly ManagerDecision[]>()
   const watchers = new Map<string, (event: ChannelEvent) => void>()
   const store = new Map<string, unknown>()
   const context = {
@@ -317,8 +327,16 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
       get: () => undefined,
       list: () => [],
       items: async () => [],
-      watch: (id: string, listener: (event: ChannelEvent) => void) => { watchers.set(id, listener); return () => watchers.delete(id) },
+      watch: (id: string, listener: (event: ChannelEvent) => void) => { watchers.set(id, (event) => { if (event.kind === 'decisions') decisions.set(id, event.decisions); listener(event) }); return () => watchers.delete(id) },
       answer: async (id: string, card: string, answer: unknown) => { answered.push([id, card, answer]); return true },
+      decisions: (id: string) => decisions.get(id) ?? [],
+      decide: vi.fn<NonNullable<ChannelContext['conversations']['decide']>>(async (id, card, answer, options) => {
+        if (options?.authorized?.() === false) throw new Error('Not authorized')
+        if (!decisions.get(id)?.some((one) => one.id === card)) return 'This request is no longer pending. Use /status to see current requests.'
+        answered.push([id, card, answer])
+        watchers.get(id)?.({ kind: 'decisions', decisions: (decisions.get(id) ?? []).filter((one) => one.id !== card) })
+        return 'Answer sent.'
+      }),
       stop: async () => undefined,
     },
   } as unknown as ChannelContext
@@ -326,7 +344,12 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
     const method = url.split('/').at(-1)
     const form = init.headers['content-type'] === 'application/x-www-form-urlencoded'
     if (!form && (method === 'conversations.replies' || method === 'users.info' || method === 'chat.getPermalink')) return { json: async () => ({ ok: false, error: 'invalid_arguments' }) }
-    const body = (form ? Object.fromEntries(new URLSearchParams(init.body)) : JSON.parse(init.body)) as { channel: string; thread_ts?: string; text: string; user?: string; oldest?: string; ts?: string }
+    const body = (form ? Object.fromEntries(new URLSearchParams(init.body)) : JSON.parse(init.body)) as SlackPost & { user?: string; oldest?: string; ts?: string }
+    if (method === 'chat.postMessage' && postFailures > 0) {
+      postFailures--
+      if (uncertain) throw new Error('Lost response')
+      return { json: async () => ({ ok: false, error: 'ratelimited' }) }
+    }
     if (method === 'chat.postMessage') posted.push(body)
     if (method === 'chat.update') updated.push(body)
     if (method === 'chat.delete') deleted.push({ channel: body.channel, ts: body.ts ?? '' })
@@ -337,7 +360,7 @@ function slackHarness(manager = true, history: { ts: string; user?: string; text
   const channel = createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] })
   const event = (body: object): void => FakeSocket.last?.emit({ type: 'events_api', envelope_id: 'e1', payload: { event: body } })
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
-  return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, reactions, sent, answered, opened, watchers, store }
+  return { channel, context, makeChannel: () => createSlack(context, { fetch, WebSocket: FakeSocket as unknown as SlackTransport['WebSocket'] }), event, settle, posted, updated, deleted, reactions, sent, answered, opened, watchers, store, decisions, fetch, failPosts: (count: number, lost = false) => { postFailures = count; uncertain = lost }, interactive: (payload: object) => FakeSocket.last?.emit({ type: 'interactive', envelope_id: 'action', payload }) }
 }
 
 it('Slack: answers all workspace users including guests, but no outsider, deleted user or bot', async () => {
@@ -423,7 +446,7 @@ it('Slack: one Manager thread per Slack thread, labelled with who started it, an
   run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'answer', text: 'Started a worker for it.' })
   run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'decisions', decisions: [{ id: 'd1', title: 'Start this worker?', choices: [{ label: 'Allow', value: 'allow' }, { label: 'Refuse', value: 'refuse' }] }] })
   await run.settle()
-  expect(run.posted.slice(-2)).toEqual([{ channel: 'C1', thread_ts: '3.0', text: 'Started a worker for it.' }, { channel: 'C1', thread_ts: '3.0', text: '*Start this worker?*\nReply with one of: `allow`, `refuse`' }])
+  expect(run.posted.slice(-2)).toMatchObject([{ channel: 'C1', thread_ts: '3.0', text: 'Started a worker for it.' }, { channel: 'C1', thread_ts: '3.0', text: 'Start this worker?\nPress a button or reply with one of: `allow`, `refuse`' }])
   run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', ts: '6.0', thread_ts: '3.0', text: 'Allow' })
   await run.settle()
   expect(run.answered).toEqual([['channel:slack:C1:3.0', 'd1', 'allow']])
@@ -705,4 +728,166 @@ export function present(value, from) { return from === 'phone' ? { safe: true } 
       expect(reporting.views('phone')['channel:echo']).toEqual({ safe: true })
     } finally { await reporting.dispose() }
   } finally { await hub.dispose() }
+})
+
+it('Slack: serializes approvals, rejects already queued replies and binds native buttons to their delivered thread', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> work' })
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C2', ts: '4.0', text: '<@B1> other work' })
+  await run.settle()
+  const watch = run.watchers.get('channel:slack:C1:3.0')
+  const choices = [{ label: 'Allow', value: 'allow' }, { label: 'Refuse', value: 'refuse' }]
+  watch?.({ kind: 'decisions', decisions: [{ id: 'first', title: 'First?', choices }, { id: 'second', title: 'Second?', choices }] })
+  await run.settle()
+  expect(run.posted.map((one) => one.text)).toEqual(['First?\nPress a button or reply with one of: `allow`, `refuse`'])
+  run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', thread_ts: '3.0', ts: '4.5', text: 'ordinary thread chatter' })
+  await run.settle()
+  expect(run.sent).toHaveLength(2)
+  const first = run.posted[0]?.blocks?.[1]?.elements?.[0]
+  const click = (channel: string, ts: string, message: string, user = 'U1'): void => run.interactive({ type: 'block_actions', user: { id: user }, channel: { id: channel }, message: { ts: message, thread_ts: ts }, actions: [first] })
+  click('C2', '4.0', '9.1')
+  click('C1', '3.0', 'wrong')
+  click('C1', '3.0', '9.1', 'U9')
+  await run.settle()
+  expect(run.answered).toEqual([])
+  run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', thread_ts: '3.0', ts: '5.0', text: 'allow' })
+  run.event({ type: 'message', channel_type: 'channel', user: 'U1', channel: 'C1', thread_ts: '3.0', ts: '6.0', text: 'allow' })
+  await run.settle()
+  await run.settle()
+  expect(run.answered).toEqual([['channel:slack:C1:3.0', 'first', 'allow']])
+  expect(run.updated[0]?.text).toBe('First?\nMaria Ivanova chose Allow. Answer sent.')
+  expect(run.posted.filter((one) => one.blocks !== undefined)).toHaveLength(2)
+  click('C1', '3.0', '9.1')
+  await run.settle()
+  expect(run.answered).toHaveLength(1)
+  const second = run.posted.find((one) => one.text.startsWith('Second?'))?.blocks?.[1]?.elements?.[1]
+  const receipt = run.store.get('approval:C1:3.0') as { message: string }
+  run.interactive({ type: 'block_actions', user: { id: 'U2' }, channel: { id: 'C1' }, message: { ts: receipt.message }, actions: [second] })
+  run.interactive({ type: 'block_actions', user: { id: 'U2' }, channel: { id: 'C1' }, message: { ts: receipt.message }, actions: [second] })
+  await run.settle()
+  await run.settle()
+  expect(run.answered).toEqual([['channel:slack:C1:3.0', 'first', 'allow'], ['channel:slack:C1:3.0', 'second', 'refuse']])
+  await run.channel.stop()
+})
+
+it('Slack: recovers existing undispatched requests on start and reconnect without reposting confirmed prompts', async () => {
+  const run = slackHarness()
+  const key = 'C1:3.0'
+  const thread = `channel:slack:${key}`
+  run.store.set('threads', [{ key, channel: 'C1', ts: '3.0' }])
+  run.store.set(`thread:${key}`, true)
+  run.store.set(`decisions:${key}`, [{ id: 'old', values: ['allow'] }])
+  run.decisions.set(thread, [{ id: 'old', title: 'Still pending?', choices: [{ label: 'Allow', value: 'allow' }] }])
+  await run.channel.start()
+  await run.settle()
+  expect(run.posted).toHaveLength(1)
+  await run.channel.stop()
+  const next = run.makeChannel()
+  await next.start()
+  FakeSocket.last?.emit({ type: 'hello' })
+  await run.settle()
+  expect(run.posted).toHaveLength(1)
+  expect(run.sent).toEqual([])
+  run.decisions.set(thread, [])
+  FakeSocket.last?.emit({ type: 'hello' })
+  await run.settle()
+  expect(run.updated.at(-1)?.text).toContain('This request is no longer pending.')
+  await next.stop()
+})
+
+it('Slack: retries an undelivered prompt on reconnect and reconciles a lost post receipt before sending again', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> work' })
+  await run.settle()
+  const watch = run.watchers.get('channel:slack:C1:3.0')
+  run.failPosts(1)
+  watch?.({ kind: 'decisions', decisions: [{ id: 'pending', title: 'Pending?', choices: [{ label: 'Allow', value: 'allow' }] }] })
+  await run.settle()
+  expect(run.posted).toHaveLength(0)
+  expect(run.store.has('approval:C1:3.0')).toBe(false)
+  FakeSocket.last?.emit({ type: 'hello' })
+  await run.settle()
+  expect(run.posted).toHaveLength(1)
+  await run.channel.stop()
+  const prompt = run.posted[0]
+  const recovered = slackHarness(true, [{ ts: '9.1', user: 'B1', text: prompt?.text ?? '', blocks: prompt?.blocks }])
+  recovered.store.set('threads', [{ key: 'C1:3.0', channel: 'C1', ts: '3.0' }])
+  recovered.store.set('approval-posting:C1:3.0', 'pending')
+  recovered.decisions.set('channel:slack:C1:3.0', [{ id: 'pending', title: 'Pending?', choices: [{ label: 'Allow', value: 'allow' }] }])
+  await recovered.channel.start()
+  await recovered.settle()
+  expect(recovered.posted).toHaveLength(0)
+  expect(recovered.store.get('approval:C1:3.0')).toMatchObject({ message: '9.1' })
+  await recovered.channel.stop()
+})
+
+it('does not forward a stale or other-thread decision ID to Manager through decide', async () => {
+  const { channels, answered } = await setup()
+  await channels.configure('channel:echo', { enabled: true, manager: true, secrets: { token: 't' } })
+  const context = seen().contexts[0]
+  if (context === undefined) throw new Error('Not started')
+  const thread = context.conversations.manager({ key: 'chat-7' }) ?? ''
+  const other = context.conversations.manager({ key: 'chat-8' }) ?? ''
+  expect(context.conversations.decisions?.(thread).map((one) => one.id)).toEqual(['decision-1'])
+  expect(await context.conversations.decide?.(other, 'decision-1', 'yes')).toBe('This request is no longer pending. Use /status to see current requests.')
+  expect(await context.conversations.decide?.(thread, 'missing', 'yes')).toBe('This request is no longer pending. Use /status to see current requests.')
+  expect(answered).toEqual([])
+  await channels.dispose()
+})
+
+it('Slack: a slow approval in one thread does not block another thread', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  for (const channel of ['C1', 'C2']) run.event({ type: 'app_mention', user: 'U1', channel, ts: '3.0', text: '<@B1> work' })
+  await run.settle()
+  for (const channel of ['C1', 'C2']) run.watchers.get(`channel:slack:${channel}:3.0`)?.({ kind: 'decisions', decisions: [{ id: channel, title: channel, choices: [{ label: 'Allow', value: 'allow' }] }] })
+  await run.settle()
+  const handler = run.context.conversations.decide
+  if (handler === undefined) throw new Error('No decision handler')
+  const original = vi.mocked(handler).getMockImplementation()
+  if (original === undefined) throw new Error('No decision implementation')
+  let finish: (() => void) | undefined
+  const spy = vi.spyOn(run.context.conversations, 'decide').mockImplementation(async (...args) => {
+    if (args[1] === 'C1') await new Promise<void>((resolve) => { finish = resolve })
+    return original(...args)
+  })
+  for (const channel of ['C1', 'C2']) run.event({ type: 'message', user: 'U1', channel, thread_ts: '3.0', ts: '4.0', text: 'allow' })
+  await run.settle()
+  expect(run.answered).toEqual([['channel:slack:C2:3.0', 'C2', 'allow']])
+  finish?.()
+  await run.settle()
+  expect(run.answered).toHaveLength(2)
+  spy.mockRestore()
+  await run.channel.stop()
+})
+
+it('Slack: persists a consumed reply before reporting an uncertain answer, so its retry cannot approve the next request', async () => {
+  const run = slackHarness()
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> work' })
+  await run.settle()
+  const thread = 'channel:slack:C1:3.0'
+  const watch = run.watchers.get(thread)
+  const choices = [{ label: 'Allow', value: 'allow' }]
+  const second = { id: 'second', title: 'Second?', choices }
+  watch?.({ kind: 'decisions', decisions: [{ id: 'first', title: 'First?', choices }, second] })
+  await run.settle()
+  vi.spyOn(run.context.conversations, 'decide').mockImplementationOnce(async () => {
+    run.answered.push([thread, 'first', 'allow'])
+    watch?.({ kind: 'decisions', decisions: [second] })
+    run.failPosts(1)
+    throw new Error('Lost answer result')
+  })
+  const event = { type: 'message', user: 'U1', channel: 'C1', thread_ts: '3.0', ts: '5.0', text: 'allow' }
+  run.event(event)
+  await run.settle()
+  await run.settle()
+  expect(run.store.get('approval:C1:3.0')).toMatchObject({ id: 'second' })
+  expect(run.store.get('seen:C1:3.0')).toBe('5.0')
+  run.event(event)
+  await run.settle()
+  expect(run.answered).toEqual([[thread, 'first', 'allow']])
+  await run.channel.stop()
 })

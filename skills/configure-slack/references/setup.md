@@ -4,7 +4,7 @@
 
 Start from the existing Slack app ID and workspace, not its name. Open that app's settings at `https://api.slack.com/apps`. Use GeckIt's documented browser capability for page work; the person completes administrative sign-in or permission prompts. Do not read token fields into the model.
 
-Enable Socket Mode. Under Basic Information, create an app-level token with `connections:write`; this is the App token, with an `xapp-` prefix. Enable Event Subscriptions and bot events `app_mention`, `message.im`, `message.channels` and `message.groups` for the conversation types required. Socket Mode receives these through an outgoing WebSocket connection and does not need a public Request URL. Enable the app's Messages tab when people must DM it.
+Enable Socket Mode. Under Basic Information, create an app-level token with `connections:write`; this is the App token, with an `xapp-` prefix. Enable Event Subscriptions and bot events `app_mention`, `message.im`, `message.channels` and `message.groups` for the conversation types required. Socket Mode receives these through an outgoing WebSocket connection and does not need a public Request URL. Enable the app's Messages tab when people must DM it. Turn on Interactivity & Shortcuts for approval buttons; Socket Mode carries block actions over the existing connection without a public Request URL or additional OAuth scopes.
 
 The built-in adapter advertises these bot token scopes:
 
@@ -54,6 +54,7 @@ Read the channel's Connected/failed/setup status and Manager state first. Then, 
 3. Test a separate thread and DM if those entry points are required. Verify the second thread's conversation mapping is distinct.
 4. If files are requested, send a harmless text/image file under 1 KiB and ask about its contents. Then request a harmless generated project file and verify the native Slack upload and receipt. A file URL in a reply is not evidence of an uploaded attachment.
 5. With an available disallowed test account, verify access is refused or ignored according to the adapter. Do not broaden access merely to perform the test.
+6. When checking approvals, create two harmless requests in the same thread. Verify only the first appears, answer with its button or displayed value, observe confirmation and the second prompt, then answer separately. Replayed replies must not approve the next request. On a corrected build, reconnecting the channel or restarting its service recovers still-pending requests from existing chats without replaying the original task. Confirm the target actually runs the corrected adapter before promising this recovery.
 
 Never claim message or file delivery from a fake Slack transport, unit status or scope screenshot. Record any unavailable live check.
 
@@ -64,6 +65,7 @@ Never claim message or file delivery from a fake Slack transport, unit status or
 | Setup/missing credentials | Presence of both saved secret fields; vault availability, without displaying values |
 | Socket not connected | App token scope, Socket Mode, outbound network and sanitized channel error |
 | Connected but no answer | Correct app/workspace, event subscriptions, invitation, allow policy, Manager enabled and channel Manager grant |
+| Approval buttons do nothing | Interactivity & Shortcuts enabled on the same app; deployed adapter supports block actions; request and message are still current |
 | Missing project work | Registered project roots, channel grants, enabled provider and authentication, VPN/IP rule, pending approvals |
 | Missing thread context | History scopes and invitation; deployed adapter version and sanitized conversations.replies error |
 | missing_scope for files | files:read or files:write as reported; reinstall the same app; retry the affected file check |

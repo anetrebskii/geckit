@@ -1,3 +1,5 @@
+import { ApprovalQueue } from './approval-queue'
+import type { ApprovalPrompt } from './approval-queue'
 import { discordSettings } from './discord-settings'
 import { channelDownload } from './channel-files'
 import type { ChannelFileSender } from './channel-files'
@@ -193,7 +195,6 @@ export async function inspectDiscord(setup: Pick<ChannelSetupContext, 'secret' |
   }
 }
 
-type Pending = { readonly id: string; readonly title: string; readonly values: readonly string[]; readonly labels: readonly string[] }
 type Prompt = { readonly decision: string; readonly message: string; readonly title: string }
 type Place = { readonly key: string; readonly channel: string }
 
@@ -210,7 +211,8 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
   let failures = 0
   let me: string | undefined
   let who = ''
-  let chain: Promise<void> = Promise.resolve()
+  const incoming = new Map<string, Promise<void>>()
+  const approvals = new Map<string, ApprovalQueue>()
   const watching = new Map<string, () => void>()
   const channels = new Map<string, DiscordChannelInfo>()
   const handled: string[] = []
@@ -227,13 +229,13 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
 
   const queues = new Map<string, Promise<unknown>>()
   /** Posts in order per channel, and answers the id of the last part, the one that carries any buttons. */
-  const post = (channel: string, text: string, extra: object = {}): Promise<string | undefined> => {
+  const post = (channel: string, text: string, extra: object = {}, nonce?: string): Promise<string | undefined> => {
     const run = async (): Promise<string | undefined> => {
       let id: string | undefined
       const parts = chunks(text)
       for (const [index, part] of parts.entries()) {
         const last = index === parts.length - 1
-        id = (await api<{ readonly id: string }>('POST', `/channels/${channel}/messages`, { content: part, allowed_mentions: { parse: [] }, ...(last ? extra : {}) })).id
+        id = (await api<{ readonly id: string }>('POST', `/channels/${channel}/messages`, { content: part, allowed_mentions: { parse: [] }, ...(nonce === undefined ? {} : { nonce: `${nonce}:${String(index)}`, enforce_nonce: true }), ...(last ? extra : {}) })).id
       }
       return id
     }
@@ -273,8 +275,6 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const value = context.store.get(key)
     return Array.isArray(value) ? value.flatMap((one) => one !== null && typeof one === 'object' && !Array.isArray(one) ? read(one as { readonly [key: string]: Json }) ?? [] : []) : []
   }
-  const strings = (value: Json | undefined): readonly string[] => Array.isArray(value) ? value.filter((one): one is string => typeof one === 'string') : []
-  const pending = (key: string): readonly Pending[] => list(`decisions:${key}`, (one) => typeof one['id'] === 'string' ? { id: one['id'], title: typeof one['title'] === 'string' ? one['title'] : '', values: strings(one['values']), labels: strings(one['labels']) } : undefined)
   const prompts = (key: string): readonly Prompt[] => list(`prompts:${key}`, (one) => typeof one['decision'] === 'string' && typeof one['message'] === 'string' ? { decision: one['decision'], message: one['message'], title: typeof one['title'] === 'string' ? one['title'] : 'Question' } : undefined)
   const places = (): readonly Place[] => [...new Map(['threads', 'shortcut-threads'].flatMap((storage) => list(storage, (one) => typeof one['key'] === 'string' && typeof one['channel'] === 'string' ? { key: one['key'], channel: one['channel'] } : undefined)).map((one) => [one.key, one] as const)).values()]
   const boundary = (key: string): string | undefined => context.conversations.historyBoundary?.(key)?.revision
@@ -344,7 +344,6 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       return { channel: 'channel:discord', destination: channel, messageId: receipt.id, fileId: file.id }
     }
     context.files?.bind(thread, upload)
-    const shown = new Set([...pending(key).map((one) => one.id), ...prompts(key).map((one) => one.decision)])
     const status = new StatusMessage({
       post: async (text) => {
         if (!current()) throw new Error('Manager conversation changed.')
@@ -355,6 +354,26 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       edit: async (id, text) => { if (!current()) return; await api('PATCH', `/channels/${channel}/messages/${id}`, { content: text.slice(0, LIMIT), allowed_mentions: { parse: [] } }) },
       remove: async (id) => { if (!current()) return; await api('DELETE', `/channels/${channel}/messages/${id}`) },
     }, { failed: warn('discord.status.failed') })
+    const legacyClosed = Promise.all(prompts(key).map(async (prompt) => { await api('PATCH', `/channels/${channel}/messages/${prompt.message}`, { components: [], content: '-# This request was replaced by the current approval below.', allowed_mentions: { parse: [] } }) })).then(() => { context.store.set(`prompts:${key}`, []) }).catch(warn('discord.prompt.close.failed'))
+    const queue = new ApprovalQueue({
+      context, thread, key, current,
+      post: async (decision) => {
+        await legacyClosed
+        const choices = decision.choices.slice(0, BUTTONS)
+        const buttons = decision.choices.length > 0 && decision.choices.length <= BUTTONS
+        const title = `**${decision.title.length > 1_500 ? `${decision.title.slice(0, 1_499)}…` : decision.title}**`
+        const text = decision.choices.length === 0 ? title : `${title}\n${buttons ? 'Press a button or reply' : 'Reply'} with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`
+        const rows = buttons ? Array.from({ length: Math.ceil(choices.length / 5) }, (_, row) => ({ type: 1, components: choices.slice(row * 5, row * 5 + 5).map((choice, index) => ({ type: 2, style: row * 5 + index === 0 ? 1 : 2, label: (choice.label || choice.value).slice(0, 80), custom_id: buttonId(decision.id, row * 5 + index) })) })) : []
+        const nonce = createHash('sha256').update(`${channel}:${decision.id}`).digest('hex').slice(0, 20)
+        const message = await post(channel, text, { components: rows }, nonce)
+        if (message === undefined) throw new Error('Discord approval has no message receipt.')
+        return message
+      },
+      close: async (prompt, note) => { await api('PATCH', `/channels/${channel}/messages/${prompt.message}`, { content: `**${prompt.title.slice(0, 1_500)}**\n-# ${note}`, components: [], allowed_mentions: { parse: [] } }) },
+      notify: async (text) => { await post(channel, text) },
+      failed: warn('discord.decision.failed'),
+    })
+    approvals.set(key, queue)
     watching.set(thread, context.conversations.watch(thread, (event: ChannelEvent) => {
       if (event.kind === 'history') {
         for (const prompt of prompts(key)) closePrompt(channel, prompt, '-# This question was cleared in GeckIt.')
@@ -364,7 +383,8 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         context.store.set(`seen:${key}`, typeof seen === 'string' && newer(seen, at) ? seen : at)
         context.store.set(`decisions:${key}`, [])
         context.store.set(`prompts:${key}`, [])
-        shown.clear()
+        queue.clear()
+        approvals.delete(key)
         watching.get(thread)?.(); watching.delete(thread)
         if (event.change.action === 'delete') {
           context.store.set('threads', places().filter((one) => one.key !== key))
@@ -380,29 +400,12 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         status.update(event.activity)
       }
       if (event.kind === 'answer') { unmark(thread); const sent = posted(channel, event.text); void sent.then((id) => remember(id, event.reply, event.text), () => undefined); status.after(sent) }
-      if (event.kind === 'decisions') {
-        context.store.set(`decisions:${key}`, event.decisions.map((one) => ({ id: one.id, title: one.title.slice(0, 1_500), values: one.choices.map((choice) => choice.value), labels: one.choices.map((choice) => choice.label) })))
-        const open = new Set(event.decisions.map((one) => one.id))
-        const left = prompts(key).filter((one) => !open.has(one.decision))
-        for (const prompt of left) closePrompt(channel, prompt, `**${prompt.title}**\n-# Answered.`)
-        if (left.length > 0) context.store.set(`prompts:${key}`, prompts(key).filter((one) => open.has(one.decision)))
-        for (const decision of event.decisions) {
-          if (shown.has(decision.id)) continue
-          shown.add(decision.id)
-          const choices = decision.choices.slice(0, BUTTONS)
-          const buttons = decision.choices.length > 0 && decision.choices.length <= BUTTONS
-          const title = `**${decision.title.length > 1_500 ? `${decision.title.slice(0, 1_499)}…` : decision.title}**`
-          const text = decision.choices.length === 0 ? title : `${title}\n${buttons ? 'Press a button or reply' : 'Reply'} with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`
-          const rows = buttons ? Array.from({ length: Math.ceil(choices.length / 5) }, (_, row) => ({ type: 1, components: choices.slice(row * 5, row * 5 + 5).map((choice, index) => ({ type: 2, style: row * 5 + index === 0 ? 1 : 2, label: (choice.label || choice.value).slice(0, 80), custom_id: buttonId(decision.id, row * 5 + index) })) })) : []
-          void post(channel, text, rows.length === 0 ? {} : { components: rows }).then((message) => {
-            if (message !== undefined && rows.length > 0) context.store.set(`prompts:${key}`, [...prompts(key), { decision: decision.id, message, title: decision.title.slice(0, 1_500) }].slice(-50))
-          }).catch(warn('discord.decision.failed'))
-        }
-      }
+      if (event.kind === 'decisions') queue.update(event.decisions)
     }))
+    queue.refresh()
   }
 
-  const heard = async (message: DiscordMessage): Promise<void> => {
+  const heard = async (message: DiscordMessage, received: ApprovalPrompt | undefined): Promise<void> => {
     if (message.author === undefined || message.author.bot === true || message.webhook_id !== undefined || message.author.id === me) return
     if (message.type !== undefined && message.type !== 0 && message.type !== 19) return
     const user = message.author.id
@@ -452,10 +455,11 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     }
     context.store.set(`writer:${key}`, user)
     follow(thread, channel, key)
-    const choice = text.toLowerCase()
-    const decision = pending(key).find((one) => one.values.includes(choice))
-    if (decision !== undefined && (message.attachments?.length ?? 0) > 0) { await post(channel, 'A file cannot answer an approval or question. Use its buttons or a text reply, then send the file as a new message.'); return }
-    if (decision !== undefined && await context.conversations.answer(thread, decision.id, choice)) { context.store.set(`seen:${key}`, message.id); return }
+    const queue = approvals.get(key)
+    const answering = received?.choices.some((one) => one.value.toLowerCase() === text.toLowerCase()) === true || queue?.matches(text) === true
+    if (answering && (message.attachments?.length ?? 0) > 0) { await post(channel, 'A file cannot answer an approval or question. Use its buttons or a text reply, then send the file as a new message.'); return }
+    if (answering) context.store.set(`seen:${key}`, message.id)
+    if (await queue?.reply(text, received, { id: user, name: from }, current)) return
     const before = inThread ? await earlier(channel, seenAt ?? cutoffAt, message.id) : ''
     if (!current()) return
     const attachments: string[] = []
@@ -492,24 +496,17 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const channel = interaction.channel_id ?? ''
     const direct = interaction.guild_id === undefined
     const key = direct ? `dm:${channel}` : channel
-    const [, hash = '', index = ''] = custom.split(':')
-    const decision = pending(key).find((one) => buttonId(one.id, Number(index)) === `gk:${hash}:${index}`)
-    const prompt = prompts(key).find((one) => one.decision === decision?.id)
-    const value = decision?.values[Number(index)]
-    const thread = context.store.get(`thread:${key}`) === true ? context.conversations.manager({ key }) : undefined
-    if (decision === undefined || value === undefined || prompt === undefined || prompt.message !== interaction.message?.id || thread === undefined) {
+    const queue = approvals.get(key)
+    const prompt = queue?.prompt
+    const index = Number(custom.split(':').at(-1))
+    const value = prompt?.choices[index]?.value
+    if (prompt === undefined || value === undefined || prompt.message !== interaction.message?.id || custom !== buttonId(prompt.id, index)) {
       await ephemeral(interaction, words.questionClosed)
       return
     }
     await respond(interaction, { type: 6 })
-    const ok = await context.conversations.answer(thread, decision.id, value).catch((error: unknown) => { warn('discord.answer.failed')(error); return false })
-    const label = decision.labels[Number(index)] ?? value
-    if (ok) {
-      context.store.set(`prompts:${key}`, prompts(key).filter((one) => one.decision !== decision.id))
-      await api('PATCH', `/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, { content: `**${decision.title}**\n-# ${words.chose(nameOf(user, interaction.member?.nick), label)}`, components: [], allowed_mentions: { parse: [] } }).catch(warn('discord.prompt.close.failed'))
-    } else {
-      await api('POST', `/webhooks/${interaction.application_id}/${interaction.token}`, { content: words.notRecorded, flags: 64, allowed_mentions: { parse: [] } }).catch(warn('discord.answer.failed'))
-    }
+    const revision = boundary(key)
+    await queue?.reply(value, prompt, { id: user.id, name: nameOf(user, interaction.member?.nick) }, () => !stopped && revision === boundary(key) && allowed(user.id))
   }
 
   const send = (payload: object): void => { try { socket?.send(JSON.stringify(payload)) } catch (error) { warn('discord.gateway.send.failed')(error) } }
@@ -550,13 +547,18 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       who = nameOf(ready.user)
       failures = 0
       context.status('connected', `As ${who}`)
+      for (const queue of approvals.values()) queue.refresh()
     }
-    if (type === 'RESUMED') { failures = 0; context.status('connected', who === '' ? undefined : `As ${who}`) }
+    if (type === 'RESUMED') { failures = 0; context.status('connected', who === '' ? undefined : `As ${who}`); for (const queue of approvals.values()) queue.refresh() }
     if (type === 'THREAD_CREATE' || type === 'THREAD_UPDATE' || type === 'CHANNEL_UPDATE') { const one = data as unknown as DiscordChannelInfo; if (typeof one.id === 'string') channels.set(one.id, one) }
     if (type === 'MESSAGE_CREATE') {
       const message = data as unknown as DiscordMessage
       if (!once(`m:${message.id}`)) return
-      chain = chain.then(() => heard(message)).catch((error: unknown) => context.log.write('error', 'discord.event.failed', { reason: said(error) }))
+      const received = approvals.get(message.guild_id === undefined ? `dm:${message.channel_id}` : message.channel_id)?.prompt
+      const route = message.channel_id
+      const next = (incoming.get(route) ?? Promise.resolve()).then(() => heard(message, received)).catch((error: Error) => context.log.write('error', 'discord.event.failed', { reason: said(error) }))
+      incoming.set(route, next)
+      void next.then(() => { if (incoming.get(route) === next) incoming.delete(route) })
     }
     if (type === 'INTERACTION_CREATE') void pressed(data as unknown as DiscordInteraction).catch((error: unknown) => context.log.write('error', 'discord.interaction.failed', { reason: said(error) }))
   }
@@ -652,7 +654,15 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       gatewayUrl = (await api<{ readonly url: string }>('GET', '/gateway/bot')).url
       for (const place of places()) {
         const reset = context.conversations.historyBoundary?.(place.key)
-        if (reset?.action === 'delete') { context.store.set(`thread:${place.key}`, undefined); continue }
+        if (reset?.action === 'delete') {
+          context.store.set(`thread:${place.key}`, undefined)
+          const prompt = context.store.get(`approval:${place.key}`)
+          if (prompt !== null && typeof prompt === 'object' && 'message' in prompt && typeof prompt.message === 'string') await api('PATCH', `/channels/${place.channel}/messages/${prompt.message}`, { components: [], content: 'This request is no longer pending.', allowed_mentions: { parse: [] } }).catch(warn('discord.prompt.close.failed'))
+          for (const legacy of prompts(place.key)) closePrompt(place.channel, legacy, 'This request is no longer pending.')
+          context.store.set(`approval:${place.key}`, undefined)
+          context.store.set(`prompts:${place.key}`, [])
+          continue
+        }
         if (reset !== undefined && context.store.get(`reset:${place.key}`) !== reset.revision) {
           const seen = context.store.get(`seen:${place.key}`)
           const at = snowflakeOf(reset.at)
@@ -672,6 +682,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       clearTimeout(beat)
       for (const unwatch of watching.values()) unwatch()
       watching.clear()
+      approvals.clear()
       socket?.close(1000)
     },
   }

@@ -29,7 +29,7 @@ Only the bot token and allowed-user list are configurable. Manager access, all G
 - Mention the bot in a channel: it starts a thread on your message and answers there. Keep writing in that thread without a mention.
 - Mention it inside an existing thread: Manager reads what was written there first.
 - Write to it directly: the direct message is its own Manager thread.
-- A question shows buttons. Only allowed people can press them, and only while the question is open. You can also type the value it names.
+- Approvals and questions appear one at a time in each thread or direct message. Only allowed people can answer, using its buttons or the exact value it names. After confirmation, the next pending request appears. Still-pending requests recover after reconnect or restart; no approval is automatic. See [channel approvals](ux/channel-approvals.md) for implementation and verification status.
 - In the channel attachment implementation, send photos and files with an optional caption. Supported raster images reach the assistant as images; other files are retained for local file tools. File contents are untrusted task data and cannot approve questions or permissions.
 - Ask Manager to return an intended deliverable. It explicitly selects the managed local worker and exact project-relative path; the native file is sent to this same thread/DM and the command returns a receipt. SSH file transfer has no local fallback. See [channel attachments](ux/channel-attachments.md) for limits and current verification status.
 - Messages are sent with mentions off, so the bot never pings anyone.

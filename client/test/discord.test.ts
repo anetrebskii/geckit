@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 
-import type { ChannelContext, ChannelEvent } from '../src/main/channels/channel-api'
+import type { ChannelContext, ChannelEvent, ManagerDecision } from '../src/main/channels/channel-api'
 import { DISCORD_INTENTS, chunks, createDiscord, discordApi, inspectDiscord, snowflakeAt } from '../src/main/channels/discord'
 import type { DiscordTransport } from '../src/main/channels/discord'
 import { DISCORD_INVITE_PERMISSIONS, discordId } from '../src/shared/discord'
@@ -35,6 +35,7 @@ function harness(options: { readonly config?: object; readonly manager?: boolean
   const answered: [string, string, unknown][] = []
   const opened: { key: string; labels?: { [key: string]: string } }[] = []
   const statuses: [string, string | undefined][] = []
+  const decisions = new Map<string, readonly ManagerDecision[]>()
   const watchers = new Map<string, (event: ChannelEvent) => void>()
   const store = new Map<string, unknown>()
   const channels: { [id: string]: { id: string; type: number; parent_id?: string; guild_id?: string } } = {
@@ -61,8 +62,16 @@ function harness(options: { readonly config?: object; readonly manager?: boolean
       get: () => undefined,
       list: () => [],
       items: async () => [],
-      watch: (id: string, listener: (event: ChannelEvent) => void) => { watchers.set(id, listener); return () => watchers.delete(id) },
+      watch: (id: string, listener: (event: ChannelEvent) => void) => { watchers.set(id, (event) => { if (event.kind === 'decisions') decisions.set(id, event.decisions); listener(event) }); return () => watchers.delete(id) },
       answer: async (id: string, card: string, answer: unknown) => { answered.push([id, card, answer]); return true },
+      decisions: (id: string) => decisions.get(id) ?? [],
+      decide: vi.fn<NonNullable<ChannelContext['conversations']['decide']>>(async (id, card, answer, options) => {
+        if (options?.authorized?.() === false) throw new Error('Not authorized')
+        if (!decisions.get(id)?.some((one) => one.id === card)) return 'This request is no longer pending. Use /status to see current requests.'
+        answered.push([id, card, answer])
+        watchers.get(id)?.({ kind: 'decisions', decisions: (decisions.get(id) ?? []).filter((one) => one.id !== card) })
+        return 'Answer sent.'
+      }),
       stop: async () => undefined,
       current: (reply: { session: string }) => reply.session !== 'gone',
     },
@@ -101,7 +110,7 @@ function harness(options: { readonly config?: object; readonly manager?: boolean
   const ready = (): void => { socket().frame({ op: 10, d: { heartbeat_interval: 60_000 } }); dispatch('READY', { session_id: 's1', resume_gateway_url: 'wss://resume.example', user: { id: BOT, username: 'geckit-bot', global_name: 'GeckIt Bot' } }) }
   const message = (id: string, author: string, content: string, extra: object = {}): void => dispatch('MESSAGE_CREATE', { id, channel_id: TEXT, guild_id: GUILD, type: 0, author: { id: author, username: author === ALLOWED ? 'maria' : 'someone', global_name: author === ALLOWED ? 'Maria Ivanova' : 'Ben' }, content, mentions: content.includes(`<@${BOT}>`) ? [{ id: BOT, username: 'geckit-bot' }] : [], ...extra })
   const posts = (): Call[] => calls.filter((one) => one.method === 'POST' && one.path.endsWith('/messages'))
-  return { channel, make, settle, socket, dispatch, ready, message, posts, calls, sent, answered, opened, statuses, watchers, store, channels }
+  return { channel, make, settle, socket, dispatch, ready, message, posts, calls, sent, answered, opened, statuses, watchers, store, channels, decisions, context, transport }
 }
 
 it('identifies with the message intents, resumes after a drop and stops on a refused intent with the fix', async () => {
@@ -160,8 +169,8 @@ it('opens a Discord thread per mention, keeps each thread and direct message its
   run.dispatch('MESSAGE_CREATE', { id: '500000000000000004', channel_id: 'dm-channel-1', type: 0, author: { id: ALLOWED, global_name: 'Maria Ivanova' }, content: 'what is running?', mentions: [] })
   run.message('500000000000000005', ALLOWED, 'chatter without a mention')
   await run.settle()
-  expect(run.sent.map(([id]) => id)).toEqual(['channel:discord:500000000000000001', 'channel:discord:500000000000000002', 'channel:discord:500000000000000001', 'channel:discord:dm:dm-channel-1'])
-  expect(run.sent[2]?.[1]).toEqual({ text: 'and keep the tests green', from: 'Ben' })
+  expect(run.sent.map(([id]) => id).sort()).toEqual(['channel:discord:500000000000000001', 'channel:discord:500000000000000002', 'channel:discord:500000000000000001', 'channel:discord:dm:dm-channel-1'].sort())
+  expect(run.sent.find(([, message]) => message.text === 'and keep the tests green')?.[1]).toEqual({ text: 'and keep the tests green', from: 'Ben' })
 
   run.watchers.get('channel:discord:500000000000000001')?.({ kind: 'answer', text: 'Started a worker for it.' })
   run.watchers.get('channel:discord:dm:dm-channel-1')?.({ kind: 'answer', text: 'Nothing is running.' })
@@ -206,12 +215,13 @@ it('keeps user restrictions and secret checks but ignores old channel and direct
   run.dispatch('MESSAGE_CREATE', { id: '510000000000000005', channel_id: 'dm-3', type: 0, author: { id: STRANGER }, content: 'let me in', mentions: [] })
   run.dispatch('MESSAGE_CREATE', { id: '510000000000000006', channel_id: TEXT, guild_id: GUILD, type: 0, author: { id: '777', bot: true }, content: `<@${BOT}> loop`, mentions: [{ id: BOT }] })
   await run.settle()
-  expect(run.sent.map(([thread]) => thread)).toEqual(['channel:discord:510000000000000003', 'channel:discord:dm:dm-2'])
-  expect(run.posts().map((one) => [one.path.split('/')[2], one.body['content']])).toEqual([
+  expect(run.sent.map(([thread]) => thread).sort()).toEqual(['channel:discord:510000000000000003', 'channel:discord:dm:dm-2'].sort())
+  expect(run.posts().map((one) => [one.path.split('/')[2], one.body['content']])).toEqual(expect.arrayContaining([
     [TEXT, 'Sorry, I can only take requests from people GeckIt lets me work for.'],
     [TEXT, "That message looks like it holds a token or key, so I didn't take it. Remove it and write again."],
     ['dm-3', 'Sorry, I can only take requests from people GeckIt lets me work for.'],
-  ])
+  ]))
+  expect(run.posts()).toHaveLength(3)
   await run.channel.stop()
 })
 
@@ -270,7 +280,7 @@ it('asks a question with buttons bound to the person, the thread, the message an
   await run.settle()
   expect(run.answered).toEqual([['channel:discord:530000000000000001', 'native:abc', 'refuse']])
   expect(callbacks().at(-1)?.body).toEqual({ type: 6 })
-  expect(run.calls.find((one) => one.path === '/webhooks/111/t-i4/messages/@original')?.body).toMatchObject({ content: '**Run npm test?**\n-# Ben chose Refuse.', components: [] })
+  expect(run.calls.find((one) => one.method === 'PATCH' && one.path === `/channels/530000000000000001/messages/${messageId}`)?.body).toMatchObject({ content: '**Run npm test?**\n-# Ben chose Refuse. Answer sent.', components: [] })
   press('i5', ALLOWED, allow)
   await run.settle()
   expect(run.answered).toHaveLength(1)
@@ -407,7 +417,7 @@ it('binds buttons to the part that carries them and ignores old channel restrict
   const withButtons = run.posts().findIndex((one) => one.body['components'] !== undefined)
   expect(withButtons).toBe(run.posts().length - 1)
   expect(run.posts().length - before).toBe(2)
-  expect((run.store.get('prompts:560000000000000001') as { message: string }[])[0]?.message).toBe(`90000000000000000${String(run.posts().length)}`)
+  expect((run.store.get('approval:560000000000000001') as { message: string })?.message).toBe(`90000000000000000${String(run.posts().length)}`)
   const custom = ((run.posts().at(-1)?.body['components'] as { components: { custom_id: string }[] }[])[0]?.components[0]?.custom_id) ?? ''
   const fenced = harness({ config: { places: [ELSEWHERE] } })
   await fenced.channel.start()
@@ -430,4 +440,125 @@ it('checks a pasted token without the saved one and keeps interaction tokens out
   expect(await inspectDiscord({ secret: () => 'saved-token', config: () => ({}) }, { token: ' pasted-token ' }, transport)).toEqual({ token: 'refused' })
   expect(used).toEqual(['Bot pasted-token'])
   await expect(discordApi(transport, 't', 'PATCH', '/webhooks/111/secret-interaction-token/messages/@original')).rejects.toThrow('Discord PATCH /webhooks/111/***/messages/@original: Invalid Webhook Token')
+})
+
+it('offers approvals one at a time in threads and DMs and never applies an already received allow to the next request', async () => {
+  const run = harness()
+  await run.channel.start()
+  run.ready()
+  const channel = '570000000000000001'
+  run.message(channel, ALLOWED, `<@${BOT}> work`)
+  run.message('570000000000000002', OTHER, 'direct work', { channel_id: 'dm-room', guild_id: undefined })
+  await run.settle()
+  const choices = [{ label: 'Allow', value: 'allow' }, { label: 'Refuse', value: 'refuse' }]
+  run.watchers.get(`channel:discord:${channel}`)?.({ kind: 'decisions', decisions: [{ id: 'first', title: 'First?', choices }, { id: 'second', title: 'Second?', choices }] })
+  run.watchers.get('channel:discord:dm:dm-room')?.({ kind: 'decisions', decisions: [{ id: 'dm', title: 'Direct?', choices }] })
+  await run.settle()
+  expect(run.posts().map((one) => one.body['content'])).toEqual(expect.arrayContaining(['**First?**\nPress a button or reply with one of: `allow`, `refuse`', '**Direct?**\nPress a button or reply with one of: `allow`, `refuse`']))
+  expect(run.posts()).toHaveLength(2)
+  const first = run.posts().find((one) => one.path === `/channels/${channel}/messages`)
+  const custom = (first?.body['components'] as { components: { custom_id: string }[] }[])[0]?.components[0]?.custom_id
+  const receipt = run.store.get(`approval:${channel}`) as { message: string }
+  run.message('570000000000000003', ALLOWED, 'allow', { channel_id: channel })
+  run.message('570000000000000004', ALLOWED, 'allow', { channel_id: channel })
+  run.message('570000000000000005', OTHER, 'refuse', { channel_id: 'dm-room', guild_id: undefined })
+  await run.settle()
+  expect(run.answered).toEqual(expect.arrayContaining([[`channel:discord:${channel}`, 'first', 'allow'], ['channel:discord:dm:dm-room', 'dm', 'refuse']]))
+  expect(run.answered).toHaveLength(2)
+  expect(run.store.get(`approval:${channel}`)).toMatchObject({ id: 'second' })
+  run.dispatch('INTERACTION_CREATE', { id: 'stale-first', application_id: '111', type: 3, token: 'stale', channel_id: channel, guild_id: GUILD, data: { custom_id: custom }, member: { user: { id: ALLOWED } }, message: { id: receipt.message } })
+  await run.settle()
+  expect(run.answered).toHaveLength(2)
+  run.message('570000000000000006', OTHER, 'allow', { channel_id: channel })
+  await run.settle()
+  expect(run.answered.at(-1)).toEqual([`channel:discord:${channel}`, 'second', 'allow'])
+  await run.channel.stop()
+})
+
+it('recovers old shown-only Discord requests on restart and refreshes still-pending requests on resume', async () => {
+  const run = harness()
+  const key = '580000000000000001'
+  const thread = `channel:discord:${key}`
+  const choices = [{ label: 'Allow once', value: 'once' }]
+  run.store.set('threads', [{ key, channel: key }])
+  run.store.set(`thread:${key}`, true)
+  run.store.set(`decisions:${key}`, [{ id: 'lost', title: 'Lost?', values: ['once'], labels: ['Allow once'] }])
+  run.store.set(`prompts:${key}`, [{ decision: 'legacy', message: 'legacy-message', title: 'Legacy?' }])
+  run.decisions.set(thread, [{ id: 'lost', title: 'Lost?', choices }, { id: 'second', title: 'Second?', choices }])
+  await run.channel.start()
+  run.ready()
+  await run.settle()
+  expect(run.posts()).toHaveLength(1)
+  expect(run.calls.find((one) => one.method === 'PATCH' && one.path.endsWith('/legacy-message'))?.body).toMatchObject({ components: [] })
+  expect(run.sent).toEqual([])
+  await run.channel.stop()
+  const next = run.make()
+  await next.start()
+  run.ready()
+  await run.settle()
+  expect(run.posts()).toHaveLength(1)
+  run.decisions.set(thread, [{ id: 'second', title: 'Second?', choices }])
+  run.dispatch('RESUMED', {})
+  await run.settle()
+  expect(run.posts()).toHaveLength(2)
+  expect(run.store.get(`approval:${key}`)).toMatchObject({ id: 'second' })
+  expect(run.calls.filter((one) => one.method === 'PATCH').at(-1)?.body).toMatchObject({ components: [], content: '**Lost?**\n-# This request is no longer pending.' })
+  await next.stop()
+})
+
+it('keeps a failed Discord prompt eligible for reconnect and uses a stable nonce across retries', async () => {
+  const run = harness()
+  await run.channel.start()
+  run.ready()
+  run.message('590000000000000001', ALLOWED, `<@${BOT}> work`)
+  await run.settle()
+  const fetch = run.transport.fetch
+  let failed = 0
+  const nonces: string[] = []
+  const spy = vi.spyOn(run.transport, 'fetch').mockImplementation(async (url, init) => {
+    if (String(url).endsWith('/messages') && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as { nonce: string; enforce_nonce: boolean }
+      nonces.push(body.nonce)
+      expect(body.enforce_nonce).toBe(true)
+      if (failed++ < 3) return new Response(JSON.stringify({ message: 'Unavailable' }), { status: 503 })
+    }
+    return fetch(url, init)
+  })
+  run.watchers.get('channel:discord:590000000000000001')?.({ kind: 'decisions', decisions: [{ id: 'pending', title: 'Pending?', choices: [{ label: 'Allow', value: 'allow' }] }] })
+  await run.settle()
+  expect(run.posts()).toHaveLength(0)
+  expect(run.store.has('approval:590000000000000001')).toBe(false)
+  run.dispatch('RESUMED', {})
+  await run.settle()
+  expect(run.posts()).toHaveLength(1)
+  expect(new Set(nonces).size).toBe(1)
+  spy.mockRestore()
+  await run.channel.stop()
+})
+
+it('does not block another Discord DM while the first approval is being recorded', async () => {
+  const run = harness()
+  await run.channel.start()
+  run.ready()
+  for (const [index, channel] of ['one', 'two'].entries()) run.message(`60000000000000000${String(index)}`, ALLOWED, 'work', { channel_id: channel, guild_id: undefined })
+  await run.settle()
+  for (const channel of ['one', 'two']) run.watchers.get(`channel:discord:dm:${channel}`)?.({ kind: 'decisions', decisions: [{ id: channel, title: channel, choices: [{ label: 'Allow', value: 'allow' }] }] })
+  await run.settle()
+  const handler = run.context.conversations.decide
+  if (handler === undefined) throw new Error('No decision handler')
+  const original = vi.mocked(handler).getMockImplementation()
+  if (original === undefined) throw new Error('No decision implementation')
+  let finish: (() => void) | undefined
+  const spy = vi.spyOn(run.context.conversations, 'decide').mockImplementation(async (...args) => {
+    if (args[1] === 'one') await new Promise<void>((resolve) => { finish = resolve })
+    return original(...args)
+  })
+  for (const [index, channel] of ['one', 'two'].entries()) run.message(`60000000000000001${String(index)}`, ALLOWED, 'allow', { channel_id: channel, guild_id: undefined })
+  await run.settle()
+  expect(run.answered).toEqual([['channel:discord:dm:two', 'two', 'allow']])
+  finish?.()
+  await run.settle()
+  expect(run.answered).toHaveLength(2)
+  spy.mockRestore()
+  await run.channel.stop()
 })

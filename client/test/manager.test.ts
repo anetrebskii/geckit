@@ -635,6 +635,7 @@ describe('Manager CLI delivery recovery', () => {
   })
 
   it.each([
+    ['manager', 'view'], ['manager', 'inspect', '--id', 'worker'], ['manager', 'receipt', '--id', 'projects-create-rwhebrew-marketing-1'],
     ['capabilities'], ['providers', 'list'], ['providers', 'models', '--provider', 'claude'],
     ['projects', 'list'], ['projects', 'provider', '--project', 'project'],
     ['files', 'read'], ['files', 'list'], ['sessions', 'list'], ['sessions', 'show'], ['settings', 'show'],
@@ -644,6 +645,16 @@ describe('Manager CLI delivery recovery', () => {
     ['projects', 'provider', '--project', 'project', '--provider', 'claude'], ['projects', 'provider', '--clear'],
     ['projects', 'create'], ['files', 'write'], ['sessions', 'start'], ['sessions', 'send'], ['channels', 'send-file'], ['new-command'],
   ])('does not classify mutation %j as a safe read', (...args) => expect(managerReadOnly(args)).toBe(false))
+
+  it('does not ask permission to inspect Manager work or read its command receipt', async () => {
+    const f = await fixture()
+    const operations = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager' })
+    for (const policy of ['automatic', 'approve'] as const) {
+      expect(operations.confirmation(['manager', 'receipt', '--id', 'projects-create-rwhebrew-marketing-1'], policy)).toBeUndefined()
+      expect(operations.confirmation(['manager', 'inspect', '--id', 'worker'], policy)).toBeUndefined()
+      expect(operations.confirmation(['manager', 'configure', '--enabled', 'true'], policy)).toContain('Change target configuration?')
+    }
+  })
 
   it('returns a failed read as context and continues with a fresh read without pausing', async () => {
     const f = await fixture()
