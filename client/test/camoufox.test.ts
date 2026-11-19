@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bundledFont, CAMOUFOX_VERSION, downloading, fetchCamoufox, installCamoufoxArchive, libraryFolders, migrateChromeProfiles, missingLibraries, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from '../src/cli/camoufox'
+import { bundledFont, CAMOUFOX_VERSION, downloading, downloadParts, fetchCamoufox, installCamoufoxArchive, libraryFolders, migrateChromeProfiles, missingLibraries, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from '../src/cli/camoufox'
 import { deleteTestProfile, launchFailure, testBrowsersState, updateTestProfile } from '../src/cli/testing'
 import { saveTestAccount } from '../src/cli/browser-lifecycle'
 
@@ -37,16 +39,16 @@ describe('Camoufox installation', () => {
 
   it('publishes no installation when a download is corrupt, and retries after failure', async () => {
     const root = temporary()
-    const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('not the expected browser'))
+    const request = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('not the expected browser'))
     await expect(fetchCamoufox(root)).rejects.toThrow('checksum')
     expect(request.mock.calls[0]?.[0]).toMatch(/^https:\/\/github.com\/anetrebskii\/geckit-browser-assets\/releases\/download\/camoufox-158\.0\.1-beta\.41-no-fonts\.1\/camoufox-158\.0\.1-beta\.41-.*-no-fonts\.zip$/)
     expect(testingCamoufox(root)).toBeUndefined()
     expect(downloading(root)?.error).toContain('checksum')
     expect(readdirSync(join(testingFolder(root), 'browser'))).toEqual([])
-    request.mockResolvedValue(new Response('', { status: 503 }))
+    request.mockImplementation(async () => new Response('', { status: 503 }))
     await expect(fetchCamoufox(root)).rejects.toThrow('503')
     expect(downloading(root)?.error).toContain('503')
-    expect(request).toHaveBeenCalledTimes(2)
+    expect(request).toHaveBeenCalledTimes(3)
   })
 
   it('reports interrupted installation instead of silently becoming absent', () => {
@@ -129,5 +131,35 @@ describe('Linux libraries', () => {
     writeFileSync(join(root, 'usr', 'lib', 'x86_64-linux-gnu', 'gtk-3.0', 'immodules', 'im-ipa.so'), '')
     expect(libraryFolders(root)).toEqual([join(root, 'usr', 'lib', 'x86_64-linux-gnu')])
     expect(libraryFolders(join(root, 'none'))).toEqual([])
+  })
+})
+
+describe('Camoufox download', () => {
+  it('fetches the archive in ranges and resumes a range whose connection dropped', async () => {
+    const body = Buffer.from(Array.from({ length: 100_000 }, (_, at) => (at * 7) % 256))
+    const asked: string[] = []
+    let dropped = false
+    const server = createServer((request, response) => {
+      const range = /bytes=(\d+)-(\d*)/.exec(request.headers.range ?? '')
+      asked.push(request.headers.range ?? 'all')
+      if (range === null) { response.end(body); return }
+      const start = Number(range[1])
+      const end = range[2] === '' ? body.length - 1 : Number(range[2])
+      response.writeHead(206, { 'content-range': `bytes ${start}-${end}/${body.length}`, 'content-length': String(end - start + 1) })
+      if (!dropped && start === 25_000) { dropped = true; response.write(body.subarray(start, start + 1_000)); setTimeout(() => response.destroy(), 20); return }
+      response.end(body.subarray(start, end + 1))
+    })
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+    try {
+      const file = join(temporary(), 'download.zip.part')
+      let received = 0
+      let total = 0
+      const size = await downloadParts(`http://127.0.0.1:${(server.address() as AddressInfo).port}/camoufox.zip`, file, (bytes) => { received += bytes }, (all) => { total = all })
+      expect(size).toBe(body.length)
+      expect(total).toBe(body.length)
+      expect(received).toBe(body.length)
+      expect(readFileSync(file).equals(body)).toBe(true)
+      expect(asked).toContain('bytes=26000-37499')
+    } finally { server.close() }
   })
 })

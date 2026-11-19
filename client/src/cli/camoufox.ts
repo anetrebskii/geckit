@@ -1,11 +1,12 @@
 import { execFileSync, spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { open } from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { Transform } from 'node:stream'
 import { unzip } from './unzip'
 import { acquireTestLock } from './browser-lifecycle'
 
@@ -62,6 +63,53 @@ export async function installCamoufoxArchive(zip: string, into: string): Promise
   writeFileSync(join(into, 'installed.json'), JSON.stringify({ version: CAMOUFOX_VERSION, fonts: false }))
 }
 
+const PARTS = 8
+const STALL = 60_000
+const finals = new WeakSet<object>()
+const final = (message: string): Error => { const error = new Error(message); finals.add(error); return error }
+
+/** Downloads one byte range into its place in the file, and after a dropped or stalled connection asks again from the byte it reached. */
+async function downloadRange(url: string, file: FileHandle, from: number, to: number | undefined, received: (bytes: number) => void): Promise<void> {
+  let at = from
+  for (let attempt = 1; ; attempt++) {
+    const stall = new AbortController()
+    let timer = setTimeout(() => stall.abort(), STALL)
+    try {
+      const response = await fetch(url, { signal: stall.signal, headers: to === undefined && at === 0 ? {} : { Range: `bytes=${at}-${to ?? ''}` } })
+      if (!response.ok || response.body === null) throw final(`The Camoufox download answered ${response.status}.`)
+      if (at > 0 && response.status !== 206) throw final('The Camoufox download server does not resume downloads.')
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        clearTimeout(timer)
+        timer = setTimeout(() => stall.abort(), STALL)
+        await file.write(chunk, 0, chunk.length, at)
+        at += chunk.length
+        received(chunk.length)
+      }
+      if (to === undefined || at > to) return
+      throw new Error('The Camoufox download stopped early.')
+    } catch (error) {
+      if (attempt >= 10 || (error instanceof Error && finals.has(error))) throw error
+      await new Promise((done) => setTimeout(done, Math.min(30_000, 1_000 * attempt)))
+    } finally { clearTimeout(timer) }
+  }
+}
+
+/** Fetches the archive in parallel ranges where the server allows it, since one connection can be far slower than the line; returns its size. */
+export async function downloadParts(url: string, path: string, received: (bytes: number) => void, sized: (total: number) => void): Promise<number> {
+  const probe = await fetch(url, { headers: { Range: 'bytes=0-0' }, signal: AbortSignal.timeout(STALL) })
+  await probe.body?.cancel()
+  if (!probe.ok) throw new Error(`The Camoufox download answered ${probe.status}.`)
+  const total = Number(probe.headers.get('content-range')?.split('/')[1] ?? probe.headers.get('content-length') ?? 0)
+  const file = await open(path, 'w')
+  try {
+    if (probe.status !== 206 || !(total > 0)) { await downloadRange(url, file, 0, undefined, received); return (await file.stat()).size }
+    sized(total)
+    const size = Math.ceil(total / PARTS)
+    await Promise.all(Array.from({ length: PARTS }, (_, part) => part * size).filter((start) => start < total).map((start) => downloadRange(url, file, start, Math.min(total, start + size) - 1, received)))
+    return total
+  } finally { await file.close() }
+}
+
 export async function fetchCamoufox(root: string = homedir()): Promise<{ readonly path: string; readonly version: string }> {
   const asset = assets.find((one) => one.platform === process.platform && one.arch === process.arch)
   if (asset === undefined) throw new Error('Camoufox is not available for this operating system and architecture.')
@@ -81,12 +129,10 @@ export async function fetchCamoufox(root: string = homedir()): Promise<{ readonl
   try {
     noteDownload(root, state)
     const url = `https://github.com/anetrebskii/geckit-browser-assets/releases/download/${CAMOUFOX_RELEASE}/camoufox-${CAMOUFOX_VERSION}-${asset.name}-no-fonts.zip`
-    const response = await fetch(url, { signal: AbortSignal.timeout(15 * 60_000) })
-    if (!response.ok || response.body === null) throw new Error(`The Camoufox download answered ${response.status}.`)
-    state = { ...state, total: Number(response.headers.get('content-length') ?? 0) }
+    const total = await downloadParts(url, zip, (received) => { state = { ...state, received: state.received + received } }, (size) => { state = { ...state, total: size } })
+    if (total !== state.received) throw new Error('The Camoufox download was incomplete. Retry the installation.')
     const hash = createHash('sha256')
-    const count = new Transform({ transform(chunk: Buffer, _encoding, done) { hash.update(chunk); state = { ...state, received: state.received + chunk.length }; done(null, chunk) } })
-    await pipeline(response.body, count, createWriteStream(zip))
+    await pipeline(createReadStream(zip), hash)
     if (hash.digest('hex') !== asset.sha256) throw new Error('The Camoufox download checksum did not match. Retry the installation.')
     state = { ...state, phase: 'installing' }
     noteDownload(root, { ...state, t: Date.now() })
