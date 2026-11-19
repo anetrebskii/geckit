@@ -55,7 +55,6 @@ block-beta
 | Модель готова | Включено, файл на месте | "Search model ready." | Ничего |
 | Модель осталась | Выключено, файл на месте | "The search model stays on this computer, 2.5 GB." и "Delete model" | Удалить, если место нужно |
 | Модели не будет | Нет `llama-server` в этой сборке | "find matches words: this build has no search model." | Ничего |
-| Не на этой системе | Windows | "Not on Windows yet."; включённый переключатель можно выключить, выключенный недоступен | Выключить, если настройка включена |
 
 ## 4. Переходы
 
@@ -149,7 +148,6 @@ stateDiagram-v2
 | Модель осталась | «The search model stays on this computer, 2.5 GB.» и кнопка «Delete model» |
 | Модели не будет | «find matches words: this build has no search model.» |
 | Удалена | «Search model deleted.» |
-| Windows | «Not on Windows yet.» |
 | CLI, выключено | «Chrome through GeckIt is off. Turn it on in GeckIt Settings > Integrations.» |
 
 ## 8. Краевые случаи
@@ -211,3 +209,7 @@ stateDiagram-v2
 ## Browser profile management update - 2026-11-12
 
 The current working-tree Settings section is renamed "Web Browser". Profile management leads the page; Chrome extension connection/setup follows below. The approved replacement profile flow and verification scope are in [browser-profile-management.md](browser-profile-management.md). Earlier Integrations references above describe the original design.
+
+## Windows connection
+
+In Settings > Browsers, **Chrome through GeckIt** uses the same switch and connection states on Windows. GeckIt registers the bridge for the current Windows user at service startup and when the setting is enabled. The user installs GeckIt Browser once in Chrome or keeps the extension they already installed. Chrome reconnects automatically, and Settings shows "Connected to Chrome" after the extension checks in. Turning the switch off removes the registration and stops the bridge. Turning it on again restores the connection using the same Chrome extension. Registration runs silently with the existing switch and requires no separate setup step or administrator prompt.

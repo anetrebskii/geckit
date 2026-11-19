@@ -1,11 +1,50 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import type * as ChildProcess from 'node:child_process'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { EXTENSION_ID, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../src/cli/browser'
+import { describe, expect, it, vi } from 'vitest'
+import { BROWSER_HOST, EXTENSION_ID, installBrowserBridge, removeBrowserBridge, setBrowserBridgeOn } from '../src/cli/browser'
 import { BROWSER, BROWSER_SKILL, SECRETS, browserSkillFiles, secretsSkillFiles } from '../src/main/guide'
 
+vi.mock('node:child_process', async (load) => ({ ...await load<typeof ChildProcess>(), execFileSync: vi.fn() }))
+
 describe('browser bridge install', () => {
+  it('registers both extension installs with Chrome on Windows and removes the bridge when turned off', () => {
+    const root = mkdtempSync(join(tmpdir(), 'geckit-bridge-win-'))
+    const bin = join(root, '.geckit', 'bin')
+    const host = join(bin, 'geckit-browser-host.bat')
+    const manifest = join(bin, `${BROWSER_HOST}.json`)
+    const extension = join(root, '.geckit', 'chrome-extension', 'manifest.json')
+    const key = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${BROWSER_HOST}`
+    const register = ['add', key, '/ve', '/t', 'REG_SZ', '/d', manifest, '/f', '/reg:32']
+    const options = { windowsHide: true, stdio: 'ignore' }
+    const executable = 'C:\\Users\\José\\GeckIt & Tools! %dev%\\GeckIt.exe'
+    const script = 'C:\\Users\\José\\GeckIt & Tools! %dev%\\resources\\app.asar\\out\\main\\cli.js'
+    const registry = vi.mocked(execFileSync)
+    registry.mockClear()
+    try {
+      installBrowserBridge(executable, script, 'win32', root, 'C:\\Program Files\\GeckIt\\llama-server.exe')
+      expect(registry).toHaveBeenNthCalledWith(1, expect.stringMatching(/reg\.exe$/), register, options)
+      expect(JSON.parse(readFileSync(manifest, 'utf8'))).toEqual({ name: BROWSER_HOST, description: 'GeckIt Browser', path: host, type: 'stdio', allowed_origins: [`chrome-extension://${EXTENSION_ID}/`, 'chrome-extension://mjllmbfhnbeihgghghnbbkfcpahljnkp/'] })
+      const launcher = readFileSync(host, 'utf8')
+      expect(launcher).toContain('setlocal DisableDelayedExpansion\r\nchcp 65001 >nul\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n')
+      expect(launcher).toContain('set "GECKIT_LLAMA_SERVER=C:\\Program Files\\GeckIt\\llama-server.exe"')
+      expect(launcher).toContain(`"${executable.replaceAll('%', '%%')}" "${script.replaceAll('%', '%%')}" browser-host\r\n`)
+
+      removeBrowserBridge('win32', root)
+      expect(registry).toHaveBeenNthCalledWith(2, expect.stringMatching(/reg\.exe$/), ['delete', key, '/f', '/reg:32'], options)
+      expect(existsSync(host)).toBe(false)
+      expect(existsSync(manifest)).toBe(false)
+      expect(existsSync(extension)).toBe(true)
+
+      installBrowserBridge(executable, script, 'win32', root)
+      expect(registry).toHaveBeenNthCalledWith(3, expect.stringMatching(/reg\.exe$/), register, options)
+      expect(existsSync(host)).toBe(true)
+      expect(existsSync(manifest)).toBe(true)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('writes the extension, the host program and Chrome\'s host manifest for the installed browsers only', () => {
     const root = mkdtempSync(join(tmpdir(), 'geckit-bridge-'))
     mkdirSync(join(root, 'Library', 'Application Support', 'Google', 'Chrome'), { recursive: true })

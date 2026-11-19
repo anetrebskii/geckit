@@ -31,7 +31,9 @@ const home = (): string => join(homedir(), '.geckit')
 export const extensionFolder = (): string => join(home(), 'chrome-extension')
 /** Where a request is left for the extension and its answer is picked up: a folder rather than a socket, so a sandboxed conversation needs only leave to write there. */
 export const browserFolder = (): string => join(home(), 'browser')
-const wrapperPath = (root: string = homedir()): string => join(root, '.geckit', 'bin', 'geckit-browser-host')
+const wrapperPath = (root: string = homedir(), platform: NodeJS.Platform = process.platform): string => join(root, '.geckit', 'bin', platform === 'win32' ? 'geckit-browser-host.bat' : 'geckit-browser-host')
+const windowsHostKey = `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${BROWSER_HOST}`
+const windowsRegistry = (): string => join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'reg.exe')
 
 let bridgeOn = false
 /** Whether Chrome through GeckIt is turned on in this process: the guides and Codex's sandbox follow it. */
@@ -53,7 +55,6 @@ function hostFolders(platform: NodeJS.Platform, root: string): string[] {
 
 /** Puts the extension where the person loads it from, and registers the program Chrome starts for it. */
 export function installBrowserBridge(executable: string, script: string, platform: NodeJS.Platform = process.platform, root: string = homedir(), llama: string | undefined = process.env['GECKIT_LLAMA_SERVER']): void {
-  if (platform === 'win32') return
   const folder = join(root, '.geckit', 'chrome-extension')
   mkdirSync(folder, { recursive: true })
   writeFileSync(join(folder, 'manifest.json'), manifest)
@@ -62,12 +63,30 @@ export function installBrowserBridge(executable: string, script: string, platfor
   writeFileSync(join(folder, 'popup.js'), popupScript)
   mkdirSync(join(folder, 'icons'), { recursive: true })
   for (const [size, data] of Object.entries({ 16: icon16, 32: icon32, 48: icon48, 128: icon128 })) writeFileSync(join(folder, 'icons', `${size}.png`), Buffer.from(data.slice(data.indexOf(',') + 1), 'base64'))
-  const quoted = (path: string): string => `"${path.replace(/(["\\$`])/g, '\\$1')}"`
-  const wrapper = wrapperPath(root)
+  const wrapper = wrapperPath(root, platform)
   mkdirSync(dirname(wrapper), { recursive: true })
+  const described = `${JSON.stringify({ name: BROWSER_HOST, description: 'GeckIt Browser', path: wrapper, type: 'stdio', allowed_origins: [EXTENSION_ID, ...STORE_EXTENSION_IDS].map((id) => `chrome-extension://${id}/`) }, undefined, 2)}\n`
+  if (platform === 'win32') {
+    const batchPath = (path: string): string => path.replace(/%/g, '%%')
+    writeFileSync(wrapper, [
+      '@echo off',
+      'setlocal DisableDelayedExpansion',
+      'chcp 65001 >nul',
+      'set "ELECTRON_RUN_AS_NODE=1"',
+      ...(llama === undefined ? [] : [`set "GECKIT_LLAMA_SERVER=${batchPath(llama)}"`]),
+      `"${batchPath(executable)}" "${batchPath(script)}" browser-host`,
+      '',
+    ].join('\r\n'))
+    const hostManifest = join(dirname(wrapper), `${BROWSER_HOST}.json`)
+    writeFileSync(hostManifest, described)
+    try {
+      execFileSync(windowsRegistry(), ['add', windowsHostKey, '/ve', '/t', 'REG_SZ', '/d', hostManifest, '/f', '/reg:32'], { windowsHide: true, stdio: 'ignore' })
+    } catch (error) { console.warn('Could not register GeckIt Browser with Chrome:', error instanceof Error ? error.message : String(error)) }
+    return
+  }
+  const quoted = (path: string): string => `"${path.replace(/(["\\$`])/g, '\\$1')}"`
   writeFileSync(wrapper, ['#!/bin/sh', '# Written by GeckIt when it starts. Anything changed here is written over.', `${llama === undefined ? '' : `GECKIT_LLAMA_SERVER=${quoted(llama)} `}ELECTRON_RUN_AS_NODE=1 exec ${quoted(executable)} ${quoted(script)} browser-host "$@"`, ''].join('\n'))
   chmodSync(wrapper, 0o755)
-  const described = `${JSON.stringify({ name: BROWSER_HOST, description: 'GeckIt Browser', path: wrapper, type: 'stdio', allowed_origins: [EXTENSION_ID, ...STORE_EXTENSION_IDS].map((id) => `chrome-extension://${id}/`) }, undefined, 2)}\n`
   for (const one of hostFolders(platform, root)) {
     try {
       mkdirSync(one, { recursive: true })
@@ -79,13 +98,18 @@ export function installBrowserBridge(executable: string, script: string, platfor
 /** Takes away what lets Chrome start GeckIt for the extension; the extension's own files stay, since Chrome loads it from there until the person removes it. */
 export function removeBrowserBridge(platform: NodeJS.Platform = process.platform, root: string = homedir()): void {
   for (const one of hostFolders(platform, root)) rmSync(join(one, `${BROWSER_HOST}.json`), { force: true })
-  rmSync(wrapperPath(root), { force: true })
+  const wrapper = wrapperPath(root, platform)
+  rmSync(wrapper, { force: true })
+  if (platform === 'win32') {
+    rmSync(join(dirname(wrapper), `${BROWSER_HOST}.json`), { force: true })
+    try { execFileSync(windowsRegistry(), ['delete', windowsHostKey, '/f', '/reg:32'], { windowsHide: true, stdio: 'ignore' }) } catch { /* The key may already be absent. */ }
+  }
 }
 
 const fresh = (folder: string): boolean => { try { return Date.now() - statSync(join(folder, 'alive')).mtimeMs <= 15_000 } catch { return false } }
 
 export function browserBridgeState(): BrowserBridgeState {
-  return { supported: process.platform !== 'win32', connected: fresh(browserFolder()), folder: extensionFolder(), modelServer: findModelServer(), model: findModelState(), testing: testBrowsersState() }
+  return { supported: true, connected: fresh(browserFolder()), folder: extensionFolder(), modelServer: findModelServer(), model: findModelState(), testing: testBrowsersState() }
 }
 
 /** Takes each request left in the folder for this program, once, and leaves its answer beside it; returns the look to run whenever the folder changes. */
@@ -213,7 +237,7 @@ async function startTest(name: string, folder: string = browserFolder(), convers
     const claimed = await claimTest(name, folder, conversation)
     if (claimed.ok || !claimed.said.includes('closing')) return claimed
   }
-  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, said: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
+  if (!existsSync(wrapperPath())) return { ok: false, said: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
   const launch = join(folder, `${randomUUID()}.launch`)
   try {
     mkdirSync(folder, { recursive: true })
@@ -383,7 +407,7 @@ export async function askTest(name: string, request: object, folder: string = br
 
 /** Leaves a request the GeckIt service answers, outside any sandbox: making an account profile, or a sign-in link. */
 async function askService(kind: 'account' | 'signin' | 'device', request: object, folder: string = browserFolder()): Promise<Reply & { readonly link?: string; readonly expires?: number }> {
-  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
+  if (!existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
   const file = join(folder, `${randomUUID()}.${kind}`)
   try {
     mkdirSync(folder, { recursive: true })
@@ -445,7 +469,7 @@ async function signInDone(named: string | undefined): Promise<{ readonly ok: boo
 }
 
 async function ask(request: object, folder: string = browserFolder(), to?: number): Promise<Reply> {
-  if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
+  if (!existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
   if (!fresh(folder) && profiles(folder).length === 0) return { ok: false, error: NOT_CONNECTED() }
   const name = to === undefined ? randomUUID() : `${randomUUID()}.${to}`
   const asked = join(folder, `${name}.ask`)
