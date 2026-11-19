@@ -50,7 +50,7 @@ For profile creation or account reuse, load `{{profilesSkill}}` from {{profilesP
 
 - Start with `find`: it returns the matching `[ref] role "name"` lines. `read` lists every heading and control; use it when `find` misses.
 - One command per call. `text` gives the main text; `shot` prints a PNG's path. `{{said}} browser help` lists the rest.
-- No command reaches a file chooser's dialog. Upload with `eval <tab> -`: a stdin script builds each `File` from base64 into a `DataTransfer`, sets the `input[type=file]`'s `files`, dispatches a bubbling `change`. Check the previews.
+- For files, downloads, key combinations, dragging, the clipboard, waiting, dialogs, new tabs and frames, read [actions](references/actions.md).
 - Refs hold until reload; after a click changes the page, read again.
 - For a design, layout or animation check, read [design checks](references/design-checks.md). When the work needs a password, API key or SSH key, use {{secrets}}.
 

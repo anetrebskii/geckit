@@ -1,3 +1,4 @@
+import browserActions from '../../../skills/use-browser/references/actions.md?raw'
 import browserDesignChecks from '../../../skills/use-browser/references/design-checks.md?raw'
 import browserTestBrowsers from '../../../skills/use-browser/references/test-browsers.md?raw'
 import browserSection from '../../../profiles/browser-section.md?raw'
@@ -40,7 +41,7 @@ const secretsHow = secretsSkill.slice(secretsSkill.indexOf('Never ask'))
 export const PROMPTS = {
   browser: {
     how: browserHow.trim(), rules: browserRules.trim(), section: browserSection.trim(), skill: browserSkill.trim(),
-    references: { 'test-browsers': browserTestBrowsers.trim(), 'design-checks': browserDesignChecks.trim() },
+    references: { actions: browserActions.trim(), 'test-browsers': browserTestBrowsers.trim(), 'design-checks': browserDesignChecks.trim() },
   },
   build: { app: buildApp.trim(), provider: buildProvider.trim() },
   correct: { alone: correctAlone.trim(), codex: correctCodex.trim(), explain: correctExplain.trim(), grammar: correctGrammar.trim(), improve: correctImprove.trim(), rules: correctRules.trim(), translate: correctTranslate.trim() },

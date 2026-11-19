@@ -408,7 +408,7 @@ const browserRules = (said: string): string => fill(PROMPTS.browser.rules, { sai
 
 type Reference = keyof typeof PROMPTS.browser.references
 
-const REFERENCES: Readonly<Record<string, Reference>> = { testBrowsers: 'test-browsers', designChecks: 'design-checks' }
+const REFERENCES: Readonly<Record<string, Reference>> = { actions: 'actions', testBrowsers: 'test-browsers', designChecks: 'design-checks' }
 
 const referenceTitle = (text: string): string => text.split('\n')[0]?.replace(/^#+\s*/, '') ?? ''
 
@@ -419,7 +419,7 @@ const browserHow = (said: string, inline = false, claude = true): string => {
     return [key, inline ? `the ${title} section below` : `[${title.toLowerCase()}](references/${file}.md)`]
   }))
   const secrets = inline ? 'the Secrets section of this guide' : `the \`${skillSaid(SECRETS_SKILL_NAME, claude)}\` skill`
-  const template = PROMPTS.browser.how.replace('[test browsers](references/test-browsers.md)', '{{testBrowsers}}').replace('[design checks](references/design-checks.md)', '{{designChecks}}')
+  const template = PROMPTS.browser.how.replace('[test browsers](references/test-browsers.md)', '{{testBrowsers}}').replace('[design checks](references/design-checks.md)', '{{designChecks}}').replace('[actions](references/actions.md)', '{{actions}}')
   const how = fill(template, { said, ...named, secrets, profilesSkill: skillSaid('configure-browser-profile', claude), profilesPath: skillPath('configure-browser-profile', claude) })
   if (!inline) return how
   return [how, ...Object.values(PROMPTS.browser.references).map((text) => fill(text, { said }))].join('\n\n')

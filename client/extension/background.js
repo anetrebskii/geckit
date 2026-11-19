@@ -45,7 +45,7 @@ function hostOf(url) {
 async function run(request) {
   if (request.cmd === 'ping' || request.cmd === 'reload') return answer(request)
   const open = dialogs.get(request.tab)
-  if (open !== undefined && !['dialog', 'pages', 'close'].includes(request.cmd)) throw new Error(`Tab ${request.tab} shows a ${open.type} dialog: "${open.message}". Answer it first with dialog ${request.tab} accept or dismiss.`)
+  if (open !== undefined && !['dialog', 'pages', 'close'].includes(request.cmd)) throw new Error(`Tab ${request.tab} shows ${open.type === 'alert' ? 'an' : 'a'} ${open.type} dialog: "${open.message}". Answer it first with dialog ${request.tab} accept or dismiss.`)
   const started = Date.now()
   const asked = Number.isInteger(request.tab) ? await chrome.tabs.get(request.tab).catch(() => undefined) : undefined
   const done = (result, error) => save((now) => {
@@ -270,7 +270,16 @@ async function debug(id, steps, keep = false) {
     try { await chrome.debugger.attach(target, '1.3') } catch (error) { throw new Error(`Could not attach to tab ${id}: ${error.message}`, { cause: error }) }
     await chrome.debugger.sendCommand(target, 'Page.enable').catch(() => undefined)
   }
-  const send = (method, params) => method.startsWith('Input.') ? orDialog(id, chrome.debugger.sendCommand(target, method, params)) : chrome.debugger.sendCommand(target, method, params)
+  // A background tab draws no frames, and Chrome holds input, mouse moves above all, until the next frame; a one-pixel capture draws one.
+  const paint = () => chrome.debugger.sendCommand(target, 'Page.captureScreenshot', { format: 'jpeg', quality: 1, clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } }).catch(() => undefined)
+  let painted = false
+  const send = async (method, params) => {
+    if (!method.startsWith('Input.')) return chrome.debugger.sendCommand(target, method, params)
+    if (!painted) { painted = true; await paint() }
+    const sent = chrome.debugger.sendCommand(target, method, params)
+    if (method === 'Input.dispatchDragEvent' || params?.type === 'mouseMoved') await paint()
+    return orDialog(id, sent)
+  }
   try { return await steps(send) } finally {
     if (!had && !keep && !held.has(id) && !dialogs.has(id)) await chrome.debugger.detach(target).catch(() => undefined)
   }

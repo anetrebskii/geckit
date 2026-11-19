@@ -71,3 +71,14 @@ export const desktopFonts = (installed: readonly string[]): string[] => {
   const desktopOnes = new Set(DESKTOP_BASE.fonts)
   return [...new Set(installed.map((one) => one.trim()).filter((one) => desktopOnes.has(one)))].sort()
 }
+
+export type MediaSetting = 'ask' | 'allow' | 'block'
+export const MEDIA_FILE = 'geckit-media.json'
+
+/** Firefox asks for the camera and microphone in its own panel, out of a page's reach, so a profile allows or blocks them for every site from its start. */
+export function mediaPrefs(saved: string | undefined): Record<string, number> {
+  let media: Partial<Record<'camera' | 'microphone', MediaSetting>> = {}
+  try { media = JSON.parse(saved ?? '{}') as typeof media } catch { media = {} }
+  const value = { ask: 0, allow: 1, block: 2 } as const
+  return Object.fromEntries((['camera', 'microphone'] as const).filter((kind) => media[kind] !== undefined && media[kind] !== 'ask').map((kind) => [`permissions.default.${kind}`, value[media[kind] as MediaSetting]]))
+}

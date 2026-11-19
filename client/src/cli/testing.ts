@@ -13,6 +13,7 @@ import { serveSecretFiles } from './secrets-serve'
 import { receiver, type SealedValue } from '../shared/secret-seal'
 import { alive, camoufoxLibraries, camoufoxSupported, downloading, migrateChromeProfiles, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
 import { prepareLaunch } from './launch'
+import { MEDIA_FILE, mediaPrefs } from './launch-settings'
 import { HIDDEN_SCRIPT, PAINT_SCRIPT, type PictureJob } from './hidden-page'
 import { isServer, presentationOf, setPresentation } from './desktop-identity'
 import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
@@ -218,12 +219,15 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   const { firefox } = await import('playwright-core')
   const launch = await prepareLaunch(binary.path, testingFolder(root), profilesFolder(root), name, (line) => process.stderr.write(`${line}\n`))
   process.once('exit', () => launch.virtual?.stop())
+  let savedMedia: string | undefined
+  try { savedMedia = readFileSync(join(dir, MEDIA_FILE), 'utf8') } catch { savedMedia = undefined }
+  const prefs = { 'gfx.bundled-fonts.activate': 0, ...mediaPrefs(savedMedia) }
   const context = await firefox.launchPersistentContext(dir, {
     executablePath: binary.path,
     headless: launch.headless,
     viewport: null,
-    env: { ...process.env, ...(libraries.length === 0 ? {} : { LD_LIBRARY_PATH: [...libraries, process.env['LD_LIBRARY_PATH'] ?? ''].filter((one) => one !== '').join(':') }), ...(launch.display === undefined ? {} : { DISPLAY: launch.display }), CAMOU_CONFIG_1: JSON.stringify(launch.config), CAMOU_PREFS_1: JSON.stringify({ 'gfx.bundled-fonts.activate': 0 }) },
-    firefoxUserPrefs: { 'gfx.bundled-fonts.activate': 0 },
+    env: { ...process.env, ...(libraries.length === 0 ? {} : { LD_LIBRARY_PATH: [...libraries, process.env['LD_LIBRARY_PATH'] ?? ''].filter((one) => one !== '').join(':') }), ...(launch.display === undefined ? {} : { DISPLAY: launch.display }), CAMOU_CONFIG_1: JSON.stringify(launch.config), CAMOU_PREFS_1: JSON.stringify(prefs) },
+    firefoxUserPrefs: prefs,
     timeout: 30_000,
   }).catch((error: unknown) => { launch.virtual?.stop(); throw error })
   context.setDefaultTimeout(20_000)
@@ -491,15 +495,30 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     await wait(300)
     return { answered, accept: request.accept === true }
   }
+  const allowed = new Map<string, Set<string>>()
   const permission = async (id: number | undefined, request: Request): Promise<object> => {
     const origin = new URL(targetOf(id).url()).origin
     const kind = request.kind ?? ''
-    if (request.setting === 'allow') {
-      if (kind !== 'geolocation' && kind !== 'notifications') throw new Error(`Camoufox can allow only geolocation and notifications, not ${kind}.`)
-      await context.grantPermissions([kind], { origin })
-    } else if (request.setting === 'ask') await context.clearPermissions()
-    else throw new Error('Camoufox cannot block a permission for one site. Dismiss the request on the page instead.')
-    return { kind, setting: request.setting, origin }
+    const setting = request.setting ?? ''
+    if (kind === 'clipboard') throw new Error('Firefox has no clipboard permission. A page writes to the clipboard after a click; reading it, Firefox shows its own Paste button, which GeckIt cannot press. Paste with geckit browser paste, and read what a page copied with geckit browser clipboard.')
+    if (kind === 'camera' || kind === 'microphone') {
+      const file = join(dir, MEDIA_FILE)
+      let media: Record<string, string>
+      try { media = JSON.parse(readFileSync(file, 'utf8')) as Record<string, string> } catch { media = {} }
+      writeFileSync(file, JSON.stringify({ ...media, [kind]: setting }))
+      return { kind, setting, origin, profile: label }
+    }
+    const mine = allowed.get(origin) ?? new Set<string>()
+    if (setting === 'ask') {
+      allowed.delete(origin)
+      await context.clearPermissions()
+      for (const [other, kinds] of allowed) await context.grantPermissions([...kinds], { origin: other })
+    } else {
+      if (setting === 'allow') mine.add(kind); else mine.delete(kind)
+      allowed.set(origin, mine)
+      await context.grantPermissions([...mine], { origin })
+    }
+    return { kind, setting, origin, ...(setting === 'ask' ? {} : { others: ['geolocation', 'notifications'].filter((one) => one !== kind && !mine.has(one)) }) }
   }
   const withoutPointer = async <T>(id: number | undefined, keep: boolean | undefined, steps: () => Promise<T>): Promise<T> => {
     if (!keep) await inPage(id, 'pageOverlay', false)
@@ -697,7 +716,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
         activeConversation = asked.conversation
         if (asked.tab !== undefined) {
           const open = dialogs.get(targetOf(asked.tab))
-          if (open !== undefined && !['dialog', 'pages', 'close'].includes(asked.cmd)) throw new Error(`Tab ${asked.tab} shows a ${open.type()} dialog: "${open.message()}". Answer it first with dialog ${asked.tab} accept or dismiss.`)
+          if (open !== undefined && !['dialog', 'pages', 'close'].includes(asked.cmd)) throw new Error(`Tab ${asked.tab} shows ${open.type() === 'alert' ? 'an' : 'a'} ${open.type()} dialog: "${open.message()}". Answer it first with dialog ${asked.tab} accept or dismiss.`)
         } else owners.acquire(asked.conversation)
         const one = (next: Request): Promise<Reply> => answer(next).then((result) => {
           const shown = next.tab === undefined ? undefined : targets.get(next.tab)

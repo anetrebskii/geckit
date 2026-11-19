@@ -827,7 +827,7 @@ export function notes(tab: string, result: unknown): string[] {
   const { opened, dialog } = result as { opened?: (Page & { id: number })[]; dialog?: { type: string; message: string; prompt?: string } }
   return [
     ...(opened ?? []).map((one) => `It opened tab ${one.id}: ${one.title || 'untitled'}  ${one.url}`),
-    ...(dialog === undefined ? [] : [`The page opened a ${dialog.type} dialog: "${dialog.message}"${dialog.prompt ? `, its answer field holding "${dialog.prompt}"` : ''}. Nothing else works in tab ${tab} until it is answered: geckit browser dialog ${tab} accept or dismiss.`]),
+    ...(dialog === undefined ? [] : [`The page opened ${dialog.type === 'alert' ? 'an' : 'a'} ${dialog.type} dialog: "${dialog.message}"${dialog.prompt ? `, its answer field holding "${dialog.prompt}"` : ''}. Nothing else works in tab ${tab} until it is answered: geckit browser dialog ${tab} accept or dismiss.`]),
   ]
 }
 
@@ -859,7 +859,12 @@ function shown(what: string, args: readonly string[], words: readonly string[], 
     case 'paste': { const done = result as { typed?: string }; return done.typed === undefined ? 'Pasted where the cursor was.' : `Pasted. The field now holds: ${done.typed}` }
     case 'wait': { const done = result as Page & { waited: number }; return `There after ${(done.waited / 1000).toFixed(1)} s: ${done.title}  ${done.url}` }
     case 'dialog': { const done = result as { answered: { type: string; message: string }; accept: boolean }; return `${done.accept ? 'Accepted' : 'Dismissed'} the ${done.answered.type} dialog "${done.answered.message}".` }
-    case 'permission': { const done = result as { kind: string; setting: string; origin: string }; return `${done.origin} ${done.setting === 'allow' ? 'may now use' : done.setting === 'block' ? 'may not use' : 'asks again for'} ${done.kind}.` }
+    case 'permission': {
+      const done = result as { kind: string; setting: string; origin: string; profile?: string; others?: string[] }
+      if (done.profile !== undefined) return `From its next start, ${done.profile} ${done.setting === 'allow' ? 'lets every site use' : done.setting === 'block' ? 'refuses every site' : 'asks before any site uses'} the ${done.kind}. Firefox sets the ${done.kind} for the whole profile, not one site, and only when it starts.`
+      const said = `${done.origin} ${done.setting === 'allow' ? 'may use' : done.setting === 'block' ? 'may not use' : 'asks again for'} ${done.kind} from its next page load; if the page already asked, open it again with go.`
+      return done.others === undefined || done.others.length === 0 ? said : `${said} Until allowed, it may not use ${done.others.join(' or ')} either.`
+    }
     case 'type': return `The field now holds: ${(result as { typed: string }).typed}`
     case 'key': return `Pressed ${(result as { pressed: string }).pressed}.`
     case 'scroll': { const at = result as { y: number; height: number; viewport: number }; return `At ${at.y} of ${at.height}, a screen is ${at.viewport}.` }

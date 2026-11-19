@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DESKTOP_BASE, type DesktopIdentity } from '../src/cli/desktop-identity'
-import { acceptLanguage, desktopFonts, knownSettings, launchSettings } from '../src/cli/launch-settings'
+import { acceptLanguage, desktopFonts, knownSettings, launchSettings, mediaPrefs } from '../src/cli/launch-settings'
 
 const identity: DesktopIdentity = { version: 1, base: 'ubuntu-intel', made: '2026-11-19T00:00:00.000Z', screen: { width: 1366, height: 768 }, cores: 4, language: 'en-GB', timezone: 'Europe/London' }
 
@@ -44,5 +44,14 @@ describe('what a test browser starts with', () => {
     expect(acceptLanguage('en-US')).toBe('en-US,en;q=0.5')
     expect(acceptLanguage('fr')).toBe('fr')
     expect(desktopFonts([' DejaVu Sans', 'DejaVu Sans', 'Some Server Font', 'Liberation Mono'])).toEqual(['DejaVu Sans', 'Liberation Mono'])
+  })
+})
+
+describe('camera and microphone for a profile', () => {
+  it('turns the saved choice into Firefox defaults, leaving ask to Firefox', () => {
+    expect(mediaPrefs(JSON.stringify({ camera: 'allow', microphone: 'block' }))).toEqual({ 'permissions.default.camera': 1, 'permissions.default.microphone': 2 })
+    expect(mediaPrefs(JSON.stringify({ camera: 'ask' }))).toEqual({})
+    expect(mediaPrefs(undefined)).toEqual({})
+    expect(mediaPrefs('broken')).toEqual({})
   })
 })
