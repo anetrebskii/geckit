@@ -30,7 +30,7 @@ import { managerCommands, managerMessage, MANAGER_INSTRUCTIONS } from './manager
 import type { ManagerCommand } from './manager-protocol'
 import type { NotesStore, Sessions } from './sessions'
 import { limitReply } from './sessions/wording'
-import { COMPACT_AT_INVALID, groupUpdates, isMilestone, mergeUpdates, shouldCompact, updateLine, validCompactAt } from './manager-economy'
+import { carriesOn, COMPACT_AT_INVALID, groupUpdates, isMilestone, mergeUpdates, shouldCompact, updateLine, validCompactAt } from './manager-economy'
 
 const MAIN = MANAGER_MAIN_THREAD
 const GECKIT_CHANNEL = 'geckit'
@@ -1126,7 +1126,7 @@ export class Manager {
     const positions = [...this.#record.workerEvents]
     for (const worker of sessions.filter((one) => this.manages(one.id))) {
       const tasks = (worker.tasks ?? []).map((task): [string, string] => [task.id, task.status])
-      const signature = JSON.stringify(['v2', worker.state, worker.status, worker.goalMet ?? null, worker.queued?.length ?? 0, worker.delivery ?? null, tasks])
+      const signature = JSON.stringify(['v2', worker.state, worker.status, worker.goalMet ?? null, worker.queued?.length ?? 0, worker.delivery ?? null, tasks, carriesOn(worker)])
       const old = positions.find((one) => one.id === worker.id)
       if (old?.signature === signature || worker.delivery?.status === 'pending') continue
       if (old !== undefined) positions.splice(positions.indexOf(old), 1)
@@ -1134,7 +1134,7 @@ export class Manager {
       const parsed: unknown = old === undefined ? undefined : JSON.parse(old.signature)
       const before = Array.isArray(parsed) && parsed[0] === 'v2' ? parsed : undefined
       if (old !== undefined && before === undefined) continue
-      const was = before === undefined ? undefined : { state: before[1], goalMet: before[3], tasks: new Map((before[6] as [string, string][] | undefined) ?? []) }
+      const was = before === undefined ? undefined : { state: before[1], goalMet: before[3], tasks: new Map((before[6] as [string, string][] | undefined) ?? []), carried: before[7] === true }
       if (isMilestone(worker, was, worker.state === 'asks' ? this.#deps.sessions.pendingForManager(worker.id).length : 0)) {
         const line = updateLine(worker, Date.now())
         for (const thread of [this.#ownerThread(worker.id)].filter((one) => one !== undefined)) {

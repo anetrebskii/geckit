@@ -1,4 +1,5 @@
 import type { BackgroundTask, ChatSession } from '../shared/api'
+import { goalMet } from '../shared/api'
 
 export { COMPACT_AT_INVALID, validCompactAt } from '../shared/manager'
 
@@ -7,7 +8,7 @@ export function taskLabel(task: Pick<BackgroundTask, 'what' | 'command'>): strin
   return said.length > 120 ? `${said.slice(0, 117)}...` : said
 }
 
-export type Observed = Pick<ChatSession, 'id' | 'title' | 'root' | 'state' | 'status' | 'stands' | 'delivery' | 'tasks' | 'goalMet'>
+export type Observed = Pick<ChatSession, 'id' | 'title' | 'root' | 'state' | 'status' | 'stands' | 'delivery' | 'tasks' | 'goalMet' | 'goal' | 'queued'>
 
 /** The line one worker update carries: state and a short label per background command, never its command or output. */
 export function updateLine(worker: Observed, now: number): string {
@@ -19,9 +20,16 @@ export interface Before {
   readonly state: unknown
   readonly goalMet: unknown
   readonly tasks: ReadonlyMap<string, string>
+  /** It was carrying on by itself, so its turn ending did not wake Manager. */
+  readonly carried?: boolean
 }
 
-/** A change Manager must act on. A background command ending while the worker keeps working is not one. */
+/** A worker whose turn ended but that goes on by itself: a background command still runs, a message waits for it, or its goal is not reached yet. */
+export function carriesOn(worker: Observed): boolean {
+  return (worker.tasks ?? []).some((task) => task.status === 'running') || (worker.queued?.length ?? 0) > 0 || worker.goal !== undefined && !goalMet(worker)
+}
+
+/** A change Manager must act on. A background command ending while the worker keeps working is not one, nor a turn ending when the worker carries on by itself. */
 export function isMilestone(worker: Observed, before: Before | undefined, pendingForManager: number): boolean {
   const tasks = (worker.tasks ?? []).map((task): [string, string] => [task.id, task.status])
   const taskSettled = tasks.some(([id, status]) => status !== 'running' && status !== 'unknown' && before?.tasks.get(id) !== status && (status === 'asks' || before !== undefined && worker.state !== 'working'))
@@ -29,9 +37,7 @@ export function isMilestone(worker: Observed, before: Before | undefined, pendin
     || worker.state === 'failed'
     || worker.status === 'blocked'
     || (worker.goalMet ?? null) !== (before?.goalMet ?? null)
-    || worker.state === 'unread' && before?.state !== 'unread'
-    || worker.state === 'idle' && before?.state === 'working'
-    || taskSettled
+    || (worker.state === 'unread' && before?.state !== 'unread' || worker.state === 'idle' && before?.state === 'working' || (worker.state === 'unread' || worker.state === 'idle') && before?.carried === true || taskSettled) && !carriesOn(worker)
 }
 
 export interface Groupable {

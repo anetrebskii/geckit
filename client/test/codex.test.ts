@@ -1291,7 +1291,7 @@ describe('provider routing', () => {
       await tick()
       expect(server.requests.filter((one) => one.method === 'thread/start')).toHaveLength(1)
       expect(server.requests.findLast((one) => one.method === 'thread/resume')?.params).toMatchObject({ ...codexOptions(ROOT, 'auto', 'second'), threadId: 'thread-1' })
-      expect(server.requests.findLast((one) => one.method === 'turn/start')?.params?.input).toEqual([{ type: 'text', text: managerContext(MANAGER_INSTRUCTIONS, 'Continue coordination'), text_elements: [] }])
+      expect(server.requests.findLast((one) => one.method === 'turn/start')?.params?.input).toEqual([{ type: 'text', text: 'Continue coordination', text_elements: [] }])
       await expect(sessions.items(id)).rejects.toThrow('Open Manager chat to send a request.')
       expect(notes.all()[id]?.managerPrompt).toBe(MANAGER_INSTRUCTIONS)
     } finally { sessions.dispose() }

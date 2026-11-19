@@ -118,7 +118,7 @@ The plan's usage limit stops Manager mid-turn. When the limit resets, Manager do
 
 **Waking on milestones**
 
-- **FR-001**: GeckIt MUST wake a Manager thread about a tracked worker only when that worker finishes a turn, fails, asks a question Manager must answer, becomes blocked, its goal result changes, or one of its background commands asks for a decision.
+- **FR-001**: GeckIt MUST wake a Manager thread about a tracked worker only when that worker stops (finishes a turn with no background command running, no message waiting for it and no unmet goal that keeps it going), fails, asks a question Manager must answer, becomes blocked, its goal result changes, or one of its background commands asks for a decision. A turn that ends while the worker carries on by itself MUST NOT wake Manager; the wake comes when it stops. (Amended 2026-11-19: EntechBot's Manager answered such turns with no-op turns, each rereading about 175,000 tokens.)
 - **FR-002**: GeckIt MUST NOT wake Manager when a background command of a still-working worker starts, runs or ends.
 - **FR-003**: A worker update MUST contain the worker's identity, title, project, state, status, short summary, delivery state and, per background command, its identity, status and a short label of at most 120 characters, and MUST NOT contain full command text or command output.
 
@@ -149,6 +149,10 @@ The plan's usage limit stops Manager mid-turn. When the limit resets, Manager do
 **Compatibility**
 
 - **FR-018**: Saved Manager state from earlier versions MUST load unchanged, with the default threshold and the new wake and grouping rules.
+**Instructions**
+
+- **FR-020** (added 2026-11-19): Manager's instructions MUST NOT be repeated in every Manager message. An assistant that takes a system prompt (Claude Code) MUST get them as its system prompt when its process starts; any other assistant MUST get them in a thread's first message, again after its context shrank (a compaction), and again when the instructions change. On EntechBot, the copies took about 71,000 of the main thread's 216,000 tokens.
+
 - **FR-019**: The same behavior MUST hold for the desktop app and the headless service, on every system.
 
 ### Key Entities

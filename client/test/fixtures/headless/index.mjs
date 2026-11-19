@@ -54,7 +54,7 @@ export function create() {
       child.on('error', () => left())
       const write = (value) => child.stdin.write(`${JSON.stringify(value)}\n`)
       return {
-        send: (text) => write({ text }),
+        send: (text) => write({ text, manager: options.managerPrompt !== undefined }),
         answer: (_ask, answer) => write({ answer }),
         stop: () => write({ stop: true }),
         end: () => new Promise((resolve) => { if (child.exitCode !== null || child.signalCode !== null) resolve(); else { child.once('close', resolve); child.kill() } }),

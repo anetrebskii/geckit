@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupUpdates, isMilestone, mergeUpdates, shouldCompact, taskLabel, updateLine, validCompactAt } from '../src/main/manager-economy'
+import { carriesOn, groupUpdates, isMilestone, mergeUpdates, shouldCompact, taskLabel, updateLine, validCompactAt } from '../src/main/manager-economy'
 import type { Before, Observed } from '../src/main/manager-economy'
 import type { BackgroundTask } from '../src/shared/api'
 
@@ -8,6 +8,24 @@ const worker = (change: Partial<Observed> = {}): Observed => ({ id: 'w1', title:
 const before = (state: string, tasks: readonly [string, string][] = [], goalMet: unknown = null): Before => ({ state, goalMet, tasks: new Map(tasks) })
 
 describe('isMilestone', () => {
+  it('does not wake Manager when a turn ends and the worker carries on by itself', () => {
+    expect(isMilestone(worker({ state: 'unread', tasks: [task('t1', 'running')] }), before('working', [['t1', 'running']]), 0)).toBe(false)
+    expect(isMilestone(worker({ state: 'unread', goal: { condition: 'Video rendered', checks: 1 } }), before('working'), 0)).toBe(false)
+    expect(isMilestone(worker({ state: 'unread', queued: [{ id: 'q', text: 'next', images: 0 }] } as Partial<Observed>), before('working'), 0)).toBe(false)
+    expect(carriesOn(worker({ state: 'unread', goal: { condition: 'Video rendered', checks: 1 }, goalMet: 'Video rendered' }))).toBe(false)
+  })
+
+  it('wakes Manager once a worker that was carrying on stops', () => {
+    expect(isMilestone(worker({ state: 'unread', tasks: [task('t1', 'completed')] }), { ...before('unread', [['t1', 'completed']]), carried: true }, 0)).toBe(true)
+    expect(isMilestone(worker({ state: 'unread' }), { ...before('unread'), carried: false }, 0)).toBe(false)
+  })
+
+  it('still wakes Manager at once for a question, a failure or a block while the worker carries on', () => {
+    expect(isMilestone(worker({ state: 'asks', tasks: [task('t1', 'running')] }), before('working', [['t1', 'running']]), 0)).toBe(true)
+    expect(isMilestone(worker({ state: 'failed', goal: { condition: 'Video rendered', checks: 1 } }), before('working'), 0)).toBe(true)
+    expect(isMilestone(worker({ state: 'unread', status: 'blocked', tasks: [task('t1', 'running')] }), before('working', [['t1', 'running']]), 0)).toBe(true)
+  })
+
   it('ignores a background command that ends while the worker keeps working', () => {
     expect(isMilestone(worker({ tasks: [task('t1', 'completed')] }), before('working', [['t1', 'running']]), 0)).toBe(false)
   })

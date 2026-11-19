@@ -40,6 +40,8 @@ interface Sent {
   readonly id: string
   readonly text: string
   readonly input: string
+  /** The message itself, without a system prompt. */
+  readonly message?: string
 }
 
 const cleanups: (() => Promise<void>)[] = []
@@ -52,7 +54,7 @@ function library() {
   let created = 0
   const create = vi.fn<LlmProvider['create']>(async () => `plugin:manager-test:${String(++created)}`)
   const provider: LlmProvider = {
-    ...llmProvider({}, 'claude'), id: 'plugin:manager-test', family: 'plugin:manager-test', name: 'Manager test library',
+    ...llmProvider({}, 'claude'), systemPrompt: false, id: 'plugin:manager-test', family: 'plugin:manager-test', name: 'Manager test library',
     create, list: async () => [], read: async () => undefined, has: async () => false,
     program: async () => undefined, limits: async () => ({ windows: new Map<string, number | undefined>() }), goal: async () => undefined,
     models: async () => [{ value: 'library-model', name: 'Library model' }, { value: 'library-other', name: 'Other library model' }],
@@ -63,7 +65,7 @@ function library() {
       return { send: (text) => { const item = managerHistoryItem({ kind: 'mine', id: 'input', text }); sent.push({ id: options.id, text: item.kind === 'mine' ? item.text : text, input: text }) }, answer: () => undefined, stop: () => hear({ items: [], gone: [], signals: [{ kind: 'ended', how: 'stopped' }] }), end: async () => undefined }
     },
   }
-  return { provider, create, made, sent, finish: (id: string, text = 'Coordinated') => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `reply:${String(sent.length)}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] }) }
+  return { provider, create, made, sent, hear: (id: string, heard: Heard) => hearing.get(id)?.(heard), finish: (id: string, text = 'Coordinated') => hearing.get(id)?.({ items: [{ kind: 'theirs', id: `reply:${String(sent.length)}`, text }], gone: [], signals: [{ kind: 'ended', how: 'done' }] }) }
 }
 
 async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Driver['inject'], intake?: ManagerDeps['intake'], employees?: ManagerDeps['employees'], syncInstructions?: ManagerDeps['syncInstructions']) {
@@ -89,7 +91,8 @@ async function fixture(limit = 0, over: Partial<SessionsDeps> = {}, inject?: Dri
     claude: (options, hear): Driver => {
       made.push(options)
       hearings.set(options.id, hear)
-      return { ...(inject === undefined ? {} : { inject }), send: (text) => { const item = managerHistoryItem({ kind: 'mine', id: 'input', text }); sent.push({ id: options.id, text: item.kind === 'mine' ? item.text : text, input: text }) }, answer: (ask, answer) => answers.push({ id: options.id, ask, answer }), stop: () => hear({ items: [], gone: [], signals: [{ kind: 'ended', how: 'stopped' }] }), end: async () => undefined }
+      // What the model reads: Manager's instructions arrive as the system prompt, the message as itself.
+      return { ...(inject === undefined ? {} : { inject }), send: (text) => { const item = managerHistoryItem({ kind: 'mine', id: 'input', text }); sent.push({ id: options.id, text: item.kind === 'mine' ? item.text : text, input: options.managerPrompt === undefined ? text : `${options.managerPrompt}\n\n${text}`, message: text }) }, answer: (ask, answer) => answers.push({ id: options.id, ask, answer }), stop: () => hear({ items: [], gone: [], signals: [{ kind: 'ended', how: 'stopped' }] }), end: async () => undefined }
     },
     disk: { list: async () => [], read: async () => undefined, has: async () => false },
     claudeAccount: async () => ({ here: true, signedIn: true, plan: 'Max' }),
@@ -1844,10 +1847,50 @@ describe('Manager session', () => {
     await f.manager.send('Continue coordinating')
     await vi.waitFor(() => expect(plugin.made).toHaveLength(2))
     expect(plugin.made[1]).toMatchObject({ id, model: 'library-other', mode: 'plan', resume: true })
-    expect(plugin.sent[1]?.input).toContain(MANAGER_INSTRUCTIONS)
-    expect(plugin.sent[1]?.text).toBe('Continue coordinating')
+    expect(plugin.sent[1]?.input).toBe('Continue coordinating')
     expect(plugin.create).toHaveBeenCalledTimes(1)
     expect(f.made).toHaveLength(0)
+  })
+
+  it('gives a library without a system prompt Manager\'s instructions once, and again after compaction or a change', async () => {
+    const plugin = library()
+    const f = await fixture(0, { plugins: [plugin.provider] })
+    f.set({ chatProviders: ['plugin:manager-test'], chatProvider: 'plugin:manager-test', chatMode: 'plan', providerPlugins: [plugin.provider] })
+    await f.manager.configure({ enabled: true, provider: 'plugin:manager-test', chatModel: 'library-model' })
+    const id = await f.manager.send('First')
+    await vi.waitFor(() => expect(plugin.sent).toHaveLength(1))
+    expect(plugin.sent[0]?.input).toContain(MANAGER_INSTRUCTIONS)
+    const turn = async (text: string, used: number): Promise<void> => {
+      plugin.hear(id, { items: [], gone: [], signals: [{ kind: 'spend', used }] })
+      plugin.finish(id)
+      await vi.waitFor(async () => expect((await f.manager.view()).state).toBe('idle'))
+      const count = plugin.sent.length
+      await f.manager.send(text)
+      await vi.waitFor(() => expect(plugin.sent).toHaveLength(count + 1))
+    }
+    await turn('Second', 120_000)
+    expect(plugin.sent.at(-1)?.input).toBe('Second')
+    await turn('Third', 150_000)
+    expect(plugin.sent.at(-1)?.input).toBe('Third')
+    await turn('After compaction', 30_000)
+    expect(plugin.sent.at(-1)?.input).toContain(MANAGER_INSTRUCTIONS)
+    expect(plugin.sent.at(-1)?.text).toBe('After compaction')
+    await turn('Fifth', 40_000)
+    expect(plugin.sent.at(-1)?.input).toBe('Fifth')
+  })
+
+  it('gives Claude Manager\'s instructions as its system prompt and sends messages as they are', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true, instructions: 'Stay brief.' })
+    await f.manager.send('Coordinate')
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(f.made[0]?.managerPrompt).toContain(MANAGER_INSTRUCTIONS)
+    expect(f.made[0]?.managerPrompt).toContain('Stay brief.')
+    expect(f.sent[0]?.message).toBe('Coordinate')
+    const args = claudeArgs({ id: 'manager-1', resume: false, mode: 'auto', managerPrompt: 'Manager rules' }, join(f.directory, 'prompt.md'))
+    expect(args.slice(args.indexOf('--append-system-prompt-file'), args.indexOf('--append-system-prompt-file') + 2)).toEqual(['--append-system-prompt-file', join(f.directory, 'prompt.md')])
+    expect(args).not.toContain('--append-system-prompt')
+    expect(await readFile(join(f.directory, 'prompt.md'), 'utf8')).toBe('Manager rules')
   })
 
   it('chooses the enabled app default on first setup and never implicitly creates Claude when it is disabled', async () => {
@@ -2737,6 +2780,12 @@ describe('Manager threads', () => {
     f.finish(main, 'Tracking.')
     await settle()
     const before = { main: f.sent.filter((one) => one.id === main).length, thread: f.sent.filter((one) => one.id === backing).length }
+    f.finish(worker, 'Fixed it.')
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === worker && one.message === '/goal Tests pass')).toBe(true))
+    await settle()
+    // The worker's goal keeps it going, so Manager hears of it once the goal is over and the worker stops.
+    expect(f.sent.filter((one) => one.id === main).length).toBe(before.main)
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'goal', goal: undefined, status: 'complete' }] })
     f.finish(worker, 'Fixed and tested.')
     await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.text.includes('[Worker update')).length).toBeGreaterThan(0))
     await settle()
@@ -3297,7 +3346,7 @@ describe('Manager token economy', () => {
     await f.manager.sendApp({ id: 'app:first', text: 'First request', session: main })
     await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('First request'))).toBe(true))
     f.hear(main, { items: [{ kind: 'theirs', id: 'answer:first', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 300_000 }, { kind: 'ended', how: 'done' }] })
-    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(1))
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.message === '/compact')).toHaveLength(1))
     expect((await f.manager.view()).hold).toBe('compacting')
     await f.manager.sendApp({ id: 'app:second', text: 'Second request', session: main })
     await settle()
@@ -3306,7 +3355,7 @@ describe('Manager token economy', () => {
     await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Second request'))).toBe(true))
     const second = f.sent.find((one) => one.id === main && one.text.includes('Second request'))?.text ?? ''
     expect(second).toContain('[Conversation compacted.')
-    expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(1)
+    expect(f.sent.filter((one) => one.id === main && one.message === '/compact')).toHaveLength(1)
   })
 
   it('does not compact when the setting is off, and refuses an invalid threshold', async () => {
@@ -3318,7 +3367,7 @@ describe('Manager token economy', () => {
     await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Request'))).toBe(true))
     f.hear(main, { items: [{ kind: 'theirs', id: 'answer:off', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 900_000 }, { kind: 'ended', how: 'done' }] })
     await settle()
-    expect(f.sent.some((one) => one.input === '/compact')).toBe(false)
+    expect(f.sent.some((one) => one.message === '/compact')).toBe(false)
   })
 
   it('does not try again after a failed compaction until another turn ends', async () => {
@@ -3327,12 +3376,12 @@ describe('Manager token economy', () => {
     await f.manager.sendApp({ id: 'app:fail', text: 'Request', session: main })
     await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Request'))).toBe(true))
     f.hear(main, { items: [{ kind: 'theirs', id: 'answer:fail', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 300_000 }, { kind: 'ended', how: 'done' }] })
-    await vi.waitFor(() => expect(f.sent.filter((one) => one.input === '/compact')).toHaveLength(1))
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.message === '/compact')).toHaveLength(1))
     f.hear(main, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Compaction failed.' }] })
     await settle()
     f.manager.observeSessions(await f.sessions.allForManager([f.root]))
     await settle()
-    expect(f.sent.filter((one) => one.input === '/compact')).toHaveLength(1)
+    expect(f.sent.filter((one) => one.message === '/compact')).toHaveLength(1)
     const view = await f.manager.view()
     expect(view.error).toBeUndefined()
     expect(view.hold).toBeUndefined()
@@ -3346,14 +3395,14 @@ describe('Manager token economy', () => {
     await expect(f.manager.compact()).rejects.toThrow('Manager can compact once it has finished.')
     f.hear(main, { items: [{ kind: 'theirs', id: 'answer:manual', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 30_000 }, { kind: 'ended', how: 'done' }] })
     await settle()
-    expect(f.sent.some((one) => one.input === '/compact')).toBe(false)
+    expect(f.sent.some((one) => one.message === '/compact')).toBe(false)
     const asked = f.manager.compact()
-    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(1))
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.message === '/compact')).toHaveLength(1))
     await expect(f.manager.compact()).rejects.toThrow('Compacting...')
     f.hear(main, { items: [{ kind: 'theirs', id: 'answer:compacted', text: 'Compacted.' }], gone: [], signals: [{ kind: 'spend', used: 8_000 }, { kind: 'ended', how: 'done' }] })
     expect((await asked).hold).toBeUndefined()
     const again = f.manager.compact()
-    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(2))
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.message === '/compact')).toHaveLength(2))
     f.hear(main, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Compaction failed.' }] })
     await expect(again).rejects.toThrow("Could not compact. Manager's conversation is unchanged.")
     expect((await f.manager.view()).error).toBeUndefined()

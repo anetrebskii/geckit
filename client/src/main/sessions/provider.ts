@@ -46,6 +46,8 @@ export interface LlmProvider extends LlmProviderInfo {
   readonly waitForExit: boolean
   /** It can compact a held conversation when GeckIt asks: the driver's `compact`, or for the built-in assistants a `/compact` turn. Absent is no. */
   readonly compacts?: boolean
+  /** Manager's instructions are given to it when it starts, outside the conversation, so messages need not carry them. Absent is no. */
+  readonly systemPrompt?: boolean
   account(): Promise<ClaudeAccount>
   program(): Promise<ClaudeProgram | undefined>
   models(root?: string): Promise<ClaudeModel[] | undefined>
@@ -151,6 +153,7 @@ export function llmProvider(deps: ProviderDeps, family: 'claude' | 'codex'): Llm
     idleMs: 10 * 60_000,
     waitForExit: false,
     compacts: true,
+    systemPrompt: true,
     account: () => (deps.claudeAccount ?? claudeAccount)(),
     program: () => (deps.claudeProgram ?? claudeProgram)(),
     models: (root) => (deps.claudeModels ?? claudeModels)(root),

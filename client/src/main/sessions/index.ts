@@ -120,6 +120,8 @@ export interface SessionNote {
   readonly delivery?: SessionDeliveryReceipt
   readonly managerPrompt?: string
   readonly managerBegun?: true
+  /** Which instructions an assistant without a system prompt was last given in the conversation, and the most context it has held since: less means it was compacted and needs them again. */
+  readonly managerPromptSent?: { readonly hash: string; readonly used: number }
   readonly managerOwner?: string
   /** The one Manager thread that tracks it and gets its updates, GeckIt's own when absent. */
   readonly managerThread?: string
@@ -2701,8 +2703,12 @@ export class Sessions {
     live.kept = live.kept.filter((kept) => !told.some((one) => one.id === kept.item.id))
     const managerPrompt = this.#deps.notes.all()[live.id]?.managerPrompt
     if (live.driver === undefined) throw new Error('The assistant disconnected before dispatch.')
+    const sent = this.#deps.notes.all()[live.id]?.managerPromptSent
+    const hash = managerPrompt === undefined || this.#for(live).systemPrompt === true ? undefined : createHash('sha256').update(managerPrompt).digest('hex')
+    const remind = hash !== undefined && saying.text !== '/compact' && (sent?.hash !== hash || live.used !== undefined && live.used < sent.used)
     try {
-      live.driver.send(managerPrompt === undefined || saying.text === '/compact' ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
+      live.driver.send(remind && managerPrompt !== undefined ? managerContext(managerPrompt, saying.text) : saying.text, saying.images, told.flatMap((one) => one.blocks))
+      if (hash !== undefined) this.#note(live.id, { managerPromptSent: { hash, used: remind ? live.used ?? 0 : Math.max(sent?.used ?? 0, live.used ?? 0) } })
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       this.#finishDelivery(delivery, live.id, 'failed', { reason })

@@ -1,4 +1,7 @@
-import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
@@ -64,11 +67,30 @@ export interface Held {
 }
 
 /** GECKIT.md is the installed GeckIt's and names its command, so a conversation in a copy run from the source is told which command reaches that copy. */
-export function sourceArgs(): string[] {
+function sourcePrompt(): string | undefined {
   const command = process.env['GECKIT_SOURCE_CLI']
-  if (command === undefined) return []
+  if (command === undefined) return undefined
   const guide = process.env['GECKIT_SOURCE_GUIDE']
-  return ['--append-system-prompt', `${fill(PROMPTS.source.claude, { installed: command.replace(/-local$/, ''), command })}${guide === undefined ? '' : ` ${fill(PROMPTS.source.guide, { guide })}`}`]
+  return `${fill(PROMPTS.source.claude, { installed: command.replace(/-local$/, ''), command })}${guide === undefined ? '' : ` ${fill(PROMPTS.source.guide, { guide })}`}`
+}
+
+export function sourceArgs(): string[] {
+  const prompt = sourcePrompt()
+  return prompt === undefined ? [] : ['--append-system-prompt', prompt]
+}
+
+/** Manager's instructions go into the system prompt, kept in a file so a long one never meets a command line's limit, and are never repeated in the conversation. */
+export function managerPromptArgs(prompt: string, file?: string): string[] {
+  const text = [sourcePrompt(), prompt].filter((part) => part !== undefined).join('\n\n')
+  if (file === undefined) return ['--append-system-prompt', text]
+  writeFileSync(file, text, { mode: 0o600 })
+  return ['--append-system-prompt-file', file]
+}
+
+export function managerPromptFile(prompt: string): string {
+  const folder = join(tmpdir(), 'geckit-manager')
+  mkdirSync(folder, { recursive: true, mode: 0o700 })
+  return join(folder, `${createHash('sha256').update(prompt).digest('hex').slice(0, 16)}.md`)
 }
 
 const userContent = (text: string, images: NonNullable<SessionMessage['images']> = [], before: readonly string[] = []) =>
@@ -80,7 +102,7 @@ const userContent = (text: string, images: NonNullable<SessionMessage['images']>
       ]
 
 /** What `claude` is started with for a conversation, the same wherever it runs. */
-export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode' | 'model' | 'fork' | 'managerPrompt'>): string[] {
+export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode' | 'model' | 'fork' | 'managerPrompt'>, promptFile?: string): string[] {
   return [
     '-p',
     '--input-format',
@@ -99,7 +121,7 @@ export function claudeArgs(options: Pick<ClaudeOptions, 'id' | 'resume' | 'mode'
     '--chrome',
     '--settings',
     JSON.stringify({ permissions: { deny: [true, false].map((source) => `Read(/${brokerFolder(source).replaceAll('\\', '/')}/**)`) } }),
-    ...sourceArgs(),
+    ...(options.managerPrompt === undefined ? sourceArgs() : managerPromptArgs(options.managerPrompt, promptFile)),
     ...(options.model === undefined ? [] : ['--model', options.model]),
     ...(options.resume ? ['--resume', options.id] : ['--session-id', options.id]),
     ...(options.resume || options.fork === undefined
@@ -137,7 +159,8 @@ export function holdClaude(
   let last = ''
 
   const plugin = options.launch === undefined && existsSync(browserPluginFolder())
-  const args = plugin ? [...claudeArgs(options).filter((one) => !browserBridgeOn() || one !== '--chrome'), '--plugin-dir', browserPluginFolder()] : claudeArgs(options)
+  const promptFile = options.managerPrompt === undefined || options.launch !== undefined ? undefined : managerPromptFile(options.managerPrompt)
+  const args = plugin ? [...claudeArgs(options, promptFile).filter((one) => !browserBridgeOn() || one !== '--chrome'), '--plugin-dir', browserPluginFolder()] : claudeArgs(options, promptFile)
   const child: Held =
     options.launch?.(args) ?? spawn(claudeCommand(), args, { cwd: options.root, stdio: ['pipe', 'pipe', 'pipe'], env: planOnly(), windowsHide: true })
   const closed = new Promise<void>((resolve) => {
