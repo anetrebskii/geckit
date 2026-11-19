@@ -139,6 +139,7 @@ stateDiagram-v2
 | Working | Manager's turn ends and its answer is handed to the channel (automatic) | Ready | The answer in the transcript; the channel posts it |
 | Working | Manager asks for a decision, or a worker it started asks for permission | Needs your answer | The attention dot on the row and the Manager badge count |
 | Needs your answer | Alex answers in the window, or the person answers in the channel | Working | The card turns into what was chosen |
+| Needs your answer | A later message returns to the same task without answering its blocking question | Needs your answer | Manager checks that the question is still open and includes one short reminder in its reply in that thread. It names what to answer and points to the original message when its link is available. |
 | Working | The turn fails (provider, limit, crash) | Failed | "This thread stopped: <reason>"; other threads keep working |
 | Failed | Alex presses "Try again", or the automatic retry succeeds (automatic, as for Manager today) | Working | The working dot |
 | Ready, Failed, Needs your answer | Alex turns the channel off, removes it, or untics "May talk to Manager" | Channel off | The composer line instead of the composer; the transcript stays |
@@ -155,6 +156,7 @@ stateDiagram-v2
 - Labels that are not text a person reads (ids, timestamps) are not on the card or the row; they are in Session info and found by Search.
 - Which thread an update was routed to is not shown on the worker; the "From Manager · Slack · Maria" line is enough to find it.
 - Alex's own message written into a channel thread is not posted to the channel; only Manager's answer is (Alex's decision, 2026-11-05).
+- Manager stays silent about answered questions, unrelated tasks and questions it already reminded the person about. A quiet thread does not start a new turn for a reminder.
 
 ## 6. Thresholds and time
 
