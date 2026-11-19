@@ -26,6 +26,9 @@ export function stopStale(pidFile: string, xvfb: (pid: number) => boolean = isXv
   rmSync(pidFile, { force: true })
 }
 
+/** Without a window manager, a popup a page opens keeps the browser's active window, so the other tab never pastes; openbox fixes it and, unlike matchbox, leaves the window its own size, since a window as large as the screen looks more like a headless browser. */
+export const WINDOW_MANAGER = ['openbox'] as const
+
 export function startVirtualDisplay(screen: Screen, pidFile: string, spawn: typeof spawnProcess = spawnProcess, wait = 10_000): Promise<VirtualDisplay> {
   stopStale(pidFile)
   return new Promise((resolve, reject) => {
@@ -34,7 +37,8 @@ export function startVirtualDisplay(screen: Screen, pidFile: string, spawn: type
     let said = ''
     let last = ''
     let settled = false
-    const stop = (): void => { if (child.exitCode === null) child.kill('SIGTERM'); rmSync(pidFile, { force: true }) }
+    let manager: ChildProcess | undefined
+    const stop = (): void => { if (manager?.exitCode === null) manager.kill('SIGTERM'); if (child.exitCode === null) child.kill('SIGTERM'); rmSync(pidFile, { force: true }) }
     const fail = (message: string): void => { if (settled) return; settled = true; clearTimeout(timer); stop(); reject(new Error(message)) }
     const timer = setTimeout(() => fail(`The virtual display did not start: ${last || 'it said nothing within 10 seconds'}.`), wait)
     child.on('error', (error: NodeJS.ErrnoException) => fail(error.code === 'ENOENT' ? MISSING_XVFB : `The virtual display did not start: ${error.message}.`))
@@ -47,6 +51,11 @@ export function startVirtualDisplay(screen: Screen, pidFile: string, spawn: type
       settled = true
       clearTimeout(timer)
       if (child.pid !== undefined) { mkdirSync(dirname(pidFile), { recursive: true }); writeFileSync(pidFile, String(child.pid), { mode: 0o600 }) }
+      try {
+        const [program, ...args] = WINDOW_MANAGER
+        manager = spawn(program, args, { stdio: 'ignore', env: { ...process.env, DISPLAY: display } })
+        manager.on('error', () => { manager = undefined })
+      } catch { manager = undefined }
       resolve({ display, stop })
     })
   })

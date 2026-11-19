@@ -28,7 +28,7 @@ The vault uses macOS Keychain, Linux Secret Service or Windows DPAPI. A headless
 
 ## Test browsers on a server
 
-On a Linux server without a screen, GeckIt's test browsers run in an Xvfb virtual display and present one desktop identity made at the first start. They need `xvfb`; for the fonts such a desktop has, also `fonts-dejavu-core`, `fonts-liberation` and `fonts-noto-core`. Install these only when the person asks for test browsers on that server, with `sudo apt install xvfb fonts-dejavu-core fonts-liberation fonts-noto-core`. Keep `~/.geckit/camoufox/device.json` with the service data: a lost or replaced file is a new device for every signed-in site.
+On a Linux server without a screen, GeckIt's test browsers run in an Xvfb virtual display and present one desktop identity made at the first start. They need `xvfb`; for the fonts such a desktop has, also `fonts-dejavu-core`, `fonts-liberation` and `fonts-noto-core`; and `openbox`, a window manager without which a page's popup keeps paste from reaching the page, and `xclip` for `paste` and `clipboard`. Install these only when the person asks for test browsers on that server, with `sudo apt install xvfb fonts-dejavu-core fonts-liberation fonts-noto-core openbox xclip`. Keep `~/.geckit/camoufox/device.json` with the service data: a lost or replaced file is a new device for every signed-in site.
 
 ## Linux systemd example
 

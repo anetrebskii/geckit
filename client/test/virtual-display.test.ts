@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { spawn } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { displayFrom, MISSING_XVFB, startVirtualDisplay, stopStale, xvfbArgs } from '../src/cli/virtual-display'
+import { displayFrom, MISSING_XVFB, startVirtualDisplay, stopStale, WINDOW_MANAGER, xvfbArgs } from '../src/cli/virtual-display'
 
 const fake = (plan: (child: EventEmitter & { stdio: PassThrough[]; stderr: PassThrough }) => void): typeof spawn => (() => {
   const child = Object.assign(new EventEmitter(), { pid: 4242, exitCode: null, kill: () => true, stdio: [new PassThrough(), new PassThrough(), new PassThrough(), new PassThrough()], stderr: new PassThrough() })
@@ -27,6 +27,33 @@ describe('virtual display', () => {
     expect(readFileSync(pidFile, 'utf8')).toBe('4242')
     display.stop()
     expect(existsSync(pidFile)).toBe(false)
+  })
+
+  it('starts the window manager on the new display when it is installed, and stops it with the display', async () => {
+    const started: { program: string; args: readonly string[]; display: string | undefined; killed: boolean }[] = []
+    const spawning = ((program: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
+      const one = { program, args, display: options.env?.['DISPLAY'], killed: false }
+      started.push(one)
+      const child = Object.assign(new EventEmitter(), { pid: 4242, exitCode: null, kill: () => { one.killed = true; return true }, stdio: [new PassThrough(), new PassThrough(), new PassThrough(), new PassThrough()], stderr: new PassThrough() })
+      if (program === 'Xvfb') setTimeout(() => child.stdio[3]?.write('7\n'), 5)
+      return child
+    }) as unknown as typeof spawn
+    const display = await startVirtualDisplay({ width: 800, height: 600 }, join(mkdtempSync(join(tmpdir(), 'geckit-xvfb-')), 'p.xvfb'), spawning)
+    expect(started.map((one) => [one.program, one.args, one.display])).toEqual([['Xvfb', xvfbArgs({ width: 800, height: 600 }), undefined], [WINDOW_MANAGER[0], WINDOW_MANAGER.slice(1), ':7']])
+    display.stop()
+    expect(started.every((one) => one.killed)).toBe(true)
+  })
+
+  it('works without a window manager when none is installed', async () => {
+    const spawning = ((program: string) => {
+      const child = Object.assign(new EventEmitter(), { pid: 4242, exitCode: null, kill: () => true, stdio: [new PassThrough(), new PassThrough(), new PassThrough(), new PassThrough()], stderr: new PassThrough() })
+      setTimeout(() => program === 'Xvfb' ? child.stdio[3]?.write('8\n') : child.emit('error', Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })), 5)
+      return child
+    }) as unknown as typeof spawn
+    const display = await startVirtualDisplay({ width: 1, height: 1 }, join(mkdtempSync(join(tmpdir(), 'geckit-xvfb-')), 'p.xvfb'), spawning)
+    await new Promise((done) => setTimeout(done, 20))
+    expect(display.display).toBe(':8')
+    display.stop()
   })
 
   it('names the package when Xvfb is not installed', async () => {
