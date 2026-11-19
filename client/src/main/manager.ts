@@ -894,24 +894,47 @@ export class Manager {
 
   /** Compacts the thread's conversation once its last turn read `compactAt` tokens or more, while nothing else is in hand. */
   #maybeCompact(thread: string): boolean {
+    const state = this.#state(thread)
+    if (this.#cantCompact(thread) !== undefined) return false
+    if (!shouldCompact(this.#sessions.find((one) => one.id === state.sessionId)?.spend?.used, this.#record.config.compactAt ?? DEFAULT_COMPACT_AT, state.turns ?? 0, state.compactedTurn)) return false
+    void this.#compact(thread)
+    return true
+  }
+
+  /** Why the thread can't be compacted now, or nothing when it can. */
+  #cantCompact(thread: string): string | undefined {
     const live = this.#l(thread)
     const state = this.#state(thread)
     const session = state.sessionId
-    if (session === undefined || live.compacting === true || live.dispatching || live.awaitingOutput || live.processingOutput || this.#stopped || !this.#record.config.enabled || this.#record.paused || state.error !== undefined || state.limit !== undefined || !this.#exists(thread)) return false
-    if (this.#deps.sessions.busy(session) || !this.#deps.sessions.canCompact(session)) return false
-    if (this.#record.operations.some((one) => (one.thread ?? MAIN) === thread && one.state === 'running')) return false
-    const turns = state.turns ?? 0
-    if (!shouldCompact(this.#sessions.find((one) => one.id === session)?.spend?.used, this.#record.config.compactAt ?? DEFAULT_COMPACT_AT, turns, state.compactedTurn)) return false
+    if (!this.#exists(thread) || session === undefined) return 'This thread has no Manager session yet.'
+    if (live.compacting === true) return 'Compacting...'
+    if (!this.#deps.sessions.canCompact(session)) return 'This assistant can\'t compact conversations.'
+    if (live.dispatching || live.awaitingOutput || live.processingOutput || this.#stopped || !this.#record.config.enabled || this.#record.paused || state.error !== undefined || state.limit !== undefined || this.#deps.sessions.busy(session) || this.#record.operations.some((one) => (one.thread ?? MAIN) === thread && one.state === 'running')) return 'Manager can compact once it has finished.'
+    return undefined
+  }
+
+  /** Compacts the thread now, settled true once it finished and false when the assistant refused or took over 10 minutes. */
+  #compact(thread: string): Promise<boolean> {
+    const live = this.#l(thread)
+    const session = this.#state(thread).sessionId ?? ''
     live.compacting = true
-    this.#saveThread(thread, { compactedTurn: turns })
+    this.#saveThread(thread, { compactedTurn: this.#state(thread).turns ?? 0 })
+    this.#emit()
     const epoch = this.#epoch(thread)
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('Compaction took too long.')), 10 * 60_000); timer.unref() })
-    void Promise.race([this.#deps.sessions.compactManager(session), late]).then(
-      () => { if (epoch === this.#epoch(thread) && session === this.#state(thread).sessionId) this.#saveThread(thread, { restore: true }) },
-      () => { live.compactFailed = true },
+    return Promise.race([this.#deps.sessions.compactManager(session), late]).then(
+      () => { if (epoch === this.#epoch(thread) && session === this.#state(thread).sessionId) this.#saveThread(thread, { restore: true }); return true },
+      () => { live.compactFailed = true; return false },
     ).finally(() => { clearTimeout(timer); live.compacting = false; this.#emit(); void this.#dispatch(thread) })
-    return true
+  }
+
+  /** Compacts one thread now, whatever its size. */
+  async compact(thread: string = MAIN): Promise<ManagerView> {
+    const cant = this.#cantCompact(thread)
+    if (cant !== undefined) throw new Error(cant)
+    if (!await this.#compact(thread)) throw new Error('Could not compact. Manager\'s conversation is unchanged.')
+    return this.view()
   }
 
   async #output(thread: string, session: string, text: string, input: Message | undefined): Promise<void> {

@@ -43,6 +43,7 @@ if (query.has('noProviders')) { settings = { ...settings, chatProviders: [] }; v
 else if (query.has('disabledProvider')) { settings = { ...settings, chatProviders: settings.chatProviders.filter((provider) => provider !== initialProvider) }; view = { ...view, providers: view.providers.filter((one) => one.provider !== initialProvider) } }
 if (query.get('hold') === 'compacting' || query.get('hold') === 'limit-reset') view = { ...view, hold: query.get('hold') === 'compacting' ? 'compacting' : 'limit-reset' }
 if (query.has('noCompact')) view = { ...view, providers: view.providers.map((one) => ({ ...one, compacts: false })) }
+if (query.has('spend')) { backing = { ...backing, spend: { used: 163_000, window: 1_000_000, cost: 12.864, currency: 'USD', costKind: 'api-equivalent' } }; view = { ...view, session: backing } }
 let items: readonly SessionItem[] = [{ kind: 'mine', id: 'fixture-mine-1', text: 'Add provider preferences for this project.' }, { kind: 'theirs', id: 'fixture-theirs-1', text: 'Worker renderer fixture. No provider has been contacted.' }]
 if (query.has('workerActions')) items = [...items, { kind: 'card', id: 'worker-card', card: { kind: 'permission', title: 'Worker permission fixture', detail: 'Fixture permission detail.' } }, { kind: 'shell', id: 'worker-shell', command: 'worker fixture', output: 'Worker input remains usable.', running: true }]
 if (query.get('state') === 'disabled') view = { ...view, config: { ...view.config, enabled: false }, state: 'off' }
@@ -202,6 +203,16 @@ const manager: ManagerApi & Required<Pick<ManagerApi, 'turns' | 'before'>> = {
   stop: async () => update({ state: 'idle' }),
   setModel: async (thread, model) => update({ threads: (view.threads ?? []).map((one) => one.id === thread ? { ...one, model } : one) }),
   pause: async () => update({ state: 'paused' }), resume: async () => update({ state: 'idle', queued: 0 }), retry: async () => { const { error: removed, ...rest } = view; void removed; view = rest; return update({ state: 'idle' }) },
+  compact: async () => {
+    const holding = (on: boolean): Partial<ManagerView> => ({ ...(view.threads === undefined ? {} : { threads: view.threads.map(({ hold: _was, ...one }) => on ? { ...one, hold: 'compacting' as const } : one) }) })
+    update({ hold: 'compacting', ...holding(true) })
+    await new Promise<void>((resolve) => setTimeout(resolve, 1500))
+    const { hold: _hold, ...rest } = view
+    view = { ...rest, ...holding(false) }
+    if (query.has('compactFailure')) { update({}); throw new Error('Could not compact. Manager\'s conversation is unchanged.') }
+    backing = { ...backing, ...(backing.spend === undefined ? {} : { spend: { ...backing.spend, used: 21_000 } }) }
+    return update({ session: backing })
+  },
   restart: async () => { replaceBacking(view.config.provider, view.config.chatModel); return update({ session: backing, state: view.state === 'paused' ? 'paused' : 'idle' }) },
   on: (callback) => { managerListeners.add(callback); return () => managerListeners.delete(callback) },
 }

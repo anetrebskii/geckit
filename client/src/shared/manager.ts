@@ -157,6 +157,7 @@ export interface ManagerApi {
   resume(): Promise<ManagerView>
   retry(): Promise<ManagerView>
   restart(): Promise<ManagerView>
+  compact(thread: ManagerThread['id']): Promise<ManagerView>
   on(said: (view: ManagerView) => void): () => void
 }
 

@@ -52,17 +52,21 @@ function Confirm({ target, opener, onClose, onDone }: { readonly target: Target;
   </div></div>, document.body)
 }
 
-export function ManagerHistory({ view, thread, connected, onDeleted }: { readonly view: ManagerView; readonly thread: ManagerThread | undefined; readonly connected: boolean; readonly onDeleted: () => void }): React.JSX.Element {
+/** `clearAsked` opens Clear history from elsewhere each time it grows. */
+export function ManagerHistory({ view, thread, connected, onDeleted, clearAsked = 0 }: { readonly view: ManagerView; readonly thread: ManagerThread | undefined; readonly connected: boolean; readonly onDeleted: () => void; readonly clearAsked?: number }): React.JSX.Element {
   const opener = useRef<HTMLButtonElement>(null)
   const pending = thread === undefined ? view.historyPending : thread.historyPending
   const [anchor, setAnchor] = useState<DOMRect>()
   const [target, setTarget] = useState<Target>()
+  const ask = (action: ManagerHistoryRequest['action']): void => setTarget({ title: thread?.title ?? 'Manager', ...(thread?.place === undefined ? {} : { place: thread.place }), request: pending ?? { id: thread?.id ?? MANAGER_MAIN_THREAD, ...(view.session === undefined ? {} : { session: view.session.id }), ...(view.historyRevision === undefined ? {} : { historyRevision: view.historyRevision }), action } })
+  const [asked, setAsked] = useState(clearAsked)
+  if (clearAsked !== asked) { setAsked(clearAsked); if (connected && view.appChat === true) ask('clear') }
   return <>
     <button ref={opener} type="button" className="icon-button" aria-label="More" title="More" disabled={!connected || view.appChat !== true} aria-haspopup="menu" aria-expanded={anchor !== undefined} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}><Icon name="more" /></button>
     {anchor === undefined ? null : <Menu anchor={anchor} title="Conversation actions" autoFocus {...(pending === undefined ? {} : { note: 'Finish incomplete cleanup before sending a new message.' })} choices={pending === undefined ? [{ value: 'clear', label: 'Clear history…', danger: true }, { value: 'delete', label: 'Delete conversation…', danger: true }] : [{ value: pending.action, label: pending.action === 'clear' ? 'Retry clearing history…' : 'Retry deleting conversation…', danger: true }]} onClose={() => setAnchor(undefined)} onPick={(action) => {
       setAnchor(undefined)
       if (action !== 'clear' && action !== 'delete') return
-      setTarget({ title: thread?.title ?? 'Manager', ...(thread?.place === undefined ? {} : { place: thread.place }), request: pending ?? { id: thread?.id ?? MANAGER_MAIN_THREAD, ...(view.session === undefined ? {} : { session: view.session.id }), ...(view.historyRevision === undefined ? {} : { historyRevision: view.historyRevision }), action } })
+      ask(action)
     }} />}
     {target === undefined ? null : <Confirm target={target} opener={opener} onClose={() => setTarget(undefined)} onDone={() => { if (target.request.action === 'delete') onDeleted(); setTarget(undefined) }} />}
   </>

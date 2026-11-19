@@ -358,6 +358,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       retry: () => call('manager.retry'),
       history: (request) => call('manager.history', request),
       restart: () => call('manager.restart'),
+      compact: () => Promise.reject(new Error('Pair this phone again.')),
       on: (said) => listen('manager:view', said),
     },
     channels: {

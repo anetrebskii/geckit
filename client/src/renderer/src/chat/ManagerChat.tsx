@@ -9,11 +9,15 @@ import { updatedItems } from '../../../shared/transcript-items'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import type { Choice } from '../ui/Menu'
 import { Files } from './Prose'
 import { Transcript } from './Transcript'
 import { ManagerHistory } from './ManagerHistory'
 import { ManagerComposer, NEW_CONVERSATION } from './ManagerComposer'
 import { managerAssistant } from './manager-label'
+import { COMPACT_ASK, ManagerStatus, cantCompact } from './ManagerStatus'
+import { money } from '../../../shared/provider-usage'
+import { tokens } from './Status'
 import { ago } from './time'
 
 interface InspectionRead extends Pick<SessionItems, 'id' | 'items'> { readonly attempt: number; readonly left: number }
@@ -164,12 +168,13 @@ function Tasks({ thread, workers, connected, onOpen, inline = false }: { readonl
   </>
 }
 
-function Details({ rows }: { readonly rows: readonly (readonly [string, string])[] }): React.JSX.Element {
+function Details({ rows, actions = [], onAction = noop }: { readonly rows: readonly (readonly [string, string])[]; readonly actions?: readonly Choice[]; readonly onAction?: (value: string) => void }): React.JSX.Element {
   const [anchor, setAnchor] = useState<DOMRect>()
   return <>
     <button type="button" className="icon-button" aria-label="Details" title="Details" aria-haspopup="dialog" aria-expanded={anchor !== undefined} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}><Icon name="info" /></button>
     {anchor === undefined ? null : <Menu anchor={anchor} title="Details" choices={[]} onPick={noop} onClose={() => setAnchor(undefined)}>
       <dl className="manager-details in-menu">{rows.map(([key, value]) => <Fragment key={key}><dt>{key}</dt><dd>{value}</dd></Fragment>)}</dl>
+      {actions.map((action, index) => <button key={action.value} type="button" role="menuitem" className={`sheet-option${action.danger === true ? ' danger' : ''}${index === 0 ? ' divided' : ''}`} disabled={action.disabled === true} onClick={() => { setAnchor(undefined); onAction(action.value) }}><span className="sheet-words"><span className="label">{action.label}</span>{action.says === undefined ? null : <span className="says">{action.says}</span>}</span></button>)}
     </Menu>}
   </>
 }
@@ -218,7 +223,19 @@ export function ManagerChat({ view: all, settings, connected = true, onSettings,
     setError('')
     void (view.state === 'paused' ? window.geckit.manager.resume() : window.geckit.manager.retry()).catch((caught: Error) => setError(caught.message))
   }
-  const details: (readonly [string, string])[] = [['Assistant', llmProviderInfo(thread?.provider ?? managerAssistant(view), undefined, settings.providerPlugins).name], ['Model', thread === undefined ? view.session?.model ?? 'Default' : thread.model === '' ? 'Default' : thread.model], ['Managed workers', String(all.workers.length)], ...Object.entries(thread?.labels ?? {})]
+  const assistantName = llmProviderInfo(thread?.provider ?? managerAssistant(view), undefined, settings.providerPlugins).name
+  const [clearAsked, setClearAsked] = useState(0)
+  const [askCompact, setAskCompact] = useState(false)
+  const cant = drafting ? 'This thread has no Manager session yet.' : cantCompact(view, thread, connected, assistantName)
+  const compact = (): void => {
+    setError('')
+    void window.geckit.manager.compact(thread?.id ?? MANAGER_MAIN_THREAD).catch((caught: Error) => setError(caught.message))
+  }
+  const clear = (): void => setClearAsked((count) => count + 1)
+  const spend = drafting ? undefined : view.session?.spend
+  const spendRows: (readonly [string, string])[] = spend?.used === undefined ? [] : [['Context', spend.window === undefined ? `${tokens(spend.used)} tokens` : `${tokens(spend.used)} / ${tokens(spend.window)}`], ...(spend.cost === undefined ? [] : [[spend.costKind === 'billed' ? 'Billed cost' : 'API equivalent', money(spend.cost, spend.currency)] as const])]
+  const phoneActions: readonly Choice[] = drafting || view.session === undefined ? [] : [{ value: 'compact', label: 'Compact', says: cant ?? 'Summarise it so far to free up its context', disabled: cant !== undefined }, { value: 'clear', label: 'Clear', says: 'Remove its messages and context', danger: true, disabled: !connected || view.appChat !== true }]
+  const details: (readonly [string, string])[] = [['Assistant', assistantName], ['Model', thread === undefined ? view.session?.model ?? 'Default' : thread.model === '' ? 'Default' : thread.model], ['Managed workers', String(all.workers.length)], ...Object.entries(thread?.labels ?? {})]
   const notices = [
     !view.config.enabled ? <p key="off">{ON_PHONE && view.session === undefined ? 'Set up Manager on your computer, then chat here.' : 'Manager disabled. History is kept.'}</p> : view.state === 'paused' ? <p key="paused">Manager paused</p> : view.state === 'blocked' ? <p key="blocked">Manager unavailable</p> : null,
     view.error === undefined ? null : <p key="error" className="manager-error" role="status">{view.error}</p>,
@@ -235,7 +252,7 @@ export function ManagerChat({ view: all, settings, connected = true, onSettings,
     <div className="manager-toolbar-actions">
       {!channel || thread.link === undefined ? null : <button type="button" className="icon-button" aria-label={`Open in ${thread.place ?? 'channel'}`} title={`Open in ${thread.place ?? 'channel'}`} onClick={() => { if (thread.link !== undefined) window.geckit.chat.openLink(thread.link) }}><Icon name="external" /></button>}
       <Details rows={details} />
-      {drafting ? null : <ManagerHistory view={view} thread={thread} connected={connected} onDeleted={() => setPicked(MANAGER_MAIN_THREAD)} />}
+      {drafting ? null : <ManagerHistory view={view} thread={thread} connected={connected} clearAsked={clearAsked} onDeleted={() => setPicked(MANAGER_MAIN_THREAD)} />}
       {tail}
     </div>
   </div>
@@ -250,8 +267,8 @@ export function ManagerChat({ view: all, settings, connected = true, onSettings,
       </span>}
     </div>
     <span className="phone-nav-end manager-toolbar-actions">
-      <Details rows={details} />
-      {drafting ? null : <ManagerHistory view={view} thread={thread} connected={connected} onDeleted={() => setPicked(MANAGER_MAIN_THREAD)} />}
+      <Details rows={[...details.slice(0, 2), ...spendRows, ...details.slice(2)]} actions={phoneActions} onAction={(action) => { if (action === 'compact') setAskCompact(true); else if (action === 'clear') clear() }} />
+      {drafting ? null : <ManagerHistory view={view} thread={thread} connected={connected} clearAsked={clearAsked} onDeleted={() => setPicked(MANAGER_MAIN_THREAD)} />}
     </span>
   </div>
   const chat = <div className="manager-chat">
@@ -263,6 +280,8 @@ export function ManagerChat({ view: all, settings, connected = true, onSettings,
     </div>}
     <History key={view.session?.id ?? thread?.id ?? 'manager'} view={view} connected={connected} onReady={historyRead} />
     <ManagerComposer view={view} settings={settings} connected={connected} historyReady={view.session === undefined || (history?.id === view.session.id && history.ready)} closed={!channel ? undefined : thread.closed ?? (thread.session === undefined ? 'This thread has no Manager session yet.' : undefined)} posted={channel ? `Manager's answer is also posted to ${thread.place ?? 'the channel'}.` : undefined} thread={thread} onModel={pickModel} />
+    {ON_PHONE || drafting ? null : <ManagerStatus view={view} cant={cant} onCompact={compact} onClear={clear} />}
+    {!askCompact ? null : <Menu anchor={new DOMRect()} title="Compact this thread?" note={COMPACT_ASK} choices={[{ value: 'compact', label: 'Compact' }]} onPick={compact} onClose={() => setAskCompact(false)} />}
   </div>
   if (threads.length === 0 || ON_PHONE) return chat
   return <div className="manager-chat-threads"><div className="manager-side">{head === undefined ? null : <div className="manager-side-head">{head}</div>}<Threads threads={threads} picked={thread?.id ?? MANAGER_MAIN_THREAD} workers={all.workers} onPick={setPicked} onNew={all.config.enabled && connected ? start : undefined} /></div>{chat}</div>

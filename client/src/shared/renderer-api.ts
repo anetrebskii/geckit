@@ -136,6 +136,7 @@ return {
     resume: (): Promise<ManagerView> => rendererTransport.invoke('manager:resume'),
     retry: (): Promise<ManagerView> => rendererTransport.invoke('manager:retry'),
     restart: (): Promise<ManagerView> => rendererTransport.invoke('manager:restart'),
+    compact: (thread: string): Promise<ManagerView> => rendererTransport.invoke('manager:compact', thread),
     on: (said: (view: ManagerView) => void): (() => void) => rendererTransport.listen('manager:view', said),
   } satisfies ManagerApi,
 

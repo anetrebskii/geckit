@@ -373,6 +373,7 @@ export function application(runtime: CoreRuntime) {
     'manager:resume': (...args: Parameters<typeof manager.resume>) => manager.resume(...args),
     'manager:retry': (...args: Parameters<typeof manager.retry>) => manager.retry(...args),
     'manager:restart': (...args: Parameters<typeof manager.restart>) => manager.restart(...args),
+    'manager:compact': (...args: Parameters<typeof manager.compact>) => manager.compact(...args),
     'manager:send': (text: string) => manager.send(text),
     'manager:answer': (id: string, choice: string) => manager.answer(id, choice),
     'chat:installProvider': async (url: string, enable = true) => providerChange(undefined, async () => {

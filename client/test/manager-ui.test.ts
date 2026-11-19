@@ -335,3 +335,29 @@ it('formats persisted fields deterministically without guessing legacy attributi
   expect(formatStatusMove(move)).toBe(expected)
   expect(formatStatusMove(JSON.parse(JSON.stringify(move)) as StatusMove)).toBe(expected)
 })
+
+describe('Manager chat status', () => {
+  const backing: ChatSession = { ...worker, id: 'claude-backing', manager: true, state: 'idle', spend: { used: 163_000, window: 1_000_000, cost: 12.864, currency: 'USD', costKind: 'api-equivalent' } }
+  const open: ManagerView = { ...ready, session: backing }
+
+  it('shows context, Compact, Clear and the API equivalent under the composer', async () => {
+    const { ManagerStatus } = await import('../src/renderer/src/chat/ManagerStatus')
+    const markup = renderToStaticMarkup(createElement(ManagerStatus, { view: open, cant: undefined, onCompact: vi.fn(), onClear: vi.fn() }))
+    expect(markup).toContain('<span class="value">163k of 1M</span>')
+    expect(markup).toContain('163,000 of 1,000,000 tokens in this Manager conversation. Manager compacts it at 240,000 tokens.')
+    expect(markup).toContain('>Compact</button>')
+    expect(markup).toContain('>Clear</button>')
+    expect(markup).toContain('API equivalent')
+    expect(renderToStaticMarkup(createElement(ManagerStatus, { view: { ...ready, session: { ...backing, spend: {} } }, cant: undefined, onCompact: vi.fn(), onClear: vi.fn() }))).toBe('')
+  })
+
+  it('says why Compact is unavailable', async () => {
+    const { cantCompact } = await import('../src/renderer/src/chat/ManagerStatus')
+    expect(cantCompact(open, undefined, true, 'Claude Code')).toBeUndefined()
+    expect(cantCompact(ready, undefined, true, 'Claude Code')).toBe('This thread has no Manager session yet.')
+    expect(cantCompact({ ...open, state: 'working' }, undefined, true, 'Claude Code')).toBe('Manager can compact once it has finished.')
+    expect(cantCompact(open, undefined, false, 'Claude Code')).toBe('Manager can compact once it has finished.')
+    expect(cantCompact({ ...open, hold: 'compacting' }, undefined, true, 'Claude Code')).toBe('Compacting...')
+    expect(cantCompact({ ...open, providers: [{ provider: 'claude', available: true, compacts: false }] }, undefined, true, 'Claude Code')).toBe("Claude Code can't compact conversations.")
+  })
+})

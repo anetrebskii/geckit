@@ -3338,6 +3338,27 @@ describe('Manager token economy', () => {
     expect(view.hold).toBeUndefined()
   })
 
+  it('compacts a thread when asked, whatever its size, refuses while it answers and reports a failure', async () => {
+    const f = await fixture()
+    const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
+    await f.manager.sendApp({ id: 'app:manual', text: 'Request', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Request'))).toBe(true))
+    await expect(f.manager.compact()).rejects.toThrow('Manager can compact once it has finished.')
+    f.hear(main, { items: [{ kind: 'theirs', id: 'answer:manual', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 30_000 }, { kind: 'ended', how: 'done' }] })
+    await settle()
+    expect(f.sent.some((one) => one.input === '/compact')).toBe(false)
+    const asked = f.manager.compact()
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(1))
+    await expect(f.manager.compact()).rejects.toThrow('Compacting...')
+    f.hear(main, { items: [{ kind: 'theirs', id: 'answer:compacted', text: 'Compacted.' }], gone: [], signals: [{ kind: 'spend', used: 8_000 }, { kind: 'ended', how: 'done' }] })
+    expect((await asked).hold).toBeUndefined()
+    const again = f.manager.compact()
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(2))
+    f.hear(main, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Compaction failed.' }] })
+    await expect(again).rejects.toThrow("Could not compact. Manager's conversation is unchanged.")
+    expect((await f.manager.view()).error).toBeUndefined()
+  })
+
   it('waits after a usage limit resets when only worker updates are queued, and goes on with the next message', async () => {
     const f = await fixture()
     const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
