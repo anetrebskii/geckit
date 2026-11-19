@@ -557,6 +557,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
           <button type="button" className="primary" onClick={approve}>Approve</button>
         </div>
       )}
+      {chat.trouble === '' ? null : <p className="composer-trouble" role="alert">{chat.trouble}</p>}
       {queued.length === 0 ? null : (
         <div className="queued">
           <div className="queued-head">

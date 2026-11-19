@@ -91,7 +91,6 @@ function Preview(): React.JSX.Element {
       <header className="talk-head" style={{ flexWrap: 'wrap', minWidth: 0, height: 'auto', minHeight: 'var(--topbar)', paddingBlock: 8 }}><strong style={{ minWidth: 0, flexShrink: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{session.title}</strong>{scenario === 'helpers' ? <span className={cardSays(session)?.tone} style={{ minWidth: 0, flexShrink: 1, whiteSpace: 'normal' }}>{cardSays(session)?.words}</span> : null}<span className="place">geckit / client</span></header>
       <Transcript at={session.id} items={items} working={chat.working} onAnswer={noop} onAgain={noop} onFile={noop} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} onRetry={noop} tasks={undefined} onTasks={noop} />
       <Composer chat={chat} />
-      {trouble === '' ? null : <p role="alert" style={{ color: 'var(--danger)', padding: '0 20px' }}>{trouble}</p>}
     </div>
   </main>
 }

@@ -75,6 +75,8 @@ No new timeout or delay in host. One delivery per conversation at a time prevent
 
 Provider-specific failures use the existing trouble surface, preserving the queue.
 
+Delivery errors appear above the queue and composer on desktop and phone, wrap to fit the available width, and remain visible until the next attempt or conversation change. This restores the documented rejected state after the account status redesign removed its previous error display.
+
 ## 8. Edge cases
 Empty queue adds nothing. Long text stays in the current row. Attachments travel with selected message. Duplicate clicks are ignored while pending. Queue edits/removal/reorder/delegation are locked during delivery; automatic queue draining waits too. Stale IDs do nothing. Failure retains original position. Slash commands, goals and changed settings are not injected as control operations. Native question/approval is answered before injection. Disconnection is reported by provider; host does not silently retry accepted delivery.
 

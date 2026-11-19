@@ -4690,6 +4690,13 @@ html.phone .request-foot .request-reply {
   white-space: nowrap;
 }
 
+.composer-trouble {
+  margin: 0 0 8px;
+  color: var(--warning-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .queued {
   display: flex;
   flex-direction: column;
