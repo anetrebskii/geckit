@@ -15,6 +15,7 @@ import type { Employee } from '../shared/employees'
 import type { Settings } from '../shared/api'
 import type { BrowserBridge } from './sessions/provider'
 import { fill, PROMPTS, SKILL_TEMPLATES } from '../prompts/prompts'
+import { speechModelPath, whisperCli } from './whisper'
 
 /**
  * What Claude Code is told about being run by GeckIt.
@@ -139,6 +140,7 @@ export function skillFiles(command: string, sourceName: string, name: string): R
   const claude = !name.startsWith('geckit-')
   const values = {
     said, name, example: PROMPTS.guide.example,
+    whisperExecutable: forwardSlashes(whisperCli()), speechModelFile: forwardSlashes(speechModelPath()),
     paired: knownComputers().length === 0 ? 'None is paired now.' : `Paired now: ${knownComputers().map((one) => one.name).join(', ')}.`,
     send: SEND(said, process.platform === 'win32' && !claude ? 'file' : 'heredoc'),
     otherComputers: OTHER_COMPUTERS(said), exactForm: claude ? `${PROMPTS.guide.exactForm} ` : '',
@@ -302,6 +304,7 @@ const COMMAND = (path: string, claude = true): string => {
   const said = path.includes(' ') ? `"${path}"` : path
   return `\n${fill(PROMPTS.guide.command, {
     said, conversationsSkill: skillSaid('manage-conversations', claude), conversationsPath: skillPath('manage-conversations', claude),
+    transcriptionSkill: skillSaid('transcribe-audio', claude), transcriptionPath: skillPath('transcribe-audio', claude),
     remoteConnectionSkill: skillSaid('configure-remote-connection', claude), remoteConnectionPath: skillPath('configure-remote-connection', claude),
     remoteGeckitSkill: skillSaid('configure-remote-geckit', claude), remoteGeckitPath: skillPath('configure-remote-geckit', claude),
     slackSkill: skillSaid('configure-slack', claude), slackPath: skillPath('configure-slack', claude),

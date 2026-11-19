@@ -142,7 +142,8 @@ describe('what Claude Code is told about GeckIt', () => {
     await Promise.all([data, claude, codex].map((directory) => mkdir(directory)))
     process.env['CLAUDE_CONFIG_DIR'] = claude
     process.env['CODEX_HOME'] = codex
-    configureCorePlatform({ directory: () => data, source: () => source })
+    const whisper = `${data.replaceAll('\\', '/')}/Whisper Tools/whisper-cli${process.platform === 'win32' ? '.exe' : ''}`
+    configureCorePlatform({ directory: () => data, source: () => source, whisper: () => whisper })
     const claudeGuide = join(source ? data : claude, 'GECKIT.md')
     const codexGuide = join(source ? data : codex, source ? 'GECKIT-CODEX.md' : 'GECKIT.md')
     const claudeSkill = join(browserPluginFolder(), 'skills', 'use-browser', 'SKILL.md')
@@ -240,7 +241,15 @@ describe('what Claude Code is told about GeckIt', () => {
         for (const part of ['Purpose', 'Inputs', 'Work', 'Unknowns', 'Output', 'Verification']) expect(text).toContain(`## ${part}`)
         const codexPath = source ? join(data, 'codex-skills', `geckit-${name}`, 'SKILL.md') : join(codexSkillFolder(`geckit-${name}`), 'SKILL.md')
         expect(await readFile(codexPath, 'utf8')).toContain(`name: geckit-${name}`)
-        if (name.startsWith('configure-')) {
+        if (name === 'transcribe-audio') {
+          const model = join(data, 'whisper', 'ggml-large-v3-turbo-q5_0.bin').replaceAll('\\', '/')
+          const codexText = await readFile(codexPath, 'utf8')
+          for (const skill of [text, codexText]) {
+            expect(skill).toContain(whisper)
+            expect(skill).toContain(model)
+          }
+        }
+        if (name.startsWith('configure-') || name === 'transcribe-audio') {
           expect(claudeContent).toContain(join(browserPluginFolder(), 'skills', name, 'SKILL.md'))
           expect(codexContent).toContain(codexPath)
         }

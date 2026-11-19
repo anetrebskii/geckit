@@ -39,10 +39,10 @@ export function whisperCli(): string {
 }
 
 const folder = (): string => join(dataDirectory(), 'whisper')
-const modelPath = (): string => join(folder(), NAME)
-const partPath = (): string => `${modelPath()}.part`
+export const speechModelPath = (): string => join(folder(), NAME)
+const partPath = (): string => `${speechModelPath()}.part`
 
-export const installedSpeechModel = (): string | undefined => existsSync(modelPath()) ? modelPath() : undefined
+export const installedSpeechModel = (): string | undefined => existsSync(speechModelPath()) ? speechModelPath() : undefined
 
 const sizeOf = (path: string): number => {
   try {
@@ -58,7 +58,7 @@ let toldAt = 0
 const watchers = new Set<(view: SpeechModel) => void>()
 
 export function speechModel(): SpeechModel {
-  view ??= existsSync(modelPath())
+  view ??= existsSync(speechModelPath())
     ? { state: 'ready', received: SIZE, total: SIZE }
     : { state: 'absent', received: sizeOf(partPath()), total: SIZE }
   return view
@@ -116,12 +116,12 @@ async function download(): Promise<void> {
     unlinkSync(part)
     throw new Error('The downloaded model was damaged')
   }
-  renameSync(part, modelPath())
+  renameSync(part, speechModelPath())
 }
 
 /** The model's path, downloaded first where it is not here yet. Asked again while it downloads, the same download is waited for. */
 export function fetchSpeechModel(): Promise<string> {
-  if (existsSync(modelPath())) return Promise.resolve(modelPath())
+  if (existsSync(speechModelPath())) return Promise.resolve(speechModelPath())
   fetching ??= (async () => {
     mkdirSync(folder(), { recursive: true })
     let failed = ''
@@ -130,7 +130,7 @@ export function fetchSpeechModel(): Promise<string> {
       try {
         await download()
         set({ state: 'ready', received: SIZE, total: SIZE })
-        return modelPath()
+        return speechModelPath()
       } catch (error) {
         failed = error instanceof Error ? error.message : String(error)
         if (attempt < TRIES) await new Promise((done) => setTimeout(done, attempt * 3_000))

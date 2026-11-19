@@ -75,6 +75,26 @@ The service prints `GeckIt service ready.` and its data directory only after the
 
 The process runs in the foreground. Use an OS service manager to keep it alive after logout. Closing an operator CLI does not stop work; terminating the service does stop local providers. Saved queued work follows existing queue rules on startup; an interrupted local turn is not automatically replayed or approved. Existing SSH runs are reattached through the common runtime.
 
+### Local transcription
+
+The headless service bundle contains the transcription skill. To give its workers local Whisper access, also install `resources/whisper/whisper-cli` from the verified Linux AppImage for that release. It sits outside `app.asar`. For a source deployment, build the equivalent executable with `client/scripts/whisper.sh` on the target platform. Keep the executable in the staged program directory and set `GECKIT_WHISPER_CLI` to its absolute path in the service environment before startup.
+
+The speech model lives in the persistent data directory. On Linux, run the following as the service account with `GECKIT_DATA` set to the directory the service uses. This downloads the same model as desktop, checks its SHA-256 and moves it into place only after verification. Skip the download if the verified model is already installed. The model name, download URL and checksum are pinned in [whisper.ts](../client/src/main/whisper.ts).
+
+```sh
+set -eu
+model_dir="${GECKIT_DATA:?Set the GeckIt service data directory}/whisper"
+model=ggml-large-v3-turbo-q5_0.bin
+mkdir -p "$model_dir"
+part=$(mktemp "$model_dir/.model.XXXXXXXX")
+trap 'rm -f "$part"' EXIT
+curl --fail --location --output "$part" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$model"
+printf '%s  %s\n' 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2 "$part" | sha256sum --check -
+mv "$part" "$model_dir/$model"
+```
+
+Verify that the service account can run the executable and read the model. Run a worker task with a short known recording and inspect the transcript. Video and audio formats Whisper cannot decode also need a local converter such as FFmpeg. Refer to the host's `transcribe-audio` skill for supported inputs and output formats.
+
 ## Operate
 
 Run these commands from the service user's terminal. Every call needs the same `GECKIT_DATA`. `service help` works without a running service.

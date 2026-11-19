@@ -4,6 +4,8 @@ For conversation history, status or independent work, load the `{{conversationsS
 
 Before changing GeckIt, run `{{said}} instructions app`; for provider libraries, run `{{said}} instructions providers`.
 
+For transcription of audio or video files, load `{{transcriptionSkill}}` from {{transcriptionPath}}.
+
 ## Setup
 
 Before pairing computers or adding an SSH host, load `{{remoteConnectionSkill}}` from {{remoteConnectionPath}}. For headless installation or updates, load `{{remoteGeckitSkill}}` from {{remoteGeckitPath}}. For Slack app, channel or Manager connection setup, load `{{slackSkill}}` from {{slackPath}}.
