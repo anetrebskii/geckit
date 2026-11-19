@@ -24,6 +24,8 @@ When a conversation acts in a tab through `geckit browser`, the person watching 
 - Every `click` in the person's Chrome is a real mouse move and press through Chrome's debugger, so Chrome shows its debugging bar while it runs. There is no simulated click and no option to choose one.
 - `type`, in the person's Chrome and in test browsers, clicks into the field with the real mouse, clears what it held with select all and Backspace, then presses one key per character with a short uneven pause, the whole text taking at most about 30 s. A secret is typed the same way. Only a `<select>` is still set directly, since its list is drawn outside the page.
 
+In GeckIt's test browsers the pointer is never put into the page: it is drawn onto `shot --pointer` and `record --pointer` pictures and over the live view at the real cursor's position, with the same arrow.
+
 ## Which tabs GeckIt works in
 
 | Where | What it shows | When |

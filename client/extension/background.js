@@ -34,6 +34,8 @@ function connect() {
 
 const detailOf = (request, result) => request.cmd === 'open' || request.cmd === 'go' ? hostOf(request.url)
   : request.cmd === 'click' ? result?.clicked : request.cmd === 'hover' ? result?.hovered
+  : request.cmd === 'upload' || request.cmd === 'drop' ? result?.into ?? result?.onto : request.cmd === 'download' ? result?.name : request.cmd === 'drag' ? result?.dragged
+  : request.cmd === 'select' ? result?.typed : request.cmd === 'dialog' ? (request.accept ? 'accept' : 'dismiss') : request.cmd === 'permission' ? request.kind
   : request.cmd === 'read' ? request.find : request.cmd === 'key' ? request.key : request.cmd === 'record' ? request.ms : request.cmd === 'view' && request.reset ? 'reset' : undefined
 
 function hostOf(url) {
@@ -42,6 +44,8 @@ function hostOf(url) {
 
 async function run(request) {
   if (request.cmd === 'ping' || request.cmd === 'reload') return answer(request)
+  const open = dialogs.get(request.tab)
+  if (open !== undefined && !['dialog', 'pages', 'close'].includes(request.cmd)) throw new Error(`Tab ${request.tab} shows a ${open.type} dialog: "${open.message}". Answer it first with dialog ${request.tab} accept or dismiss.`)
   const started = Date.now()
   const asked = Number.isInteger(request.tab) ? await chrome.tabs.get(request.tab).catch(() => undefined) : undefined
   const done = (result, error) => save((now) => {
@@ -56,7 +60,9 @@ async function run(request) {
   if ((await chrome.storage.local.get('paused')).paused === true) { await done(undefined, PAUSED); throw new Error(PAUSED) }
   await save((now) => { now.busy = { t: started, cmd: request.cmd, tab: asked?.id, title: asked?.title ?? '', detail: detailOf(request) } })
   try {
-    const result = await answer(request)
+    let result = await answer(request)
+    const opened = dialogs.get(request.tab)
+    if (opened !== undefined && request.cmd !== 'dialog' && result && typeof result === 'object') result = { ...result, dialog: opened }
     await done(result)
     return result
   } catch (error) {
@@ -158,32 +164,264 @@ function scrubSecrets(value, secrets) {
   return JSON.parse(text)
 }
 
-async function inPage(id, func, ...args) {
+async function inPage(id, func, ...args) { return inFrame(id, 0, func, ...args) }
+
+async function inFrame(id, frameId, func, ...args) {
   const target = await tab(id)
   if (!/^(https?|file):/.test(target.url ?? '')) throw new Error(`Tab ${id} shows ${target.url}, which Chrome does not let extensions read.`)
-  const [frame] = await chrome.scripting.executeScript({ target: { tabId: id }, func, args })
+  let frame
+  try { [frame] = await chrome.scripting.executeScript({ target: { tabId: id, frameIds: [frameId] }, func, args }) } catch (error) {
+    if (frameId !== 0) throw new Error(`Frame ${frameId} is gone from tab ${id}. Run geckit browser read again.`, { cause: error })
+    throw error
+  }
   if (frame === undefined) throw new Error(`Tab ${id} did not answer.`)
   if (frame.result && frame.result.error) throw new Error(frame.result.error)
   return frame.result
 }
 
+// A ref is "12" for the page itself, or "57.12" for element 12 inside the frame Chrome numbers 57.
+function refAt(ref) {
+  const text = String(ref)
+  const dot = text.indexOf('.')
+  return dot < 0 ? { frame: 0, ref: text } : { frame: Number(text.slice(0, dot)), ref: text.slice(dot + 1) }
+}
+
+async function inRef(id, ref, func, ...rest) {
+  const at = refAt(ref)
+  return inFrame(id, at.frame, func, at.ref, ...rest)
+}
+
+// Like inRef, with the point it returns moved from its frame's own viewport into the tab's.
+async function atRef(id, ref, func, ...rest) {
+  const at = refAt(ref)
+  const found = await inFrame(id, at.frame, func, at.ref, ...rest)
+  if (at.frame === 0) return found
+  await chrome.scripting.executeScript({ target: { tabId: id, allFrames: true }, func: pageFrames }).catch(() => undefined)
+  const offset = await inFrame(id, at.frame, pageOffset)
+  const top = await inPage(id, pageScrolled)
+  return { ...found, x: found.x + offset.x, y: found.y + offset.y, ...(found.scrollX === undefined ? {} : top) }
+}
+
+// Every frame that can be read, the page first; a frame Chrome refuses is left out.
+async function inFrames(id, func, ...args) {
+  const target = await tab(id)
+  if (!/^(https?|file):/.test(target.url ?? '')) throw new Error(`Tab ${id} shows ${target.url}, which Chrome does not let extensions read.`)
+  const frames = await chrome.scripting.executeScript({ target: { tabId: id, allFrames: true }, func, args }).catch(() => undefined)
+  if (frames === undefined) return [{ frameId: 0, result: await inPage(id, func, ...args) }]
+  return frames.filter((one) => one.result && !one.result.error).sort((a, b) => a.frameId - b.frameId)
+}
+
+async function readAll(id) {
+  const frames = await inFrames(id, pageRead)
+  const main = frames.find((one) => one.frameId === 0)?.result
+  if (main === undefined) throw new Error(`Tab ${id} did not answer.`)
+  const lines = [...main.lines]
+  for (const one of frames) {
+    if (one.frameId === 0 || one.result.hidden || one.result.lines.length === 0) continue
+    lines.push(`--- frame ${one.frameId}: ${(one.result.title || one.result.url).slice(0, 80)} ---`)
+    lines.push(...one.result.lines.map((line) => line.replace(/^\[(\d+)\]/, `[${one.frameId}.$1]`)))
+  }
+  return { title: main.title, url: main.url, lines }
+}
+
 // Tabs the debugger stays attached to, because what view emulates lasts only while it does.
 const held = new Map()
+// A dialog the page opened while GeckIt held its debugger: it stays attached until the dialog is answered.
+const dialogs = new Map()
 chrome.debugger.onDetach.addListener((source) => {
   held.delete(source.tabId)
+  dialogs.delete(source.tabId)
   void save((now) => { delete now.views[source.tabId] })
 })
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (method === 'Page.javascriptDialogOpening') dialogs.set(source.tabId, { type: params.type, message: params.message ?? '', prompt: params.defaultPrompt ?? '' })
+  if (method === 'Page.javascriptDialogClosed') dialogs.delete(source.tabId)
+})
+
+// The next event of one of the methods on a tab that passes the check, or undefined after ms.
+function nextEvent(id, methods, ms, check = () => true) {
+  const wanted = [methods].flat()
+  return new Promise((done) => {
+    const listen = (source, method, params) => { if (source.tabId === id && wanted.includes(method) && check(params)) finish(params) }
+    const finish = (value) => { chrome.debugger.onEvent.removeListener(listen); clearTimeout(timer); done(value) }
+    const timer = setTimeout(() => finish(undefined), ms)
+    chrome.debugger.onEvent.addListener(listen)
+  })
+}
+
+// A command the page answers only after a dialog it opens is closed: stop waiting when the dialog appears.
+async function orDialog(id, work) {
+  if (dialogs.has(id)) return {}
+  work.catch(() => undefined)
+  let stop
+  const opened = new Promise((done) => {
+    const listen = (source, method) => { if (source.tabId === id && method === 'Page.javascriptDialogOpening') done({}) }
+    chrome.debugger.onEvent.addListener(listen)
+    stop = () => chrome.debugger.onEvent.removeListener(listen)
+  })
+  try { return await Promise.race([work, opened]) } finally { stop() }
+}
 
 async function debug(id, steps, keep = false) {
   await tab(id)
   const target = { tabId: id }
-  const had = held.has(id)
+  const had = held.has(id) || dialogs.has(id)
   if (!had) {
     try { await chrome.debugger.attach(target, '1.3') } catch (error) { throw new Error(`Could not attach to tab ${id}: ${error.message}`, { cause: error }) }
+    await chrome.debugger.sendCommand(target, 'Page.enable').catch(() => undefined)
   }
-  try { return await steps((method, params) => chrome.debugger.sendCommand(target, method, params)) } finally {
-    if (!had && !keep && !held.has(id)) await chrome.debugger.detach(target).catch(() => undefined)
+  const send = (method, params) => method.startsWith('Input.') ? orDialog(id, chrome.debugger.sendCommand(target, method, params)) : chrome.debugger.sendCommand(target, method, params)
+  try { return await steps(send) } finally {
+    if (!had && !keep && !held.has(id) && !dialogs.has(id)) await chrome.debugger.detach(target).catch(() => undefined)
   }
+}
+
+const MAC = navigator.userAgent.includes('Mac')
+const FILE_ACCESS = 'Chrome lets GeckIt Browser give files to a page only with Allow access to file URLs on. Ask the person to turn it on in chrome://extensions, GeckIt Browser, Details.'
+
+// Notes the tabs a page opens while an action runs, such as a sign-in popup.
+async function noteOpened(steps) {
+  const made = []
+  const listen = (one) => made.push(one.id)
+  chrome.tabs.onCreated.addListener(listen)
+  try {
+    const result = await steps()
+    await wait(made.length > 0 ? 300 : 150)
+    if (made.length === 0) return result
+    const opened = (await Promise.all(made.map((one) => chrome.tabs.get(one).catch(() => undefined)))).filter((one) => one !== undefined).map((one) => ({ id: one.id, title: one.title ?? '', url: one.pendingUrl || one.url || '' }))
+    return opened.length === 0 ? result : { ...result, opened }
+  } finally { chrome.tabs.onCreated.removeListener(listen) }
+}
+
+async function upload(id, ref, files) {
+  await inRef(id, ref, pagePointer, 'click')
+  const at = await atRef(id, ref, pageCenter)
+  return debug(id, async (send) => {
+    await send('Page.setInterceptFileChooserDialog', { enabled: true })
+    try {
+      const chosen = nextEvent(id, 'Page.fileChooserOpened', 5000)
+      await mouse(send, at, true)
+      const chooser = await chosen
+      if (chooser === undefined) throw new Error(`Clicking ${at.label} opened no file chooser. Give the button or field that opens one.`)
+      if (chooser.mode === 'selectSingle' && files.length > 1) throw new Error(`${at.label} takes one file.`)
+      await send('DOM.setFileInputFiles', { files, backendNodeId: chooser.backendNodeId }).catch((error) => { throw /not allowed/i.test(error.message) ? new Error(FILE_ACCESS) : error })
+    } finally { await send('Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => undefined) }
+    return { chosen: files.length, into: at.label }
+  })
+}
+
+async function dropFiles(id, ref, files) {
+  await inRef(id, ref, pagePointer, 'hover')
+  const at = await atRef(id, ref, pageGrab)
+  return debug(id, async (send) => {
+    const data = { items: [], files, dragOperationsMask: 1 }
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y })
+    for (const type of ['dragEnter', 'dragOver', 'drop']) await send('Input.dispatchDragEvent', { type, x: at.x, y: at.y, data }).catch((error) => { throw /not allowed/i.test(error.message) ? new Error(FILE_ACCESS) : error })
+    return { dropped: files.length, onto: at.label }
+  })
+}
+
+// Clicks and waits for the download it starts, saved under a name of Chrome's choosing in the folder GeckIt gave.
+async function download(id, ref, folder) {
+  await inRef(id, ref, pagePointer, 'click')
+  const at = await atRef(id, ref, pageCenter)
+  return debug(id, async (send) => {
+    const behave = async (params) => {
+      try { await send('Browser.setDownloadBehavior', { ...params, eventsEnabled: true }) } catch { await send('Page.setDownloadBehavior', params) }
+    }
+    await behave({ behavior: 'allowAndName', downloadPath: folder })
+    try {
+      const begun = nextEvent(id, ['Browser.downloadWillBegin', 'Page.downloadWillBegin'], 15000)
+      await mouse(send, at, true)
+      const started = await begun
+      if (started === undefined) throw new Error(`Clicking ${at.label} started no download within 15 seconds.`)
+      const ended = await nextEvent(id, ['Browser.downloadProgress', 'Page.downloadProgress'], 50000, (one) => one.guid === started.guid && one.state !== 'inProgress')
+      if (ended === undefined) throw new Error(`${started.suggestedFilename} was still downloading after 50 seconds.`)
+      if (ended.state !== 'completed') throw new Error(`The download of ${started.suggestedFilename} was canceled.`)
+      return { guid: started.guid, name: started.suggestedFilename, url: started.url.startsWith('data:') ? 'data:' : started.url, bytes: ended.receivedBytes }
+    } finally { await behave({ behavior: 'default' }).catch(() => undefined) }
+  })
+}
+
+// Presses on one element and moves to another or by an offset, as a hand drags; a page's own drag and drop gets Chrome's drag events.
+async function drag(id, request) {
+  await inRef(id, request.ref, pagePointer, 'hover')
+  let from = await atRef(id, request.ref, pageGrab)
+  const target = request.to === undefined ? undefined : await atRef(id, request.to, pageGrab)
+  if (target !== undefined) from = await atRef(id, request.ref, pageGrab)
+  const to = target ?? { x: from.x + request.offset.x, y: from.y + request.offset.y, label: `${request.offset.x},${request.offset.y}` }
+  return debug(id, async (send) => {
+    let data
+    const listen = (source, method, params) => { if (source.tabId === id && method === 'Input.dragIntercepted') data = params.data }
+    chrome.debugger.onEvent.addListener(listen)
+    await send('Input.setInterceptDrags', { enabled: true })
+    try {
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y })
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: from.x, y: from.y, button: 'left', buttons: 1, clickCount: 1 })
+      let entered = false
+      const steps = 12
+      for (let step = 1; step <= steps; step++) {
+        const x = from.x + ((to.x - from.x) * step) / steps
+        const y = from.y + ((to.y - from.y) * step) / steps
+        if (data === undefined) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'left', buttons: 1 })
+        else { await send('Input.dispatchDragEvent', { type: entered ? 'dragOver' : 'dragEnter', x, y, data }); entered = true }
+        await wait(20)
+      }
+      if (data !== undefined) {
+        await send('Input.dispatchDragEvent', { type: 'dragOver', x: to.x, y: to.y, data })
+        await send('Input.dispatchDragEvent', { type: 'drop', x: to.x, y: to.y, data })
+      }
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', buttons: 0, clickCount: 1 })
+    } finally {
+      chrome.debugger.onEvent.removeListener(listen)
+      await send('Input.setInterceptDrags', { enabled: false }).catch(() => undefined)
+    }
+    return { dragged: from.label, to: to.label }
+  })
+}
+
+// Waits for the page to finish loading, a text to appear or go, or the address to change, checking four times a second.
+async function waitFor(id, request) {
+  const started = Date.now()
+  for (;;) {
+    const now = await tab(id)
+    let ok = !request.load || now.status === 'complete'
+    if (ok && request.url !== undefined) ok = (now.url ?? '').includes(request.url)
+    if (ok && (request.text !== undefined || request.gone !== undefined)) {
+      const seen = (await inFrames(id, pageHas, request.text ?? request.gone).catch(() => [])).some((one) => one.result === true)
+      ok = request.text !== undefined ? seen : !seen
+    }
+    if (ok) return { waited: Date.now() - started, title: now.title ?? '', url: now.url ?? '' }
+    if (Date.now() - started >= request.ms) throw new Error(`Still not there after ${Math.round(request.ms / 1000)} s: ${request.text !== undefined ? `no "${request.text}" on the page` : request.gone !== undefined ? `"${request.gone}" is still on the page` : request.url !== undefined ? `the address is ${now.url}` : 'the page is still loading'}.`)
+    await wait(250)
+  }
+}
+
+async function answerDialog(id, request) {
+  if (!dialogs.has(id)) {
+    await debug(id, async () => { await wait(300) })
+  }
+  const open = dialogs.get(id)
+  if (open === undefined) throw new Error(`No dialog is open on tab ${id}.`)
+  const target = { tabId: id }
+  await chrome.debugger.sendCommand(target, 'Page.handleJavaScriptDialog', { accept: request.accept, ...(request.text === undefined ? {} : { promptText: request.text }) })
+  dialogs.delete(id)
+  const next = await nextEvent(id, 'Page.javascriptDialogOpening', 300)
+  if (next === undefined && !held.has(id)) await chrome.debugger.detach(target).catch(() => undefined)
+  return { answered: open, accept: request.accept }
+}
+
+const PERMISSIONS = { notifications: 'notifications', geolocation: 'geolocation', camera: 'camera', microphone: 'microphone', clipboard: 'clipboard-read' }
+
+async function permission(id, request) {
+  const name = PERMISSIONS[request.kind]
+  const origin = new URL((await tab(id)).url ?? '').origin
+  return debug(id, async (send) => {
+    try { await send('Browser.setPermission', { permission: { name }, setting: request.setting === 'allow' ? 'granted' : request.setting === 'block' ? 'denied' : 'prompt', origin }) } catch (error) {
+      throw new Error(`Chrome did not let GeckIt Browser change ${request.kind} for ${origin}: ${error.message}. Ask the person to change it in the site's settings, the icon left of the address.`, { cause: error })
+    }
+    return { kind: request.kind, setting: request.setting, origin }
+  })
 }
 
 const wait = (ms) => new Promise((done) => setTimeout(done, ms))
@@ -212,28 +450,74 @@ function base64(bytes) {
 
 const bytesOf = (data) => Uint8Array.from(atob(data), (one) => one.charCodeAt(0))
 
-async function press(send, name) {
-  const key = KEYS[name] ?? (name.length === 1 ? { key: name, text: name, code: '', keyCode: name.toUpperCase().charCodeAt(0) } : undefined)
-  if (key === undefined) throw new Error(`Unknown key ${name}. Known: ${Object.keys(KEYS).join(', ')} or one character.`)
-  const base = { key: key.key ?? name, code: key.code, windowsVirtualKeyCode: key.keyCode }
-  await send('Input.dispatchKeyEvent', { type: key.text ? 'keyDown' : 'rawKeyDown', ...base, text: key.text })
-  await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base })
-  return base.key
+const MODIFIERS = { Alt: { bit: 1, keyCode: 18 }, Control: { bit: 2, keyCode: 17 }, Meta: { bit: 4, keyCode: 91 }, Shift: { bit: 8, keyCode: 16 } }
+const KEY_NAMES = { cmd: 'Meta', command: 'Meta', meta: 'Meta', win: 'Meta', ctrl: 'Control', control: 'Control', alt: 'Alt', option: 'Alt', opt: 'Alt', shift: 'Shift', esc: 'Escape', return: 'Enter', del: 'Delete', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }
+// What Chrome does for an editing shortcut, which a key event from the debugger does not do by itself on a Mac.
+const EDITING = { a: 'selectAll', c: 'copy', x: 'cut', v: 'paste', z: 'undo' }
+
+function keyOf(name) {
+  const known = KEYS[name] ?? KEYS[name[0].toUpperCase() + name.slice(1)]
+  if (known !== undefined) return { key: known.key ?? (KEYS[name] ? name : name[0].toUpperCase() + name.slice(1)), ...known }
+  if (/^F([1-9]|1[0-2])$/i.test(name)) return { key: name.toUpperCase(), code: name.toUpperCase(), keyCode: 111 + Number(name.slice(1)) }
+  if ([...name].length !== 1) return undefined
+  const upper = name.toUpperCase()
+  return { key: name, text: name, code: /^[A-Z]$/.test(upper) ? `Key${upper}` : /^\d$/.test(name) ? `Digit${name}` : '', keyCode: upper.charCodeAt(0) }
 }
 
-async function mouse(send, at, click) {
+// One key or a combination such as Meta+Enter or Shift+Tab, pressed with its modifiers held as a keyboard does.
+async function press(send, combo) {
+  const parts = combo.length > 1 && combo.endsWith('+') ? [...combo.slice(0, -2).split('+'), '+'] : combo.split('+')
+  const name = parts.pop()
+  const held = parts.map((one) => KEY_NAMES[one.toLowerCase()] ?? one)
+  const unknown = held.find((one) => MODIFIERS[one] === undefined)
+  if (unknown !== undefined) throw new Error(`Unknown modifier ${unknown}. Use Meta (Cmd), Control (Ctrl), Alt (Option) or Shift.`)
+  const alone = KEY_NAMES[name.toLowerCase()] ?? name
+  if (MODIFIERS[alone] !== undefined && held.length === 0) {
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: alone, code: `${alone}Left`, windowsVirtualKeyCode: MODIFIERS[alone].keyCode, modifiers: MODIFIERS[alone].bit })
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: alone, code: `${alone}Left`, windowsVirtualKeyCode: MODIFIERS[alone].keyCode })
+    return alone
+  }
+  const key = keyOf(alone)
+  if (key === undefined) throw new Error(`Unknown key ${name}. Known: ${Object.keys(KEYS).join(', ')}, F1 to F12 or one character, with Meta+, Control+, Alt+ or Shift+ before it.`)
+  let modifiers = 0
+  for (const one of held) {
+    modifiers |= MODIFIERS[one].bit
+    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: one, code: `${one}Left`, windowsVirtualKeyCode: MODIFIERS[one].keyCode, modifiers })
+  }
+  const chord = (modifiers & 7) !== 0
+  const shifted = (modifiers & 8) !== 0 && key.text?.length === 1 ? key.text.toUpperCase() : key.text
+  const text = chord ? undefined : shifted
+  const shortcut = (modifiers & 7) === (MAC ? 4 : 2) ? (name.toLowerCase() === 'z' && (modifiers & 8) !== 0 ? 'redo' : EDITING[name.toLowerCase()]) : undefined
+  const base = { key: text ?? key.key, code: key.code, windowsVirtualKeyCode: key.keyCode, modifiers }
+  await send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', ...base, text, unmodifiedText: text, ...(shortcut === undefined ? {} : { commands: [shortcut] }) })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base })
+  for (const one of [...held].reverse()) {
+    modifiers &= ~MODIFIERS[one].bit
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: one, code: `${one}Left`, windowsVirtualKeyCode: MODIFIERS[one].keyCode, modifiers })
+  }
+  return [...held, key.key].join('+')
+}
+
+async function mouse(send, at, click, how = {}) {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y })
   if (!click) return
-  for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 })
+  const button = how.button ?? 'left'
+  for (let count = 1; count <= (how.count ?? 1); count++) {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button, buttons: button === 'right' ? 2 : 1, clickCount: count })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button, buttons: 0, clickCount: count })
+  }
 }
 
-// Clicks into the field and types it key by key, as a person would, after clearing what it held.
-async function typeKeys(id, ref, text, secret) {
-  const field = await inPage(id, pageField, ref, secret)
-  if (field.select) return inPage(id, pageChoose, ref, text)
+// Clicks into the field and types it key by key, as a person would, after clearing what it held, or after its end with append.
+async function typeKeys(id, ref, text, secret, append = false) {
+  const field = await atRef(id, ref, pageField, secret)
+  if (field.select) return inRef(id, ref, pageChoose, text)
   await debug(id, async (send) => {
     await mouse(send, field, true)
-    if (field.filled) {
+    if (append) {
+      await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'End', code: 'End', windowsVirtualKeyCode: 35, modifiers: MAC ? 4 : 2, commands: ['moveToEndOfDocument'] })
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+    } else if (field.filled) {
       const all = { key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: navigator.userAgent.includes('Mac') ? 4 : 2 }
       await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...all, commands: ['selectAll'] })
       await send('Input.dispatchKeyEvent', { type: 'keyUp', ...all })
@@ -249,7 +533,7 @@ async function typeKeys(id, ref, text, secret) {
       await wait(pause * (0.4 + Math.random() * 0.8))
     }
   })
-  return inPage(id, pageTyped, ref)
+  return inRef(id, ref, pageTyped)
 }
 
 function loaded(id) {
@@ -301,7 +585,7 @@ async function answer(request) {
   switch (request.cmd) {
     case 'ping': return { version: chrome.runtime.getManifest().version, id: chrome.runtime.id }
     case 'reload': setTimeout(() => chrome.runtime.reload(), 100); return {}
-    case 'pages': return (await chrome.tabs.query({})).map((one) => ({ id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '' }))
+    case 'pages': return (await chrome.tabs.query({})).map((one) => ({ id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '', ...(one.openerTabId === undefined ? {} : { opener: one.openerTabId }) }))
     case 'open': {
       const made = await chrome.tabs.create({ url: request.url, active: false })
       await claim(made.id, true)
@@ -311,38 +595,68 @@ async function answer(request) {
     }
     case 'go': {
       await tab(id)
-      await chrome.tabs.update(id, { url: request.url })
-      await loaded(id)
-      const now = await chrome.tabs.get(id)
-      return { id, title: now.title ?? '', url: now.url ?? '' }
+      return debug(id, async () => {
+        const back = loaded(id)
+        await chrome.tabs.update(id, { url: request.url })
+        await orDialog(id, back)
+        const now = await chrome.tabs.get(id)
+        return { id, title: now.title ?? '', url: now.url ?? '' }
+      })
     }
     case 'close': await tab(id); await chrome.tabs.remove(id); return {}
     case 'text': return inPage(id, pageText)
-    case 'read': return inPage(id, pageRead)
+    case 'read': return readAll(id)
     case 'click': {
-      await inPage(id, pagePointer, request.ref, 'click')
-      const at = await inPage(id, pageCenter, request.ref)
-      return debug(id, async (send) => { await mouse(send, at, true); return { clicked: at.label } })
+      await inRef(id, request.ref, pagePointer, 'click')
+      const at = await atRef(id, request.ref, pageCenter)
+      const how = { button: request.button, count: request.count }
+      return noteOpened(() => debug(id, async (send) => { await mouse(send, at, true, how); return { clicked: at.label } }))
     }
     case 'hover': {
-      await inPage(id, pagePointer, request.ref, 'hover')
-      const at = await inPage(id, pageCenter, request.ref)
+      await inRef(id, request.ref, pagePointer, 'hover')
+      const at = await atRef(id, request.ref, pageCenter)
       return debug(id, async (send) => { await mouse(send, at, false); return { hovered: at.label } })
     }
-    case 'type': await inPage(id, pagePointer, request.ref, 'type'); return typeKeys(id, request.ref, request.text, false)
+    case 'type': await inRef(id, request.ref, pagePointer, 'type'); return typeKeys(id, request.ref, request.text, false, request.append === true)
+    case 'select': await inRef(id, request.ref, pagePointer, 'click'); return inRef(id, request.ref, pageChoose, request.text)
     case 'secret-key': {
-      const field = await inPage(id, pageSecretField, request.ref)
+      const field = await inRef(id, request.ref, pageSecretField)
       return { ...field, ...await secretKey() }
     }
     case 'type-secret': {
-      await inPage(id, pagePointer, request.ref, 'type')
+      await inRef(id, request.ref, pagePointer, 'type')
       return typeKeys(id, request.ref, await openSecret(request.keyId, request.sealed), true)
     }
-    case 'scroll': await inPage(id, pagePointer, request.ref ?? null, 'scroll'); return inPage(id, pageScroll, request.ref ?? null, request.by)
+    case 'scroll': {
+      if (request.ref == null) { await inPage(id, pagePointer, null, 'scroll'); return inPage(id, pageScroll, null, request.by) }
+      await inRef(id, request.ref, pagePointer, 'scroll')
+      await inRef(id, request.ref, pageScroll, request.by)
+      return inPage(id, pageScroll, null, 0)
+    }
     case 'key': {
       await inPage(id, pagePointer, null, 'key')
-      return debug(id, async (send) => ({ pressed: await press(send, request.key) }))
+      return noteOpened(() => debug(id, async (send) => ({ pressed: await press(send, request.key) })))
     }
+    case 'paste': {
+      if (request.ref != null) {
+        await inRef(id, request.ref, pagePointer, 'type')
+        const field = await atRef(id, request.ref, pageField, false)
+        await debug(id, async (send) => {
+          await mouse(send, field, true)
+          await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'End', code: 'End', windowsVirtualKeyCode: 35, modifiers: MAC ? 4 : 2, commands: ['moveToEndOfDocument'] })
+          await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+        })
+      } else await inPage(id, pagePointer, null, 'key')
+      await debug(id, async (send) => { await press(send, MAC ? 'Meta+v' : 'Control+v') })
+      return request.ref == null ? { pasted: true } : inRef(id, request.ref, pageTyped)
+    }
+    case 'upload': return upload(id, request.ref, request.files)
+    case 'drop': return dropFiles(id, request.ref, request.files)
+    case 'download': return download(id, request.ref, request.folder)
+    case 'drag': return drag(id, request)
+    case 'wait': return waitFor(id, request)
+    case 'dialog': return answerDialog(id, request)
+    case 'permission': return permission(id, request)
     case 'eval': return debug(id, async (send) => {
       const done = await send('Runtime.evaluate', { expression: request.code, awaitPromise: true, returnByValue: true, userGesture: true })
       const { values } = await inPage(id, pageSecrets, 'values')
@@ -352,7 +666,7 @@ async function answer(request) {
     case 'shot': return withoutPointer(id, request.pointer, async () => {
       const target = await tab(id)
       if (request.ref !== undefined) {
-        const box = await inPage(id, pageBox, request.ref, 8)
+        const box = await atRef(id, request.ref, pageBox, 8)
         return debug(id, async (send) => ({ png: (await send('Page.captureScreenshot', { format: 'png', clip: { x: box.x + box.scrollX, y: box.y + box.scrollY, width: box.width, height: box.height, scale: 1 } })).data }))
       }
       if (target.active && !held.has(id)) {
@@ -362,7 +676,7 @@ async function answer(request) {
       }
       return debug(id, async (send) => ({ png: (await send('Page.captureScreenshot', { format: 'png' })).data }))
     })
-    case 'style': return inPage(id, pageStyle, request.ref)
+    case 'style': return inRef(id, request.ref, pageStyle)
     case 'view': {
       if (request.reset) {
         if (held.has(id)) {
@@ -395,8 +709,8 @@ async function answer(request) {
 // Takes pictures of a tab as fast as Chrome takes screenshots while something on it moves; screenshots, unlike a screencast, come from a tab in the background or a window behind others too.
 async function record(id, request) {
   const slow = request.slow ?? 1
-  const box = request.ref === undefined ? undefined : await inPage(id, pageBox, request.ref, 16)
-  const at = request.then?.ref === undefined ? undefined : await inPage(id, pageCenter, request.then.ref)
+  const box = request.ref === undefined ? undefined : await atRef(id, request.ref, pageBox, 16)
+  const at = request.then?.ref === undefined ? undefined : await atRef(id, request.then.ref, pageCenter)
   return withoutPointer(id, request.pointer, () => debug(id, async (send) => {
     const frames = []
     if (slow !== 1) await inPage(id, pageSlow, slow)
@@ -413,7 +727,7 @@ async function record(id, request) {
       await wait(200)
       const start = Date.now()
       let did = 'nothing'
-      if (request.pointer && at !== undefined) { await inPage(id, pageOverlay, true); await inPage(id, pagePointer, request.then.ref, request.then.cmd) }
+      if (request.pointer && at !== undefined) { await inPage(id, pageOverlay, true); await inRef(id, request.then.ref, pagePointer, request.then.cmd) }
       if (request.then?.cmd === 'click') { await mouse(send, at, true); did = `clicked ${at.label}` }
       if (request.then?.cmd === 'hover') { await mouse(send, at, false); did = `hovered ${at.label}` }
       if (request.then?.cmd === 'key') did = `pressed ${await press(send, request.then.key)}`
@@ -597,6 +911,7 @@ function pageSlow(slow) {
 }
 
 function pageOverlay(shown) {
+  if (globalThis.geckitHidden) return {}
   const overlay = window.geckitPointer
   if (overlay && overlay.host.isConnected) overlay.host.style.visibility = shown ? '' : 'hidden'
   return {}
@@ -604,6 +919,7 @@ function pageOverlay(shown) {
 
 function pageBox(ref, pad) {
   const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -621,6 +937,7 @@ function pageBox(ref, pad) {
 // The computed style of an element without the values every element has, so a design check reads a dozen lines.
 function pageStyle(ref) {
   const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -665,6 +982,76 @@ function pageStyle(ref) {
   return { name: (el.getAttribute('aria-label') || el.innerText || el.tagName).replace(/\s+/g, ' ').trim().slice(0, 60), lines }
 }
 
+// Lets each frame ask the one around it where it sits, up to the top, since a cross-origin frame cannot measure that itself.
+function pageFrames() {
+  if (window.geckitFrames) return {}
+  const ask = () => new Promise((done, fail) => {
+    if (window === window.top) { done({ x: 0, y: 0 }); return }
+    const nonce = Math.random().toString(36).slice(2)
+    const back = (event) => {
+      if (event.source !== window.parent || event.data?.geckitHere !== nonce) return
+      clearTimeout(timer)
+      removeEventListener('message', back)
+      done({ x: event.data.x, y: event.data.y })
+    }
+    const timer = setTimeout(() => { removeEventListener('message', back); fail(new Error('A frame did not say where it sits on the page.')) }, 2000)
+    addEventListener('message', back)
+    window.parent.postMessage({ geckitWhere: nonce }, '*')
+  })
+  addEventListener('message', (event) => {
+    const nonce = event.data?.geckitWhere
+    if (typeof nonce !== 'string') return
+    const owner = [...document.querySelectorAll('iframe, frame')].find((one) => one.contentWindow === event.source)
+    if (!owner) return
+    void ask().then((mine) => {
+      const box = owner.getBoundingClientRect()
+      const style = getComputedStyle(owner)
+      event.source.postMessage({ geckitHere: nonce, x: mine.x + box.left + owner.clientLeft + parseFloat(style.paddingLeft), y: mine.y + box.top + owner.clientTop + parseFloat(style.paddingTop) }, '*')
+    }, () => undefined)
+  })
+  window.geckitFrames = ask
+  return {}
+}
+
+async function pageOffset() {
+  if (!window.geckitFrames) return { error: 'This frame cannot say where it sits on the page.' }
+  try { return await window.geckitFrames() } catch (error) { return { error: error.message } }
+}
+
+function pageScrolled() {
+  return { scrollX, scrollY, viewport: innerWidth }
+}
+
+// Where a hand takes hold of an element: its middle, or a slider's thumb; scrolled into view only when it is not.
+function pageGrab(ref) {
+  const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
+    const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
+    if (hit) return hit
+    for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
+    return null
+  }
+  const el = find(document)
+  if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  const box = el.getBoundingClientRect()
+  const label = (el.getAttribute('aria-label') || el.innerText || el.tagName).replace(/\s+/g, ' ').trim().slice(0, 60)
+  if (el instanceof HTMLInputElement && el.type === 'range') {
+    const min = Number(el.min || 0)
+    const max = Number(el.max || 100)
+    const share = max === min ? 0 : (Number(el.value) - min) / (max - min)
+    const thumb = Math.min(16, box.height, box.width)
+    return { x: box.left + thumb / 2 + share * (box.width - thumb), y: box.top + box.height / 2, label }
+  }
+  return { x: box.left + box.width / 2, y: box.top + box.height / 2, label }
+}
+
+function pageHas(text) {
+  const wanted = text.toLowerCase()
+  if ((document.body?.innerText ?? '').toLowerCase().includes(wanted)) return true
+  return [...document.querySelectorAll('input, textarea')].some((one) => one.type !== 'password' && String(one.value).toLowerCase().includes(wanted))
+}
+
 function pageText() {
   const root = document.querySelector('main, [role="main"], article') ?? document.body
   const text = (root?.innerText ?? '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
@@ -698,11 +1085,13 @@ function pageRead() {
     if (el.getAttribute('role')) return el.getAttribute('role')
     if (el.isContentEditable) return 'textbox'
     if (tag === 'a') return 'link'
-    if (tag === 'input') return el.type === 'checkbox' || el.type === 'radio' ? el.type : el.type === 'submit' || el.type === 'button' ? 'button' : 'textbox'
+    if (tag === 'input') return el.type === 'checkbox' || el.type === 'radio' ? el.type : el.type === 'submit' || el.type === 'button' ? 'button' : el.type === 'file' ? 'file' : el.type === 'range' ? 'slider' : 'textbox'
     return tag
   }
+  const hidden = globalThis.geckitHidden
   const counter = document.documentElement
-  let next = Number(counter.dataset.geckitNext ?? '1')
+  let next = hidden ? hidden.next : Number(counter.dataset.geckitNext ?? '1')
+  const refOf = (el) => (hidden ? hidden.of.get(el) : el.dataset.geckitRef)
   const lines = []
   const seen = new Set()
   const items = new Map()
@@ -722,23 +1111,27 @@ function pageRead() {
     const kind = role(el)
     let said = name(el).slice(0, 100)
     if (kind.startsWith('h')) { if (said) lines.push(`${'#'.repeat(Number(kind[1]))} ${said}`); continue }
-    if (el.dataset.geckitRef === undefined) el.dataset.geckitRef = String(next++)
+    if (refOf(el) === undefined) { if (hidden) hidden.mark(el, String(next++)); else el.dataset.geckitRef = String(next++) }
     const extra = []
-    const secret = el.type === 'password' || el.dataset.geckitSecret !== undefined
+    const secret = el.type === 'password' || (hidden ? hidden.secrets.has(el) : el.dataset.geckitSecret !== undefined)
     if (secret && kind === 'textbox') extra.push(el.value ? 'secret, filled' : 'secret')
     else if ('value' in el && el.value && kind === 'textbox') extra.push(`value="${clean(el.value).slice(0, 60)}"`)
     if (el.isContentEditable && clean(el.innerText)) { extra.push(`text="${clean(el.innerText).slice(0, 60)}"`); said = clean(el.getAttribute('aria-label')) || clean(el.getAttribute('aria-placeholder')) }
+    if (kind === 'select' && el.selectedOptions?.[0]) extra.push(`value="${clean(el.selectedOptions[0].text).slice(0, 60)}"`)
+    if (kind === 'slider') extra.push(`value="${el.value}" of ${el.min || 0}-${el.max || 100}`)
     if (el.checked) extra.push('checked')
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') extra.push('disabled')
     if (kind === 'link') { const href = el.getAttribute('href'); if (href && !href.startsWith('javascript:')) extra.push(href.length > 80 ? `${href.slice(0, 80)}...` : href) }
-    lines.push(`[${el.dataset.geckitRef}] ${kind} "${said}"${extra.length ? ` ${extra.join(' ')}` : ''}`)
+    lines.push(`[${refOf(el)}] ${kind} "${said}"${extra.length ? ` ${extra.join(' ')}` : ''}`)
   }
-  counter.dataset.geckitNext = String(next)
-  return { title: document.title, url: location.href, lines }
+  if (hidden) hidden.next = next
+  else counter.dataset.geckitNext = String(next)
+  return { title: document.title, url: location.href, lines, hidden: innerWidth === 0 || innerHeight === 0 }
 }
 
 function pageCenter(ref) {
   const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -753,6 +1146,7 @@ function pageCenter(ref) {
 
 function pageSecretField(ref) {
   const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -768,6 +1162,7 @@ function pageSecretField(ref) {
 
 function pageField(ref, secret) {
   const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -778,7 +1173,8 @@ function pageField(ref, secret) {
   el.scrollIntoView({ block: 'center', inline: 'center' })
   if (el instanceof HTMLSelectElement) return { select: true }
   if (!el.isContentEditable && !('value' in el)) return { error: `Element ${ref} is not a field you can type into.` }
-  if (secret) el.dataset.geckitSecret = ''
+  if (globalThis.geckitHidden) globalThis.geckitHidden.secrets[secret ? 'add' : 'delete'](el)
+  else if (secret) el.dataset.geckitSecret = ''
   else delete el.dataset.geckitSecret
   const box = el.getBoundingClientRect()
   return { x: box.left + box.width / 2, y: box.top + box.height / 2, filled: el.isContentEditable ? el.innerText.trim() !== '' : el.value !== '' }
@@ -786,6 +1182,7 @@ function pageField(ref, secret) {
 
 function pageChoose(ref, text) {
   const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -793,14 +1190,22 @@ function pageChoose(ref, text) {
   }
   const el = find(document)
   if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
-  el.value = text
+  if (!(el instanceof HTMLSelectElement)) return { error: `Element ${ref} is not a list to choose from. Click it and then the option instead.` }
+  const options = [...el.options]
+  const wanted = text.trim().toLowerCase()
+  const said = (one) => one.text.replace(/\s+/g, ' ').trim()
+  const option = options.find((one) => said(one) === text.trim()) ?? options.find((one) => one.value === text) ?? options.find((one) => said(one).toLowerCase() === wanted) ?? options.find((one) => said(one).toLowerCase().includes(wanted))
+  if (!option) return { error: `No option "${text}" in it. Options: ${options.map((one) => said(one)).join(', ').slice(0, 600)}.` }
+  el.focus()
+  el.value = option.value
   el.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
   el.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
-  return { typed: String(el.value).slice(0, 100) }
+  return { typed: said(option).slice(0, 100) }
 }
 
 function pageTyped(ref) {
   const find = (root) => {
+    if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
     const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
     if (hit) return hit
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -809,7 +1214,7 @@ function pageTyped(ref) {
   const el = find(document)
   if (!el) return { error: `No element ${ref} on this page now. Run geckit browser read again.` }
   if (el.isContentEditable) return { typed: el.innerText.replace(/\s+/g, ' ').trim().slice(0, 100) }
-  if (el.type === 'password' || 'geckitSecret' in el.dataset) return { typed: el.value ? 'secret, filled' : '' }
+  if (el.type === 'password' || (globalThis.geckitHidden ? globalThis.geckitHidden.secrets.has(el) : 'geckitSecret' in el.dataset)) return { typed: el.value ? 'secret, filled' : '' }
   return { typed: String(el.value).slice(0, 100) }
 }
 
@@ -820,7 +1225,9 @@ function pageSecrets(mode) {
     for (const host of root.querySelectorAll('*')) if (host.shadowRoot) walk(host.shadowRoot)
   }
   walk(document)
+  for (const one of globalThis.geckitHidden?.secrets ?? []) if (one.isConnected) found.push(one)
   if (mode === 'values') return { values: found.map((el) => ('value' in el ? String(el.value) : el.innerText ?? '')).filter((one) => one.length >= 4) }
+  if (globalThis.geckitHidden) return {}
   const old = document.getElementById('geckit-secret-hide')
   if (mode === 'show') { old?.remove(); return {} }
   if (old === null && found.length > 0) {
@@ -835,6 +1242,7 @@ function pageSecrets(mode) {
 function pageScroll(ref, by) {
   if (ref != null) {
     const find = (root) => {
+      if (globalThis.geckitHidden) return globalThis.geckitHidden.find(ref)
       const hit = root.querySelector(`[data-geckit-ref="${ref}"]`)
       if (hit) return hit
       for (const host of root.querySelectorAll('*')) if (host.shadowRoot) { const inner = find(host.shadowRoot); if (inner) return inner }
@@ -850,6 +1258,7 @@ function pageScroll(ref, by) {
 }
 
 async function pagePointer(ref, kind, position) {
+  if (globalThis.geckitHidden) return {}
   const SETTLE = 180
   const TRAVEL = 360
   const REST = 3000

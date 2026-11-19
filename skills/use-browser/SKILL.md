@@ -7,26 +7,32 @@ description: Work on websites through GeckIt, in the person's Chrome or a GeckIt
 
 ## Browser boundary
 
-Use `{{said}} browser` for all browser actions and page reading through GeckIt's browser integration. The person's Chrome is reached through the GeckIt Browser extension; GeckIt's own test browser is available only for the documented test-browser scenarios.
+Use `{{said}} browser` for all browser actions and page reading through GeckIt's browser integration. GeckIt's own test browser is available only for the documented test-browser scenarios.
 
 Work only in the tab the person named or a new background tab you open for this task. Do not take over unrelated tabs or switch Chrome profiles to find the target tab.
 
-If `{{said}} browser profiles` reports no ordinary Chrome profiles, or none has GeckIt Browser, use `{{said}} browser start geckit`, then `open <url> --profile geckit`. Missing Chrome profiles do not block this fallback on macOS or Linux. GeckIt automatically downloads Camoufox on first use when it is missing and reuses it afterward; no manual browser or extension installation is needed. A closed profile that has GeckIt Browser can instead be opened with `start <profile>`.
+If `{{said}} browser profiles` reports no ordinary Chrome profiles, or none has GeckIt Browser, use `{{said}} browser start geckit`, then `open <url> --profile geckit`. Missing Chrome profiles do not block this fallback on macOS or Linux. GeckIt automatically downloads Camoufox on first use when it is missing and reuses it afterward.
 
-If GeckIt's browser integration is unavailable, disconnected, paused, denied or does not support the requested action, report the specific failure or unsupported action and stop the affected browser work. Do not fall back to other browser tools, direct page fetching, Playwright/CDP, AppleScript or native computer control. GeckIt's documented test browser is not a way around a refusal or permission denial.
+In this order:
 
-Native provider permissions still apply. This browser requirement grants no new permission: do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction.
+1. Do what the person asked and reach the result with any GeckIt browser command available.
+2. Wherever possible, act as a real person would: move the pointer, click, type on the keyboard and scroll.
+3. Where no human action can do a step, use automation such as `eval`, including to fill fields or put files into an `input[type=file]`.
+
+If GeckIt's browser integration is unavailable, disconnected, paused or denied, or no GeckIt browser command can do a step, report the specific failure and stop the affected browser work. Do not fall back to other browser tools, direct page fetching, Playwright/CDP, AppleScript or native computer control. GeckIt's documented test browser is not a way around a refusal or permission denial.
+
+Native provider permissions still apply. This browser requirement grants no new permission: do not bypass a denial, change permissions, extract credentials or switch profiles to evade a restriction. Publish, post, send, buy or delete nothing the person did not ask for.
 
 ## Purpose
 
-Do what the person asked on a website. Post, send, buy or delete nothing they did not ask for.
+Reach the result the person asked for on a website.
 
 ## Inputs
 
 For profile creation or account reuse, load `{{profilesSkill}}` from {{profilesPath}} first.
 
 - When the site or account cannot be told from the request, ask.
-- `{{said}} browser profiles` lists Chrome profiles with email, GeckIt Browser, open and last used. Pick one before opening anything: for a site that needs an account, the profile signed in to it, by email; for a public page, the one used last; when two fit and the choice matters, ask.
+- `{{said}} browser profiles` lists Chrome profiles. Pick one before opening anything: for a site that needs an account, the profile signed in to it, by email; for a public page, the one used last; when two fit and the choice matters, ask.
 - `open <url> --profile <email or name>` opens a tab there; `pages` lists tabs by profile, and a tab id needs no `--profile` after that. `start <profile>` opens a closed profile that has GeckIt Browser. A profile without it cannot be used: say so and name those that can.
 - For a site the extension cannot reach, work kept away from the person's tabs, or no usable profile, read [test browsers](references/test-browsers.md) first.
 
@@ -42,9 +48,9 @@ For profile creation or account reuse, load `{{profilesSkill}}` from {{profilesP
 {{said}} browser shot <tab>
 ```
 
-- Start with `find`: it returns only the matching `[ref] role "name"` lines, picked by a model on this computer. `read` lists every heading and control, with `--- item N ---` at each post or card; use it when `find` misses.
-- One command per call. `text` gives the main text; `shot` prints a PNG's path. `{{said}} browser help` lists open, go, close, key, scroll and eval.
-- Always behave as a real user: reach every control by pointer with `click`, `hover`, `type` or `scroll <ref>`. `eval` only reads, never clicks or fills.
+- Start with `find`: it returns the matching `[ref] role "name"` lines. `read` lists every heading and control; use it when `find` misses.
+- One command per call. `text` gives the main text; `shot` prints a PNG's path. `{{said}} browser help` lists the rest.
+- No command reaches a file chooser's dialog. Upload with `eval <tab> -`: a stdin script builds each `File` from base64 into a `DataTransfer`, sets the `input[type=file]`'s `files`, dispatches a bubbling `change`. Check the previews.
 - Refs hold until reload; after a click changes the page, read again.
 - For a design, layout or animation check, read [design checks](references/design-checks.md). When the work needs a password, API key or SSH key, use {{secrets}}.
 
@@ -58,4 +64,4 @@ Reply in the person's language: what was done, the full address of each page cha
 
 ## Verification
 
-After a change, read the page again or take a shot and confirm it shows: the post is visible, the field keeps its value, the page says saved. If not, say so.
+After a change, read the page again or take a shot and confirm the change shows. If not, say so.

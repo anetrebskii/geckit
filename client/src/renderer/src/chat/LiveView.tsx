@@ -218,6 +218,12 @@ export function LiveView({ name, api, computer, token, title = `Sign in: geckit:
                   aria-hidden="true"
                   style={{ left: `${(frame.caret.x / frame.width) * 100}%`, top: `${(frame.caret.y / frame.height) * 100}%`, height: `${(frame.caret.height / frame.height) * 100}%`, ...(frame.caret.color !== undefined && PAINT.test(frame.caret.color) ? { background: frame.caret.color } : {}) }}
                 /> : null}
+                {state === 'live' && frame.pointer !== undefined ? <svg
+                  className="live-view-pointer"
+                  viewBox="0 0 20 24"
+                  aria-hidden="true"
+                  style={{ left: `${(frame.pointer.x / frame.width) * 100}%`, top: `${(frame.pointer.y / frame.height) * 100}%` }}
+                ><path d="M2 2 L2 19 L6.5 15 L9.5 22 L12.5 20.7 L9.6 14 L16 14 Z" /></svg> : null}
               </div>
             )}
             <textarea

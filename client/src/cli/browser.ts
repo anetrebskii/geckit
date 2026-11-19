@@ -1,16 +1,17 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { requestingSession } from './start'
 import { askSecrets } from './secrets'
 import { conversationTestName } from './browser-lifecycle'
 import { profileArchiveCommand } from './profile-archive'
 import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
-import { currentProfile, downloading, TEST_BROWSER, TEST_PREFIX, testBrowsersState, testLog, testName, validTestName } from './testing'
+import { currentProfile, downloading, profilesFolder, TEST_BROWSER, TEST_PREFIX, testBrowsersState, testingFolder, testLog, testName, validTestName } from './testing'
+import { isServer, presentationNow } from './desktop-identity'
 import { BROWSER_STORE_URL } from '../shared/api'
 import type { BrowserBridgeState } from '../shared/api'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 
 import background from '../../extension/background.js?raw'
 import manifest from '../../extension/manifest.json?raw'
@@ -346,7 +347,8 @@ function listProfiles(): string {
   const testing = testBrowsersState()
   const tests = testing.profiles.map((one) => {
     const open = known.find((host) => host.label === `${TEST_PREFIX}${one.name}`)
-    return `${`${TEST_PREFIX}${one.name}`.padEnd(34)} ${'Camoufox'.padEnd(20)} ${open !== undefined ? `open, ${open.tabs.length} tabs` : 'closed: start opens it'}${one.note === undefined ? '' : `, ${one.note}`}`
+    const shown = !isServer() ? '' : presentationNow(testingFolder(), profilesFolder(), one.name) === 'desktop' ? ', server desktop' : `, as before (profiles device ${one.name} --desktop)`
+    return `${`${TEST_PREFIX}${one.name}`.padEnd(34)} ${'Camoufox'.padEnd(20)} ${open !== undefined ? `open, ${open.tabs.length} tabs` : 'closed: start opens it'}${shown}${one.note === undefined ? '' : `, ${one.note}`}`
   })
   return [...lines, ...unnamed, ...tests].join('\n') || 'No Chrome profile found.'
 }
@@ -380,7 +382,7 @@ export async function askTest(name: string, request: object, folder: string = br
 }
 
 /** Leaves a request the GeckIt service answers, outside any sandbox: making an account profile, or a sign-in link. */
-async function askService(kind: 'account' | 'signin', request: object, folder: string = browserFolder()): Promise<Reply & { readonly link?: string; readonly expires?: number }> {
+async function askService(kind: 'account' | 'signin' | 'device', request: object, folder: string = browserFolder()): Promise<Reply & { readonly link?: string; readonly expires?: number }> {
   if (process.platform !== 'win32' && !existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
   const file = join(folder, `${randomUUID()}.${kind}`)
   try {
@@ -410,6 +412,14 @@ async function accountCommand(rest: readonly string[]): Promise<{ readonly ok: b
   const told = await askService('account', { name, note, create: how === 'create' })
   if (!told.ok) return { ok: false, said: told.error ?? 'The profile was not made.' }
   return { ok: true, said: how === 'create' ? `Made ${TEST_PREFIX}${name}${note.trim() === '' ? '' : ` for ${note.trim()}`}. It is signed in to nothing yet: geckit browser signin ${name} gives the person a link to sign in.` : note.trim() === '' ? `${TEST_PREFIX}${name} has no description now.` : `${TEST_PREFIX}${name} is now described as ${note.trim()}.` }
+}
+
+async function deviceCommand(rest: readonly string[]): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const named = rest.slice(1).find((one) => !one.startsWith('--'))
+  const name = testName(named ?? '') ?? named ?? ''
+  if (!rest.includes('--desktop') || !validTestName(name)) return { ok: false, said: 'Give the profile to move, such as geckit browser profiles device zabookni --desktop.' }
+  const told = await askService('device', { name })
+  return told.ok ? { ok: true, said: (told as Reply & { readonly said?: string }).said ?? '' } : { ok: false, said: told.error ?? 'The profile was not moved.' }
 }
 
 async function signInCommand(named: string | undefined): Promise<{ readonly ok: boolean; readonly said: string }> {
@@ -464,6 +474,8 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
                                 make a test profile, such as github-work --note "GitHub as alex"; the description is optional;
                                 any conversation may then use it with --profile geckit:<name>
   profiles note <name> "<description>"  change or clear its description
+  profiles device <name> --desktop
+                                on a Linux server, move a profile made before the desktop identity to it; sites see a new device
   profiles export <name> --output <file>
                                 back up a closed test profile to a private .geckit-profile.gz archive
   profiles import <file> --name <new-name>
@@ -480,16 +492,43 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
                                 ~/.geckit/browser-state/test-project-profiles.json
   stop geckit:<name>            outside conversations: close a test browser; its profile stays
                                 conversation tabs close on Done; the last owner closes the browser
-  pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email
+  pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email;
+                                a tab a page opened, such as a sign-in popup, says which tab opened it
   open <url> [--profile <name>] open in a new background tab and wait for it to load; the profile used last unless --profile
   go <tab> <url>                load a url in a tab
   close <tab>
   text <tab> [--max <n>]        the page's main text, 6000 characters unless --max
-  read <tab> [--all]            headings and what can be clicked or typed into, as [ref] role "name"; 200 lines unless --all
+  read <tab> [--all]            headings and what can be clicked or typed into, as [ref] role "name"; 200 lines unless --all;
+                                what is inside frames (payment forms, embedded editors) follows its --- frame --- line,
+                                with refs such as 57.3 that every command takes
   find <tab> <what>             the lines of read that match a description, picked by a small local model
-  click <tab> <ref>             move the mouse to an element and click it
-  type <tab> <ref> <text>       click into a field, clear it and type the text key by key
-  key <tab> <key>               Enter, Tab, Escape, Backspace, arrows, PageDown or one character
+  click <tab> <ref> [--double|--right]
+                                move the mouse to an element and click it, twice, or with the right button;
+                                says which tab or dialog the click opened
+  type <tab> <ref> <text> [--append]
+                                click into a field, clear it and type the text key by key; --append types after what it holds
+  key <tab> <key>               a key or a combination: Enter, Tab, Escape, Backspace, Delete, arrows, Home, End, PageUp,
+                                PageDown, Space, F1-F12 or one character, after Meta+ (Cmd), Control+ (Ctrl), Alt+ (Option)
+                                or Shift+, such as Meta+Enter, Meta+a, Shift+Tab, Control+Shift+k
+  select <tab> <ref> <option>   choose an option of a list by the text it shows or its value
+  upload <tab> <ref> <file>...  click the button or field that opens a file chooser and choose these files in it
+  drop <tab> <ref> <file>...    drag these files from the computer onto an element, such as a drop zone
+  download <tab> <ref> [-o <folder>]
+                                click and wait for the download; prints the file's path, in ~/Downloads unless -o
+  drag <tab> <ref> <ref>        press on an element, move onto another and release; drag and drop, reordering
+  drag <tab> <ref> --by <dx>,<dy>
+                                press and move by an offset in pixels: sliders, resizing, a map
+  paste <tab> [<ref>] --text <text> | <image file>
+                                put the text or image on the clipboard, paste it into the field with Cmd+V (Ctrl+V),
+                                then put back what the clipboard held
+  clipboard [-o <file>]         what was copied last: its text, or the path of a PNG of the image
+  wait <tab> [--text <text>|--gone <text>|--url <part>|--load] [--timeout <s>]
+                                until the text shows or goes away, the address holds the part, or the page has loaded;
+                                15 seconds unless --timeout, up to 50
+  dialog <tab> accept|dismiss [--text <answer>]
+                                answer an alert, confirm, prompt or leave-page dialog the page opened; --text answers a prompt
+  permission <tab> notifications|geolocation|camera|microphone|clipboard allow|block|ask
+                                what the site may use, for its origin; only when the person asked for it
   scroll <tab> [<ref>|up|down]  bring an element into view, or a screen down or up
   eval <tab> <js>               run JavaScript in the page, - reads it from stdin; prints the value as JSON
   shot <tab> [<ref>] [-o <file>] a PNG of what the tab shows, or of one element at full resolution; GeckIt's pointer is hidden unless --pointer
@@ -509,12 +548,94 @@ function tabOf(word: string | undefined): number {
   return id
 }
 
+const REF = /^\d+(\.\d+)?$/
+
 function refOf(word: string | undefined): string {
-  if (word === undefined || !/^\d+$/.test(word)) throw new Error('Give the ref from geckit browser read, the number in brackets.')
+  if (word === undefined || !REF.test(word)) throw new Error('Give the ref from geckit browser read, the number in brackets.')
   return word
 }
 
-const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow', '--profile', '--note', '--secret']
+function filesOf(words: readonly string[]): string[] {
+  if (words.length === 0) throw new Error('Give the files, by their paths on this computer.')
+  return words.map((one) => {
+    const path = resolve(one.startsWith('~/') ? join(homedir(), one.slice(2)) : one)
+    let file: boolean
+    try { file = statSync(path).isFile() } catch { file = false }
+    if (!file) throw new Error(`There is no file ${path}.`)
+    return path
+  })
+}
+
+const PERMISSION_KINDS = ['notifications', 'geolocation', 'camera', 'microphone', 'clipboard']
+
+/** The system clipboard, read and written with the platform's own tools, so the browser pastes from it as a person's would. */
+interface Clip { readonly text?: string; readonly png?: Buffer }
+
+function hasProgram(name: string): boolean { try { execFileSync('sh', ['-c', `command -v ${name}`], { stdio: 'ignore' }); return true } catch { return false } }
+
+export function readClipboard(platform: NodeJS.Platform = process.platform): Clip {
+  if (platform === 'darwin') {
+    const info = execFileSync('osascript', ['-e', 'clipboard info'], { encoding: 'utf8' })
+    if (/«class PNGf»|TIFF picture/.test(info)) {
+      const said = execFileSync('osascript', ['-e', 'the clipboard as «class PNGf»'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }).trim()
+      const hex = /«data PNGf([0-9A-F]+)»/i.exec(said)?.[1]
+      if (hex !== undefined) return { png: Buffer.from(hex, 'hex') }
+    }
+    return { text: execFileSync('pbpaste', { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
+  }
+  if (hasProgram('wl-paste')) {
+    const types = execFileSync('wl-paste', ['--list-types'], { encoding: 'utf8' }).split('\n')
+    if (types.includes('image/png')) return { png: execFileSync('wl-paste', ['--type', 'image/png'], { maxBuffer: 256 * 1024 * 1024 }) }
+    return { text: execFileSync('wl-paste', ['--no-newline'], { encoding: 'utf8' }) }
+  }
+  if (hasProgram('xclip')) {
+    const types = execFileSync('xclip', ['-selection', 'clipboard', '-t', 'TARGETS', '-o'], { encoding: 'utf8' }).split('\n')
+    if (types.includes('image/png')) return { png: execFileSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o'], { maxBuffer: 256 * 1024 * 1024 }) }
+    return { text: execFileSync('xclip', ['-selection', 'clipboard', '-o'], { encoding: 'utf8' }) }
+  }
+  throw new Error('Reading the clipboard here needs wl-paste or xclip.')
+}
+
+export function writeClipboard(clip: Clip, platform: NodeJS.Platform = process.platform): void {
+  if (platform === 'darwin') {
+    if (clip.png === undefined) { execFileSync('pbcopy', { input: clip.text ?? '' }); return }
+    const file = join(tmpdir(), `geckit-clip-${randomUUID()}.png`)
+    writeFileSync(file, clip.png)
+    try { execFileSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${file}") as «class PNGf»)`]) } finally { rmSync(file, { force: true }) }
+    return
+  }
+  const [program, ...args] = hasProgram('wl-copy') ? ['wl-copy', ...(clip.png === undefined ? [] : ['--type', 'image/png'])] : hasProgram('xclip') ? ['xclip', '-selection', 'clipboard', ...(clip.png === undefined ? [] : ['-t', 'image/png'])] : []
+  if (program === undefined) throw new Error('Writing the clipboard here needs wl-copy or xclip.')
+  execFileSync(program, args, { input: clip.png ?? clip.text ?? '' })
+}
+
+/** An image as PNG bytes for the clipboard: a PNG as it is, anything else converted by the system. */
+function pngOf(file: string): Buffer {
+  if (extname(file).toLowerCase() === '.png') return readFileSync(file)
+  const out = join(tmpdir(), `geckit-clip-${randomUUID()}.png`)
+  try {
+    if (process.platform === 'darwin') execFileSync('sips', ['-s', 'format', 'png', file, '--out', out], { stdio: 'ignore' })
+    else execFileSync('convert', [file, out], { stdio: 'ignore' })
+    return readFileSync(out)
+  } catch { throw new Error(`Could not turn ${basename(file)} into a PNG for the clipboard. Give a PNG.`) } finally { rmSync(out, { force: true }) }
+}
+
+/** Moves a finished download from GeckIt's folder to where the person keeps them, under its own name, never over another file. */
+function keepDownload(from: string, name: string, folder: string): string {
+  const safe = basename(name.replaceAll('\\', '/')) || 'download'
+  const extension = extname(safe)
+  for (const into of [folder, dirname(from)]) {
+    try { mkdirSync(into, { recursive: true }) } catch { continue }
+    for (let next = 0; next < 1000; next++) {
+      const target = join(into, next === 0 ? safe : `${safe.slice(0, safe.length - extension.length)} (${next})${extension}`)
+      if (existsSync(target)) continue
+      try { renameSync(from, target); return target } catch { break }
+    }
+  }
+  return from
+}
+
+const VALUED = ['--max', '-o', '--size', '--click', '--hover', '--key', '--for', '--slow', '--profile', '--note', '--secret', '--text', '--gone', '--url', '--timeout', '--by']
 
 function option(args: readonly string[], name: string): string | undefined {
   const at = args.indexOf(name)
@@ -526,9 +647,19 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
   if (what === undefined || what === 'help' || what === '--help') return { ok: true, said: BROWSER_HELP }
   if (what === 'profiles' && (rest[0] === 'create' || rest[0] === 'note')) return accountCommand(rest)
   if (what === 'profiles' && (rest[0] === 'export' || rest[0] === 'import')) return profileArchiveCommand(rest)
+  if (what === 'profiles' && rest[0] === 'device') return deviceCommand(rest)
   if (what === 'profiles' && rest.length > 0) return { ok: false, said: `Unknown profiles command ${rest[0]}.\n\n${BROWSER_HELP}` }
   if (what === 'profiles') return { ok: true, said: listProfiles() }
   if (what === 'signin') return rest.includes('--done') ? signInDone(rest.find((one) => !one.startsWith('--'))) : signInCommand(rest[0])
+  if (what === 'clipboard') {
+    try {
+      const clip = readClipboard()
+      if (clip.png === undefined) return { ok: true, said: clip.text === '' ? 'The clipboard is empty.' : clip.text ?? '' }
+      const file = resolve(option(rest, '-o') ?? join(tmpdir(), `geckit-clipboard-${Date.now()}.png`))
+      writeFileSync(file, clip.png)
+      return { ok: true, said: `An image: ${file}` }
+    } catch (error) { return { ok: false, said: error instanceof Error ? error.message : String(error) } }
+  }
   const conversation = requestingSession()
   if (what === 'start' || what === 'stop') {
     try {
@@ -553,17 +684,59 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
         case 'text': return { cmd: 'text', tab: tabOf(words[0]) }
         case 'read': return { cmd: 'read', tab: tabOf(words[0]) }
         case 'find': if (words.length < 2) throw new Error('Give the tab and what to find, in words.'); return { cmd: 'find', tab: tabOf(words[0]), query: words.slice(1).join(' ') }
-        case 'click': return { cmd: 'click', tab: tabOf(words[0]), ref: refOf(words[1]) }
+        case 'click': return { cmd: 'click', tab: tabOf(words[0]), ref: refOf(words[1]), ...(rest.includes('--double') ? { count: 2 } : {}), ...(rest.includes('--right') ? { button: 'right' } : {}) }
         case 'type': {
           const secret = option(rest, '--secret')
           if (secret !== undefined) { if (words.length < 2) throw new Error('Give the tab and the ref of the password field.'); return { cmd: 'secret-key', tab: tabOf(words[0]), ref: refOf(words[1]), secret } }
           if (words.length < 3) throw new Error('Give the tab, the ref and the text.')
-          return { cmd: 'type', tab: tabOf(words[0]), ref: refOf(words[1]), text: words.slice(2).join(' ') }
+          return { cmd: 'type', tab: tabOf(words[0]), ref: refOf(words[1]), text: words.slice(2).join(' '), ...(rest.includes('--append') ? { append: true } : {}) }
+        }
+        case 'select': if (words.length < 3) throw new Error('Give the tab, the ref of the list and the option.'); return { cmd: 'select', tab: tabOf(words[0]), ref: refOf(words[1]), text: words.slice(2).join(' ') }
+        case 'upload': case 'drop': return { cmd: what, tab: tabOf(words[0]), ref: refOf(words[1]), files: filesOf(words.slice(2)) }
+        case 'download': {
+          const folder = join(browserFolder(), 'downloads')
+          mkdirSync(folder, { recursive: true })
+          return { cmd: 'download', tab: tabOf(words[0]), ref: refOf(words[1]), folder }
+        }
+        case 'drag': {
+          const by = option(rest, '--by')
+          if (by !== undefined) {
+            const moved = /^(-?\d+),(-?\d+)$/.exec(by)
+            if (moved === null) throw new Error('Give --by as <dx>,<dy> in pixels, such as 120,0.')
+            return { cmd: 'drag', tab: tabOf(words[0]), ref: refOf(words[1]), offset: { x: Number(moved[1]), y: Number(moved[2]) } }
+          }
+          if (words[2] === undefined) throw new Error('Give the ref to drag onto, or --by <dx>,<dy>.')
+          return { cmd: 'drag', tab: tabOf(words[0]), ref: refOf(words[1]), to: refOf(words[2]) }
+        }
+        case 'paste': {
+          const ref = words[1] !== undefined && REF.test(words[1]) ? words[1] : undefined
+          const image = words[ref === undefined ? 1 : 2]
+          if (option(rest, '--text') === undefined && image === undefined) throw new Error('Give --text <text> or an image file to paste.')
+          if (image !== undefined) filesOf([image])
+          return { cmd: 'paste', tab: tabOf(words[0]), ...(ref === undefined ? {} : { ref }) }
+        }
+        case 'wait': {
+          const seconds = Number(option(rest, '--timeout') ?? 15)
+          if (!(seconds > 0 && seconds <= 50)) throw new Error('--timeout takes 1 to 50 seconds.')
+          const text = option(rest, '--text')
+          const gone = option(rest, '--gone')
+          const url = option(rest, '--url')
+          const load = rest.includes('--load') || (text === undefined && gone === undefined && url === undefined)
+          return { cmd: 'wait', tab: tabOf(words[0]), ms: seconds * 1000, load, ...(text === undefined ? {} : { text }), ...(gone === undefined ? {} : { gone }), ...(url === undefined ? {} : { url }) }
+        }
+        case 'dialog': {
+          if (words[1] !== 'accept' && words[1] !== 'dismiss') throw new Error('Give the tab and accept or dismiss.')
+          const text = option(rest, '--text')
+          return { cmd: 'dialog', tab: tabOf(words[0]), accept: words[1] === 'accept', ...(text === undefined ? {} : { text }) }
+        }
+        case 'permission': {
+          if (!PERMISSION_KINDS.includes(words[1] ?? '') || !['allow', 'block', 'ask'].includes(words[2] ?? '')) throw new Error(`Give the tab, one of ${PERMISSION_KINDS.join(', ')}, and allow, block or ask.`)
+          return { cmd: 'permission', tab: tabOf(words[0]), kind: words[1], setting: words[2] }
         }
         case 'key': if (words[1] === undefined) throw new Error('Give the tab and the key.'); return { cmd: 'key', tab: tabOf(words[0]), key: words[1] }
         case 'scroll': {
           const where = words[1] ?? 'down'
-          return /^\d+$/.test(where) ? { cmd: 'scroll', tab: tabOf(words[0]), ref: where } : { cmd: 'scroll', tab: tabOf(words[0]), by: where === 'up' ? -1 : 1 }
+          return REF.test(where) ? { cmd: 'scroll', tab: tabOf(words[0]), ref: where } : { cmd: 'scroll', tab: tabOf(words[0]), by: where === 'up' ? -1 : 1 }
         }
         case 'eval': {
           const code = words[1] === '-' ? readFileSync(0, 'utf8') : words.slice(1).join(' ')
@@ -619,8 +792,23 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
     if (asked.tab !== undefined && known.some((one) => one.label.startsWith(TEST_PREFIX) && one.tabs.includes(asked.tab as number)) && !scoped.some((one) => one.tabs.includes(asked.tab as number))) return { ok: false, said: 'This test tab belongs to another project or an unowned legacy browser.' }
     const target = known.length === 0 && !named?.startsWith(TEST_PREFIX) ? undefined : pickProfile(scoped, asked, named)
     if (typeof target === 'string') return { ok: false, said: target }
-    const reply = await ask(asked, browserFolder(), target?.pid)
+    let reply: Reply
+    if (asked.cmd === 'paste') {
+      const text = option(rest, '--text')
+      const image = words.slice(1).find((one) => !REF.test(one))
+      const saved = readClipboard()
+      writeClipboard(text !== undefined ? { text } : { png: pngOf(filesOf([image ?? ''])[0] ?? '') })
+      try { reply = await ask(asked, browserFolder(), target?.pid) } finally {
+        await new Promise((done) => setTimeout(done, 300))
+        writeClipboard(saved)
+      }
+    } else reply = await ask(asked, browserFolder(), target?.pid)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'Chrome refused.' }
+    if (asked.cmd === 'download') {
+      const got = reply.result as { guid: string; name: string; bytes?: number }
+      const file = keepDownload(join(browserFolder(), 'downloads', got.guid), got.name, resolve(option(rest, '-o') ?? join(homedir(), 'Downloads')))
+      return { ok: true, said: `Downloaded ${file}${got.bytes === undefined ? '' : `, ${got.bytes} bytes`}.` }
+    }
     if (asked.cmd === 'secret-key') {
       const field = reply.result as { origin: string; field: string; password: boolean; endpointKey: string; keyId: string }
       const sealed = await askSecrets({ op: 'fill', name: option(rest, '--secret'), origin: field.origin, field: field.field, password: field.password, endpointKey: field.endpointKey })
@@ -629,8 +817,18 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
       if (!typed.ok) return { ok: false, said: typed.error ?? 'Chrome refused.' }
       return { ok: true, said: `Typed ${option(rest, '--secret') ?? 'the secret'} into the field. Its value is not shown to you.` }
     }
-    return { ok: true, said: shown(what, rest, words, reply.result) }
+    return { ok: true, said: [shown(what, rest, words, reply.result), ...notes(words[0] ?? '', reply.result)].join('\n') }
   } catch (error) { return { ok: false, said: error instanceof Error ? error.message : String(error) } }
+}
+
+/** What an action set off besides itself: a tab or popup the page opened, or a dialog waiting for an answer. */
+export function notes(tab: string, result: unknown): string[] {
+  if (result === null || typeof result !== 'object') return []
+  const { opened, dialog } = result as { opened?: (Page & { id: number })[]; dialog?: { type: string; message: string; prompt?: string } }
+  return [
+    ...(opened ?? []).map((one) => `It opened tab ${one.id}: ${one.title || 'untitled'}  ${one.url}`),
+    ...(dialog === undefined ? [] : [`The page opened a ${dialog.type} dialog: "${dialog.message}"${dialog.prompt ? `, its answer field holding "${dialog.prompt}"` : ''}. Nothing else works in tab ${tab} until it is answered: geckit browser dialog ${tab} accept or dismiss.`]),
+  ]
 }
 
 interface Page { readonly title: string; readonly url: string }
@@ -638,7 +836,7 @@ interface Page { readonly title: string; readonly url: string }
 function shown(what: string, args: readonly string[], words: readonly string[], result: unknown): string {
   switch (what) {
     case 'status': { const known = profiles(); const version = (result as { version: string }).version; return `Connected, ${version.startsWith('Camoufox') ? version : `extension ${version}`}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
-    case 'pages': return (result as (Page & { id: number; active: boolean })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}`).join('\n')
+    case 'pages': return (result as (Page & { id: number; active: boolean; opener?: number })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}${one.opener === undefined ? '' : `  (opened by ${one.opener})`}`).join('\n')
     case 'open': case 'go': { const page = result as Page & { id: number }; return `${page.id}  ${page.title}  ${page.url}` }
     case 'close': return 'Closed.'
     case 'text': {
@@ -653,7 +851,15 @@ function shown(what: string, args: readonly string[], words: readonly string[], 
       const more = page.lines.length - limit
       return [`${page.title}`, page.url, ...(page.note === undefined ? [] : [page.note]), '', ...page.lines.slice(0, limit), ...(more > 0 ? [`... ${more} more lines, --all shows them, find narrows them`] : []), ...(page.lines.length === 0 ? ['Nothing matches.'] : [])].join('\n')
     }
-    case 'click': return `Clicked ${(result as { clicked: string }).clicked}.`
+    case 'click': return `${args.includes('--double') ? 'Double-clicked' : args.includes('--right') ? 'Right-clicked' : 'Clicked'} ${(result as { clicked: string }).clicked}.`
+    case 'select': return `Chose ${(result as { typed: string }).typed}.`
+    case 'upload': { const done = result as { chosen: number; into: string }; return `Chose ${done.chosen} file${done.chosen === 1 ? '' : 's'} in the file chooser of ${done.into}. Check the page shows them.` }
+    case 'drop': { const done = result as { dropped: number; onto: string }; return `Dropped ${done.dropped} file${done.dropped === 1 ? '' : 's'} onto ${done.onto}. Check the page shows them.` }
+    case 'drag': { const done = result as { dragged: string; to: string }; return `Dragged ${done.dragged} to ${done.to}.` }
+    case 'paste': { const done = result as { typed?: string }; return done.typed === undefined ? 'Pasted where the cursor was.' : `Pasted. The field now holds: ${done.typed}` }
+    case 'wait': { const done = result as Page & { waited: number }; return `There after ${(done.waited / 1000).toFixed(1)} s: ${done.title}  ${done.url}` }
+    case 'dialog': { const done = result as { answered: { type: string; message: string }; accept: boolean }; return `${done.accept ? 'Accepted' : 'Dismissed'} the ${done.answered.type} dialog "${done.answered.message}".` }
+    case 'permission': { const done = result as { kind: string; setting: string; origin: string }; return `${done.origin} ${done.setting === 'allow' ? 'may now use' : done.setting === 'block' ? 'may not use' : 'asks again for'} ${done.kind}.` }
     case 'type': return `The field now holds: ${(result as { typed: string }).typed}`
     case 'key': return `Pressed ${(result as { pressed: string }).pressed}.`
     case 'scroll': { const at = result as { y: number; height: number; viewport: number }; return `At ${at.y} of ${at.height}, a screen is ${at.viewport}.` }

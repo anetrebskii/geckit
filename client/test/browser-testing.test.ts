@@ -3,19 +3,49 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { pickProfile } from '../src/cli/browser'
-import { deleteTestProfile, extensionSource, makeTestAccount, pageScript, scrubSecrets, updateTestProfile, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
+import { HIDDEN_SCRIPT } from '../src/cli/hidden-page'
+import { deleteTestProfile, extensionSource, makeTestAccount, nearScript, pageScript, scrubSecrets, wheelStep, updateTestProfile, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
 
 describe('test browsers', () => {
   it('replaces filled secret values in what eval returns', () => {
     expect(scrubSecrets({ token: 'pw-12345', nested: ['x pw-12345 y', 'a"b\\c'] }, ['pw-12345', 'a"b\\c'])).toEqual({ token: '[secret]', nested: ['x [secret] y', '[secret]'] })
     expect(scrubSecrets('nothing', [])).toBe('nothing')
   })
+  it('keeps refs and secret fields in the isolated world, and finds an element only while it is on the page', () => {
+    const hidden = new Function(`${HIDDEN_SCRIPT}; const made = globalThis.geckitHidden; delete globalThis.geckitHidden; return made`)() as { next: number; secrets: Set<object>; find: (ref: string) => object | null; mark: (el: object, ref: string) => void }
+    const field = { isConnected: true }
+    hidden.mark(field, '7')
+    hidden.secrets.add(field)
+    expect(hidden.find('7')).toBe(field)
+    expect(hidden.find('8')).toBeNull()
+    field.isConnected = false
+    expect(hidden.find('7')).toBeNull()
+    expect(hidden.next).toBe(1)
+    const scope = new Function(`${pageScript()}; return geckitPage`)() as Record<string, (...args: unknown[]) => unknown>
+    Object.assign(globalThis, { geckitHidden: hidden, document: { querySelectorAll: () => [] } })
+    try {
+      expect(scope['pageOverlay']?.(false)).toEqual({})
+      expect(scope['pageSecrets']?.('hide')).toEqual({})
+      field.isConnected = true
+      expect(scope['pageSecrets']?.('values')).toEqual({ values: [] })
+    } finally { delete (globalThis as { geckitHidden?: unknown }).geckitHidden; delete (globalThis as { document?: unknown }).document }
+  })
   it('runs the extension own page functions, read out of background.js', () => {
     const scope = new Function(`${pageScript()}; return geckitPage`)() as Record<string, unknown>
-    expect(Object.keys(scope).sort()).toEqual(['pageBox', 'pageCenter', 'pageChoose', 'pageField', 'pageOverlay', 'pagePointer', 'pageRead', 'pageScroll', 'pageSecretField', 'pageSecrets', 'pageSlow', 'pageStyle', 'pageText', 'pageTyped'])
+    expect(Object.keys(scope).sort()).toEqual(['pageBox', 'pageCenter', 'pageChoose', 'pageField', 'pageGrab', 'pageHas', 'pageOverlay', 'pagePointer', 'pageRead', 'pageScroll', 'pageSecretField', 'pageSecrets', 'pageSlow', 'pageStyle', 'pageText', 'pageTyped'])
     expect(extensionSource('lzw')).toMatch(/^function lzw\(indexes\) \{[\s\S]*\n\}$/)
     expect(extensionSource('LZW_CODES')).toBe('const LZW_CODES = new Int32Array(4096 * 256)')
     expect(() => extensionSource('nothingLikeThis')).toThrow('background.js has no nothingLikeThis')
+  })
+  it('turns the wheel toward an element out of view, at most most of a screen, and stops once it is in view', () => {
+    const area = { left: 0, top: 0, right: 1280, bottom: 800 }
+    expect(wheelStep({ x: 640, y: 400, area })).toBe(0)
+    expect(wheelStep({ x: 640, y: 1000, area })).toBe(600)
+    expect(wheelStep({ x: 640, y: 5000, area })).toBe(640)
+    expect(wheelStep({ x: 640, y: -3000, area })).toBe(-640)
+    expect(wheelStep({ x: 640, y: 20, area })).toBe(-380)
+    expect(wheelStep({ x: 300, y: 450, area: { left: 100, top: 300, right: 600, bottom: 500 } })).toBe(0)
+    expect(() => new Function(`return ${nearScript('7"x')}`)).not.toThrow()
   })
   it('builds page markup without HTML strings, which a Trusted Types default policy rewrites', () => {
     expect(pageScript()).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML/)

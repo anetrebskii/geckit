@@ -203,3 +203,33 @@ The current working-tree Settings section is renamed "Web Browser". Profile mana
 ## Test-browser launch update - 2026-11-12
 
 Alex chose to keep Chrome for Testing and enable `--disable-blink-features=AutomationControlled` for every new test-browser process, with `navigator.webdriver` expected to be `false`. Reusing an already running browser does not change its launch arguments; the flag takes effect on its next launch. Persistent profiles continue to be reused. This does not establish that websites cannot detect automation. The decision, Camoufox alternative and verification evidence are recorded in [the browser automation note](../reports/browser-automation.md).
+
+## Looking like a person - 2026-11-19
+
+Test browsers are Camoufox. Spec: [specs/036-real-person-browser](../../specs/036-real-person-browser/spec.md).
+
+### What pages can no longer see
+
+Refs, filled-secret marks and GeckIt's pointer are kept in Camoufox's isolated world, which page scripts cannot read. A test page sees no `data-geckit-*` attribute, no `geckit-pointer` element, no GeckIt style and no GeckIt global. Screenshots keep the page's own caret instead of hiding it with styles on every field. Clicks, keys and the wheel arrive as trusted events from the real cursor and keyboard.
+
+GeckIt's pointer and the cover over a field filled with a secret are drawn onto `shot --pointer` and `record --pointer` pictures, not into the page. In the live view GeckIt draws its pointer over the picture where its last move left the real cursor, with the same arrow, for three seconds, as the pointer in pages used to rest; it moves with the same 360 ms easing, without motion when reduced motion is on, and goes as soon as the person moves their own mouse in the view.
+
+Two things still run in the page's main world for a moment, with no global left behind: `eval`, which is the person's or the agent's own script, and building a recording's sheet and GIF, because Firefox does not let the isolated world read pixel arrays.
+
+### uBlock Origin
+
+Every test browser starts with the uBlock Origin that comes inside Camoufox, as many real Firefox users have. There is no setting to turn it off; the person turns it off for a site in the browser, as any uBlock Origin user does. If a Camoufox has no bundled copy, the browser starts without it and the profile log says so.
+
+### Linux server
+
+A server is a Linux computer with neither `DISPLAY` nor `WAYLAND_DISPLAY`. There a test browser runs headed in its own Xvfb virtual display, the size of the desktop's screen, in a window of Firefox's default size, never in headless mode. Without Xvfb the start fails with the contract's message naming `sudo apt install xvfb`.
+
+On its first start a server makes one desktop identity, `~/.geckit/camoufox/device.json`: an Ubuntu desktop with Intel graphics, a common screen size, core count, the server's own language and time zone, built-in audio and camera devices, the espeak voices a Linux Firefox lists, and the fonts installed on the server that such a desktop has. It is never replaced; a damaged file stops the start rather than making a new device.
+
+Profiles that existed before the update keep what they showed, so signed-in sites see no new device. `geckit browser profiles` marks them `as before (profiles device <name> --desktop)`, and `profiles device <name> --desktop` moves one to the server desktop after warning that sites will see a new device. New profiles show the server desktop.
+
+On macOS, Windows and a Linux computer with a screen, a test browser shows that computer as it is.
+
+### Words
+
+All wording is in [contracts/cli.md](../../specs/036-real-person-browser/contracts/cli.md).

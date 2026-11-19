@@ -190,6 +190,9 @@
   --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
   --quick: 90ms;
   --settle: 180ms;
+  --travel: 360ms;
+  --pointer-fill: #000;
+  --pointer-edge: #fff;
 }
 
 * {
@@ -16254,6 +16257,28 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
 @keyframes caret-blink {
   50% {
     opacity: 0;
+  }
+}
+
+.live-view-pointer {
+  position: absolute;
+  width: 20px;
+  height: 24px;
+  margin: -2px 0 0 -2px;
+  pointer-events: none;
+  transition: left var(--travel) var(--ease), top var(--travel) var(--ease);
+}
+
+.live-view-pointer path {
+  fill: var(--pointer-fill);
+  stroke: var(--pointer-edge);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-view-pointer {
+    transition: none;
   }
 }
 

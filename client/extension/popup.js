@@ -18,6 +18,15 @@ const DONE = {
   record: (d) => `Recorded ${((d ?? 1500) / 1000).toFixed(1)} s`,
   close: () => 'Closed the tab',
   pages: () => 'Listed tabs',
+  select: (d) => `Chose${quoted(d)}`,
+  paste: () => 'Pasted',
+  upload: (d) => `Chose files for${quoted(d)}`,
+  drop: (d) => `Dropped files on${quoted(d)}`,
+  download: (d) => `Downloaded${quoted(d)}`,
+  drag: (d) => `Dragged${quoted(d)}`,
+  wait: () => 'Waited for the page',
+  dialog: (d) => `${d === 'accept' ? 'Accepted' : 'Dismissed'} a dialog`,
+  permission: (d) => `Changed ${d ?? 'a'} permission`,
 }
 const DOING = {
   open: (d) => `Opening ${d ?? 'a tab'}`,
@@ -36,6 +45,15 @@ const DOING = {
   record: () => 'Recording',
   close: () => 'Closing the tab',
   pages: () => 'Listing tabs',
+  select: () => 'Choosing an option',
+  paste: () => 'Pasting',
+  upload: () => 'Choosing files',
+  drop: () => 'Dropping files',
+  download: () => 'Downloading',
+  drag: () => 'Dragging',
+  wait: () => 'Waiting for the page',
+  dialog: () => 'Answering a dialog',
+  permission: () => 'Changing a permission',
 }
 const say = (table, cmd, detail) => (table[cmd] ?? (() => cmd))(detail)
 const lower = (text) => text.charAt(0).toLowerCase() + text.slice(1)

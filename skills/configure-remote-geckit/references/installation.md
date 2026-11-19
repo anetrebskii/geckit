@@ -26,6 +26,10 @@ Create the intended service account and private data directory, owned by that ac
 
 The vault uses macOS Keychain, Linux Secret Service or Windows DPAPI. A headless Linux installation without a working backend needs a persistent `GECKIT_VAULT_KEY`: 32 random bytes, base64 encoded, supplied through a protected service-manager environment file. Generate it directly into that file without returning the key to the conversation. Use mode 0600 and restrict access to the service manager/operator. Preserve an existing key; replacing it makes sealed credentials unreadable. Do not place it in source, command arguments, logs or exported settings.
 
+## Test browsers on a server
+
+On a Linux server without a screen, GeckIt's test browsers run in an Xvfb virtual display and present one desktop identity made at the first start. They need `xvfb`; for the fonts such a desktop has, also `fonts-dejavu-core`, `fonts-liberation` and `fonts-noto-core`. Install these only when the person asks for test browsers on that server, with `sudo apt install xvfb fonts-dejavu-core fonts-liberation fonts-noto-core`. Keep `~/.geckit/camoufox/device.json` with the service data: a lost or replaced file is a new device for every signed-in site.
+
 ## Linux systemd example
 
 This template assumes the `geckit` account, `/home/geckit`, a compatible bundle in `/opt/geckit/service`, private `/var/lib/geckit`, and a provisioned `/var/lib/geckit.env`. Replace those paths together with the actual deployment paths. Omit the EnvironmentFile line only when an OS vault backend is available.
