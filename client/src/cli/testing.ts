@@ -245,7 +245,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   let frameCounter = 0
   const expecting = new Set<Page>()
   const say = (): void => {
-    writeFileSync(`${card}.part`, JSON.stringify({ pid: process.pid, label, tabs: [...targets.keys()], focused: 0, t: Date.now() }))
+    writeFileSync(`${card}.part`, JSON.stringify({ pid: process.pid, label, tabs: [...targets.keys()], focused: 0, t: Date.now(), ...(launch.display === undefined ? {} : { display: launch.display }) }))
     renameSync(`${card}.part`, card)
   }
   const end = (): never => { rmSync(card, { force: true }); unlock(); process.exit(0) }
@@ -411,6 +411,15 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     if (field.select === true) return inRef(id, ref, 'pageChoose', text)
     await moveTo(id, ref, 'type')
     const page = targetOf(id)
+    const at = frameOf(id, ref)
+    const focused = (): Promise<boolean> => at.frame.evaluate(`globalThis.geckitHidden?.find(${JSON.stringify(at.ref)}) === document.activeElement`).then((yes) => yes === true, () => true)
+    for (let clicks = 1; clicks <= 3; clicks++) {
+      const started = Date.now()
+      while (!await focused() && Date.now() - started < 500) await wait(50)
+      // Firefox on Linux can take the first click into a frame as only leaving the field that had focus.
+      if (await focused() || clicks === 3) break
+      await mouse(page, await pointAt(id, ref), true)
+    }
     if (append) await toEnd(page)
     else if (field.filled === true) { await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.press('Backspace') }
     const pause = Math.min(140, 30_000 / Math.max(1, text.length))
@@ -587,6 +596,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       case 'paste': {
         const page = targetOf(id)
         if (request.ref != null) { await inRef(id, request.ref, 'pageField', false); await moveTo(id, request.ref, 'type'); await toEnd(page) } else await inPage(id, 'pagePointer', null, 'key')
+        if (await page.evaluate('document.hasFocus()') !== true) await page.bringToFront()
         await page.keyboard.press('ControlOrMeta+V')
         return request.ref == null ? { pasted: true } : inRef(id, request.ref, 'pageTyped')
       }

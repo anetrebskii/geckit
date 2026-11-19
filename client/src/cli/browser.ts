@@ -41,7 +41,7 @@ export const setBrowserBridgeOn = (on: boolean): void => { bridgeOn = on }
 export interface Reply { readonly ok: boolean; readonly result?: unknown; readonly error?: string }
 
 /** One Chrome profile with the extension: each starts its own host, which says here who it is and which tabs are its own. */
-interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number }
+interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number; readonly display?: string }
 
 /** Chrome's own folders for native messaging hosts of the current user, for the browsers present here. */
 function hostFolders(platform: NodeJS.Platform, root: string): string[] {
@@ -573,7 +573,10 @@ interface Clip { readonly text?: string; readonly png?: Buffer }
 
 function hasProgram(name: string): boolean { try { execFileSync('sh', ['-c', `command -v ${name}`], { stdio: 'ignore' }); return true } catch { return false } }
 
-export function readClipboard(platform: NodeJS.Platform = process.platform): Clip {
+/** A test browser on a server's virtual display keeps its clipboard there, which only xclip given that display reaches. */
+const onDisplay = (display: string | undefined): { readonly env?: NodeJS.ProcessEnv } => display === undefined ? {} : { env: { ...process.env, DISPLAY: display } }
+
+export function readClipboard(platform: NodeJS.Platform = process.platform, display?: string): Clip {
   if (platform === 'darwin') {
     const info = execFileSync('osascript', ['-e', 'clipboard info'], { encoding: 'utf8' })
     if (/«class PNGf»|TIFF picture/.test(info)) {
@@ -583,20 +586,22 @@ export function readClipboard(platform: NodeJS.Platform = process.platform): Cli
     }
     return { text: execFileSync('pbpaste', { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
   }
-  if (hasProgram('wl-paste')) {
+  if (display === undefined && hasProgram('wl-paste')) {
     const types = execFileSync('wl-paste', ['--list-types'], { encoding: 'utf8' }).split('\n')
     if (types.includes('image/png')) return { png: execFileSync('wl-paste', ['--type', 'image/png'], { maxBuffer: 256 * 1024 * 1024 }) }
     return { text: execFileSync('wl-paste', ['--no-newline'], { encoding: 'utf8' }) }
   }
   if (hasProgram('xclip')) {
-    const types = execFileSync('xclip', ['-selection', 'clipboard', '-t', 'TARGETS', '-o'], { encoding: 'utf8' }).split('\n')
-    if (types.includes('image/png')) return { png: execFileSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o'], { maxBuffer: 256 * 1024 * 1024 }) }
-    return { text: execFileSync('xclip', ['-selection', 'clipboard', '-o'], { encoding: 'utf8' }) }
+    const own = onDisplay(display)
+    let types: string[]
+    try { types = execFileSync('xclip', ['-selection', 'clipboard', '-t', 'TARGETS', '-o'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], ...own }).split('\n') } catch { return { text: '' } }
+    if (types.includes('image/png')) return { png: execFileSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o'], { maxBuffer: 256 * 1024 * 1024, ...own }) }
+    return { text: execFileSync('xclip', ['-selection', 'clipboard', '-o'], { encoding: 'utf8', ...own }) }
   }
   throw new Error('Reading the clipboard here needs wl-paste or xclip.')
 }
 
-export function writeClipboard(clip: Clip, platform: NodeJS.Platform = process.platform): void {
+export function writeClipboard(clip: Clip, platform: NodeJS.Platform = process.platform, display?: string): void {
   if (platform === 'darwin') {
     if (clip.png === undefined) { execFileSync('pbcopy', { input: clip.text ?? '' }); return }
     const file = join(tmpdir(), `geckit-clip-${randomUUID()}.png`)
@@ -604,9 +609,9 @@ export function writeClipboard(clip: Clip, platform: NodeJS.Platform = process.p
     try { execFileSync('osascript', ['-e', `set the clipboard to (read (POSIX file "${file}") as «class PNGf»)`]) } finally { rmSync(file, { force: true }) }
     return
   }
-  const [program, ...args] = hasProgram('wl-copy') ? ['wl-copy', ...(clip.png === undefined ? [] : ['--type', 'image/png'])] : hasProgram('xclip') ? ['xclip', '-selection', 'clipboard', ...(clip.png === undefined ? [] : ['-t', 'image/png'])] : []
+  const [program, ...args] = display === undefined && hasProgram('wl-copy') ? ['wl-copy', ...(clip.png === undefined ? [] : ['--type', 'image/png'])] : hasProgram('xclip') ? ['xclip', '-selection', 'clipboard', ...(clip.png === undefined ? [] : ['-t', 'image/png'])] : []
   if (program === undefined) throw new Error('Writing the clipboard here needs wl-copy or xclip.')
-  execFileSync(program, args, { input: clip.png ?? clip.text ?? '' })
+  execFileSync(program, args, { input: clip.png ?? clip.text ?? '', stdio: ['pipe', 'ignore', 'ignore'], timeout: 10_000, ...onDisplay(display) })
 }
 
 /** An image as PNG bytes for the clipboard: a PNG as it is, anything else converted by the system. */
@@ -653,7 +658,7 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
   if (what === 'signin') return rest.includes('--done') ? signInDone(rest.find((one) => !one.startsWith('--'))) : signInCommand(rest[0])
   if (what === 'clipboard') {
     try {
-      const clip = readClipboard()
+      const clip = readClipboard(process.platform, process.env['DISPLAY'] === undefined ? profiles().find((one) => one.display !== undefined)?.display : undefined)
       if (clip.png === undefined) return { ok: true, said: clip.text === '' ? 'The clipboard is empty.' : clip.text ?? '' }
       const file = resolve(option(rest, '-o') ?? join(tmpdir(), `geckit-clipboard-${Date.now()}.png`))
       writeFileSync(file, clip.png)
@@ -796,11 +801,12 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
     if (asked.cmd === 'paste') {
       const text = option(rest, '--text')
       const image = words.slice(1).find((one) => !REF.test(one))
-      const saved = readClipboard()
-      writeClipboard(text !== undefined ? { text } : { png: pngOf(filesOf([image ?? ''])[0] ?? '') })
+      const display = typeof target === 'object' ? target?.display : undefined
+      const saved = readClipboard(process.platform, display)
+      writeClipboard(text !== undefined ? { text } : { png: pngOf(filesOf([image ?? ''])[0] ?? '') }, process.platform, display)
       try { reply = await ask(asked, browserFolder(), target?.pid) } finally {
         await new Promise((done) => setTimeout(done, 300))
-        writeClipboard(saved)
+        writeClipboard(saved, process.platform, display)
       }
     } else reply = await ask(asked, browserFolder(), target?.pid)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'Chrome refused.' }
