@@ -1,4 +1,4 @@
-import { createPrivateKey, sign } from 'node:crypto'
+import { createHash, createPrivateKey, sign } from 'node:crypto'
 import { connect } from 'node:http2'
 
 import { initializeApp } from 'firebase-admin/app'
@@ -40,6 +40,28 @@ export const ice = onRequest({ region: 'europe-west1', cors: true, maxInstances:
 
 const TOKEN = /^[0-9a-f]{64,200}$/
 const BOX = /^[A-Za-z0-9_-]{1,3000}$/
+const routeFor = (db, token) => db.collection('pushRoutes').doc(createHash('sha256').update(token).digest('hex'))
+
+export const pushRoute = onRequest({ region: 'europe-west1', cors: 'capacitor://localhost', maxInstances: 5 }, async (request, response) => {
+  const { token, room, revision } = request.body ?? {}
+  const validRoom = room === null || (typeof room === 'string' && ROOM.test(room))
+  if (request.method !== 'POST' || typeof token !== 'string' || !TOKEN.test(token) || !validRoom || !Number.isSafeInteger(revision) || revision <= 0) {
+    response.status(400).json({ error: 'bad ask' })
+    return
+  }
+  try {
+    const db = getFirestore()
+    const route = routeFor(db, token)
+    await db.runTransaction(async (transaction) => {
+      const previous = await transaction.get(route)
+      if (revision > (previous.get('revision') ?? 0)) transaction.set(route, { room, revision })
+    })
+    response.status(204).end()
+  } catch {
+    response.status(503).json({ error: 'push route unavailable' })
+  }
+})
+
 const TOPIC = 'com.anetrebskii.geckit'
 // Apple takes a signed token for up to an hour and refuses one made again more often than every twenty minutes.
 const SIGNED_FOR = 40 * 60_000
@@ -99,7 +121,7 @@ function toApple(where, token, payload) {
 // What Google and Apple carry is only that there is something: the notice itself is sealed with the key in the QR code, and the phone opens it.
 export const push = onRequest({ region: 'europe-west1', maxInstances: 5 }, async (request, response) => {
   const { room, token, box } = request.body ?? {}
-  if (request.method !== 'POST' || !ROOM.test(room ?? '') || !TOKEN.test(token ?? '') || !BOX.test(box ?? '')) {
+  if (request.method !== 'POST' || typeof room !== 'string' || !ROOM.test(room) || typeof token !== 'string' || !TOKEN.test(token) || typeof box !== 'string' || !BOX.test(box)) {
     response.status(400).json({ error: 'bad ask' })
     return
   }
@@ -110,6 +132,11 @@ export const push = onRequest({ region: 'europe-west1', maxInstances: 5 }, async
   }
   const payload = { aps: { alert: { title: 'GeckIt', body: 'A conversation has something for you' }, sound: 'default', 'mutable-content': 1 }, room, box }
   try {
+    const route = await routeFor(getFirestore(), token).get()
+    if (route.exists && route.get('room') !== room) {
+      response.json({ sent: false, gone: false })
+      return
+    }
     // A token from a build run from Xcode is only known to Apple's sandbox.
     let sent = { status: 0, reason: '' }
     for (const one of where) {

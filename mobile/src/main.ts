@@ -26,6 +26,7 @@ import type { Dictate, Level, Voice } from '../../client/src/renderer/src/dictat
 import type { PickedVideo, Picking } from '../../client/src/renderer/src/picked'
 import { readPairing, roomOf, SIGNAL } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
+import { forgetPushComputer, selectPushComputer, setPushRouteToken, syncPushRoute } from './push-route'
 import icon from './icon.png'
 
 // Obsolete: the old phone pairing's storage, forgotten once a computer opens through its service.
@@ -249,8 +250,10 @@ async function startPush(): Promise<void> {
 void PushNotifications.addListener('registration', ({ value }) => {
   // Kept for a server's workspace that is opened after iOS said it.
   ;(window as { geckitPushToken?: string }).geckitPushToken = value
+  setPushRouteToken(value)
   for (const phone of everyPhone()) phone.pushToken(value)
 }).catch(() => undefined)
+window.addEventListener('online', () => void syncPushRoute())
 
 // A conversation to open once the Chat window is up, or after switching to the Mac it is on.
 const SHOW = 'show'
@@ -666,6 +669,7 @@ const SILENT = 3000
 void App.addListener('pause', () => { for (const phone of everyPhone()) phone.away(true) })
 
 void App.addListener('resume', () => {
+  void syncPushRoute()
   for (const phone of everyPhone()) if (phone !== phoneCalls()) phone.away(false)
   const link = current
   if (link === undefined || !started) return
@@ -775,11 +779,20 @@ async function serverView(invitation = '', reopen = true): Promise<void> {
     localStorage.setItem(LAST, server)
     if (pendingScreen !== undefined) localStorage.setItem(SCREENS, JSON.stringify({ ...screens(), [server]: pendingScreen }))
     pendingScreen = undefined
+  }
+  const connected = (server: string): void => {
+    if (Capacitor.getPlatform() === 'ios') void selectPushComputer(server)
     // Obsolete: what the old pairing kept, forgotten once a computer is open through its service.
     if (localStorage.getItem(KEPT) !== null || localStorage.getItem(MACS) !== null) {
       localStorage.removeItem(PAIR_AGAIN_KEY)
       localStorage.removeItem(MACS)
       localStorage.removeItem(KEPT)
+    }
+    if (Capacitor.getPlatform() === 'ios') void keepKeys()
+  }
+  const forgotten = (id: string): void => {
+    if (Capacitor.getPlatform() === 'ios') {
+      forgetPushComputer(id)
       void keepKeys()
     }
   }
@@ -788,6 +801,8 @@ async function serverView(invitation = '', reopen = true): Promise<void> {
     ...(signIn === undefined ? { invitation } : { signIn }),
     ...(last === undefined ? {} : { initialServer: last }),
     onWorkspace: opened,
+    onConnected: connected,
+    onForgotten: forgotten,
     // The phone has no computer of its own to go back to: closing shows the saved computers.
     onClose: () => { sessionStorage.setItem(SERVER_VIEW, LIST); root.unmount(); location.reload() },
     scan: async () => {

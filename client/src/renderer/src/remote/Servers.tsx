@@ -15,11 +15,20 @@ import { SwipeRow } from '../chat/SwipeRow'
 import { Menu } from '../ui/Menu'
 import { computerName } from './Computer'
 import '../chat/phone-home.css'
-interface ServersProps { readonly onClose: () => void; readonly onWorkspace?: (open: boolean, server?: string) => void; readonly scan?: () => Promise<string | undefined>; readonly invitation?: string; readonly initialServer?: string; readonly signIn?: SignInLink }
+interface ServersProps {
+  readonly onClose: () => void
+  readonly onWorkspace?: (open: boolean, server?: string) => void
+  readonly onConnected?: (id: RemoteServer['id']) => void
+  readonly onForgotten?: (id: RemoteServer['id']) => void
+  readonly scan?: () => Promise<string | undefined>
+  readonly invitation?: string
+  readonly initialServer?: string
+  readonly signIn?: SignInLink
+}
 const COMMAND = 'geckit pair'
 const FAILED = ['error', 'expired', 'reused', 'revoked', 'incompatible']
 const ON_PHONE = (): boolean => document.documentElement.classList.contains('phone')
-export function Servers({ onClose, onWorkspace, scan, invitation = '', initialServer, signIn }: ServersProps): React.JSX.Element {
+export function Servers({ onClose, onWorkspace, onConnected, onForgotten, scan, invitation = '', initialServer, signIn }: ServersProps): React.JSX.Element {
   const [signing, setSigning] = useState(signIn)
   const [code, setCode] = useState(invitation)
   const [saved, setSaved] = useState<readonly SavedServer[]>()
@@ -56,6 +65,7 @@ export function Servers({ onClose, onWorkspace, scan, invitation = '', initialSe
     setOpening(trust?.full === true ? trust.server : undefined)
     setRound((one) => one + 1)
     const mine = ++attempt.current
+    let connected = false
     connection.current = connectRemote(pairing, 'GeckIt client', (next) => {
       if (mine !== attempt.current) return
       setView(next)
@@ -64,6 +74,10 @@ export function Servers({ onClose, onWorkspace, scan, invitation = '', initialSe
       if (next.snapshot !== undefined) {
         if (!next.trust?.full) { setAdding(true); setView({ state: 'error', message: 'Update GeckIt on the server and run geckit pair for a new connection code.' }); return }
         const id = next.snapshot.server.id
+        if (!connected && next.state === 'connected') {
+          connected = true
+          onConnected?.(id)
+        }
         const wanted = naming.current
         naming.current = ''
         setServer(next.snapshot.server); setSnapshot(next.snapshot); setAdding(false); setCode(''); setLabel('')
@@ -72,7 +86,7 @@ export function Servers({ onClose, onWorkspace, scan, invitation = '', initialSe
       }
     }, trust)
     setWorkspace(connection.current)
-  }, [disconnect, refreshSaved])
+  }, [disconnect, onConnected, refreshSaved])
   useEffect(() => {
     void savedServers().then((items) => {
       setSaved(items)
@@ -106,7 +120,11 @@ export function Servers({ onClose, onWorkspace, scan, invitation = '', initialSe
   }
   const copy = (): void => { void navigator.clipboard.writeText(COMMAND).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }) }
   const rename = (id: string): void => { const value = draft; setEditing(undefined); void nameServer(id, value).then(refreshSaved) }
-  const remove = (id: string): void => { setRemoving(undefined); if (target === id) disconnect(); void forgetServer(id).then(refreshSaved) }
+  const remove = (id: string): void => {
+    setRemoving(undefined)
+    if (target === id) disconnect()
+    void forgetServer(id).then(() => { onForgotten?.(id); refreshSaved() })
+  }
   const labelled = (one: RemoteServer): RemoteServer => { const found = saved?.find((item) => item.server.id === one.id); return found === undefined ? one : { ...one, name: shownName(found) } }
   const busy = ['connecting', 'pending', 'reconnecting'].includes(view.state)
   const failed = FAILED.includes(view.state)
