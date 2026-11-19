@@ -22,6 +22,8 @@ export type ManagerConfig = Required<Pick<SessionMessage, 'provider'>> & Pick<Se
   readonly instructions: string
   readonly delegation: 'automatic' | 'approve'
   readonly intake?: ManagerIntakeConfig
+  /** Context size in tokens at which GeckIt compacts a Manager conversation; 0 is off. Absent is the default. */
+  readonly compactAt?: number
 }
 
 export type ManagerInstructionsResult = Pick<ManagerConfig, 'instructions'> & { readonly guideError?: string }
@@ -37,6 +39,8 @@ export interface ManagerProvider {
   readonly provider: SessionProvider
   readonly available: boolean
   readonly reason?: string
+  /** GeckIt can compact a Manager conversation on this assistant. */
+  readonly compacts?: boolean
 }
 
 /** The language Manager answers a person in, from what they last wrote: docs/ux/manager-voice.md. */
@@ -50,6 +54,7 @@ export const MANAGER_LABEL_VALUE = 300
 /** One of Manager's conversations with the outside world: GeckIt itself, a Telegram chat, a Slack thread. */
 export interface ManagerThread {
   readonly historyPending?: ManagerHistoryRequest
+  readonly hold?: ManagerHold
   readonly historyRevision?: string | undefined
   readonly id: string
   /** The channel's name, such as "Telegram" or "Slack"; none for GeckIt. */
@@ -119,7 +124,11 @@ export interface ManagerView extends Pick<ManagerThread, 'historyPending' | 'his
   readonly requests?: readonly ManagerQueuedRequest[]
   readonly threads?: readonly ManagerThread[]
   readonly error?: string
+  /** Why GeckIt's own thread is holding its queue: compacting its conversation, or waiting for a message after a usage limit reset. */
+  readonly hold?: ManagerHold
 }
+
+export type ManagerHold = 'compacting' | 'limit-reset'
 
 export type ManagerHistoryRequest = Pick<ManagerThread, 'id' | 'session' | 'historyRevision'> & { readonly action: 'clear' | 'delete' }
 export type ManagerHistoryBoundary = Pick<ManagerThread, 'id' | 'at'> & Pick<ManagerHistoryRequest, 'action'> & { readonly revision: string }
@@ -151,7 +160,14 @@ export interface ManagerApi {
   on(said: (view: ManagerView) => void): () => void
 }
 
-export const DEFAULT_MANAGER_CONFIG: ManagerConfig = { enabled: false, provider: 'claude', chatModel: '', instructions: '', delegation: 'automatic' }
+export const DEFAULT_COMPACT_AT = 240_000
+export const COMPACT_AT_MIN = 50_000
+export const COMPACT_AT_MAX = 2_000_000
+export const COMPACT_AT_INVALID = 'Choose 0 (off) or a number from 50,000 to 2,000,000.'
+export function validCompactAt(value: unknown): value is number {
+  return value === 0 || typeof value === 'number' && Number.isInteger(value) && value >= COMPACT_AT_MIN && value <= COMPACT_AT_MAX
+}
+export const DEFAULT_MANAGER_CONFIG: ManagerConfig = { enabled: false, provider: 'claude', chatModel: '', instructions: '', delegation: 'automatic', compactAt: DEFAULT_COMPACT_AT }
 
 export interface ManagerDecision {
   readonly session?: ChatSession['id']

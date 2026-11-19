@@ -244,3 +244,33 @@ stateDiagram-v2
 - Slack built in, turned on with its values in Settings: section 2.
 - Not covered: Slack and Telegram parity for files and voice in channel threads; Telegram's existing attachment handling keeps working in its threads, Slack's built-in sends text only in the first version.
 - Not covered yet: Telegram groups. Telegram pairs one private chat today, so it has one thread; a group needs its own access rules before it can be its own thread. The thread key is already the chat, so a group becomes a thread of its own once access allows it.
+
+## 12. Keeping Manager cheap (2026-11-19)
+
+Spec: `specs/037-manager-token-economy/`. Why: on 2026-11-19 a headless GeckIt spent the five-hour window of a Claude Max 5x plan with nobody writing. Every turn of Manager rereads its whole conversation, which had grown to about 760,000 tokens, and it was woken every 20 seconds by a worker polling a search, and again by itself at the limit reset.
+
+### What wakes Manager about a worker
+
+A worker it tracks wakes it when the worker finishes a turn, fails, asks a question Manager must answer, is blocked, becomes unread, or its goal result changes, and when one of its background commands asks for a decision. A background command that starts or ends while the worker keeps working wakes nothing; the worker's own finish reports the commands' final state. An update names each background command by its description or the first 120 characters of its command, never the whole command or its output.
+
+### Grouping
+
+Worker updates that wait in a thread's queue are delivered together as one turn, oldest first, one line per worker with its latest state. A message from a person, a channel, a schedule or a CLI result is never merged into the group and keeps its own turn and reply.
+
+### Compaction
+
+Setting, in the Manager page's Setup, below the assistant:
+
+| Element | Wording |
+|---|---|
+| Label | Compact conversation at |
+| Control | A menu: Off, 100,000, 160,000, 240,000, 400,000 and 600,000 tokens; a value set another way (CLI, configuration import) is listed too. On the phone the row is "Compact At" and opens the same choices as a sheet titled "Compact Conversation At". |
+| Note | Manager summarises its conversation when it reaches this size, so each answer rereads less. Default 240,000 tokens. |
+| Assistant without compaction | <Assistant name> can't compact conversations. Manager's conversation keeps growing. |
+| Invalid value | Choose 0 (off) or a number from 50,000 to 2,000,000. |
+
+When a thread's turn ends with its context at or above the setting, and the thread is idle, GeckIt asks the assistant to compact that conversation. While it runs, the thread's state reads Compacting, "Summarising its conversation to keep it short.", and messages for the thread wait. After it, the next message Manager receives starts with its saved record of operations, decisions and tracked workers, as after a restart. A failed compaction says nothing, leaves the thread working, and is not tried again until another turn has ended. Nothing is posted to a channel.
+
+### After a usage limit
+
+At the reset time, Manager does not wake by itself. Messages people sent during the limit are answered then, as the limit reply promised, in one turn that also reconciles the interrupted work. When nobody wrote, the state reads Limit reset, "Limit reset. Continues with the next message.", worker updates wait, and Manager continues with the next message or Retry. Manager does not schedule its own continuation for the reset. Nothing is posted to a channel at the reset.

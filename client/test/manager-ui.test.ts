@@ -102,10 +102,26 @@ describe('Manager assistant availability', () => {
 describe('Manager setup', () => {
   const fresh: ManagerView = { ...ready, config: DEFAULT_MANAGER_CONFIG, state: 'off' }
 
-  it('is one list of the assistant, model and status, with no steps, delegation choice or switch', () => {
+  it('says when compacting and when a usage limit has reset', () => {
+    const on: ManagerView = { ...fresh, config: { ...DEFAULT_MANAGER_CONFIG, enabled: true }, state: 'idle' }
+    expect(managerLabel({ ...on, hold: 'compacting' })).toBe('Summarising its conversation to keep it short.')
+    expect(managerLabel({ ...on, hold: 'limit-reset' })).toBe('Limit reset. Continues with the next message.')
+  })
+
+  it("says when the assistant can't compact conversations", () => {
+    const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue({ ...fresh, providers: [{ provider: 'claude', available: true, compacts: false }] })
+    const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
+    expect(markup).toContain("Claude Code can&#x27;t compact conversations. Manager&#x27;s conversation keeps growing.")
+    hook.mockRestore()
+  })
+
+  it('is one list of the assistant, model, compaction size and status, with no steps, delegation choice or switch', () => {
     const hook = vi.spyOn(managerHook, 'useManager').mockReturnValue(fresh)
     const markup = renderToStaticMarkup(createElement(ManagerSettings, { settings: DEFAULT_SETTINGS }))
-    expect(markup.match(/class="manager-setting"/g)).toHaveLength(3)
+    expect(markup.match(/class="manager-setting"/g)).toHaveLength(4)
+    expect(markup).toContain('<span>Compact conversation at</span>')
+    expect(markup).toContain('240,000 tokens')
+    expect(markup).toContain('so each answer rereads less')
     expect(markup).not.toContain('manager-step')
     expect(markup).not.toContain('Delegation policy')
     expect(markup).not.toContain('Enable Manager')

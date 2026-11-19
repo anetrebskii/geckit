@@ -129,7 +129,7 @@ Use event names and diagnostic counts/status/timing. Do not log prompts, answers
 | Area | Methods / fields |
 |---|---|
 | Identity | `LlmProviderInfo`, manifest fields above |
-| Capabilities | `available`, `localOnly`, `subscriptionOnly`, `images`, `remoteControl`, `nativeGoals`, `idleMs`, `waitForExit` |
+| Capabilities | `available`, `localOnly`, `subscriptionOnly`, `images`, `remoteControl`, `nativeGoals`, `idleMs`, `waitForExit`, optional `compacts` |
 | Account/catalog | `account`, `program`, `models`, `limits` |
 | History | `list`, `search`, `hidden`, `has`, `read`, `links`, `delete` |
 | Conversations | `create`, `fork`, `hold`, `rename`, `remote` |
@@ -209,6 +209,17 @@ The live `Driver` may implement `inject(text, images?, before?): Promise<void>`,
 Resolve when the transport accepts the message; this does not claim the model has already applied it. Reject when no turn is active, input is unsafe, or submission fails. Preserve text, images and preceding command output. Do not start a replacement turn, interrupt work, bypass a native approval, or emit a synthetic `begun`/`ended` for this operation. GeckIt keeps the selected queued entry until acceptance, disables competing queue actions during submission, and retains its position on failure. There is no automatic retry or stop-and-restart fallback.
 
 Builtin Codex uses `turn/steer` with `expectedTurnId`. Builtin Claude submits stream-json user input with `priority: "next"`; Claude applies it after current tool calls. The updated external Claude tmux library types input and presses Enter while work continues. Provider libraries without `inject` remain compatible with API v1 and keep the existing queue behavior.
+
+### Compaction
+
+Optional. Manager compacts its own conversation when its context reaches the Manager setting "Compact conversation at" (default 240,000 tokens). To take part, a library sets `compacts: true` and its live `Driver` implements `compact(): Promise<void>`:
+
+- GeckIt calls it only while the conversation is idle and is a Manager conversation.
+- Summarise the conversation in place, keeping the same conversation ID.
+- Resolve once compaction has finished and the conversation is idle again; reject with a short reason when it was refused or failed. The conversation must stay usable either way.
+- Emit no `begun`/`ended` signals for it and send no model message on GeckIt's behalf beyond what compaction itself needs. The next turn's `spend.used` reports the smaller context.
+
+A library without `compacts`, or with it and no `compact` on its running driver, is never asked; the Manager setting then says the assistant can't compact conversations. Do not rely on GeckIt sending the text `/compact`: it does that only for its built-in Claude Code and Codex.
 
 ### Instructions and lifecycle
 

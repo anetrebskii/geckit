@@ -1857,7 +1857,7 @@ describe('Manager session', () => {
     const manager = f.reload()
     await manager.configure({ enabled: true })
     expect((await manager.view()).config.provider).toBe('plugin:manager-test')
-    expect((await manager.view()).providers).toEqual([{ provider: 'plugin:manager-test', available: true }])
+    expect((await manager.view()).providers).toEqual([{ provider: 'plugin:manager-test', available: true, compacts: true }])
     expect(plugin.create).toHaveBeenCalledTimes(1)
     expect(f.made).toHaveLength(0)
   })
@@ -3251,5 +3251,114 @@ describe('Manager and a running task checklist', () => {
     await vi.waitFor(() => expect(f.sent.some((one) => one.id === started.id)).toBe(true))
     f.finish(started.id, 'Started')
     await vi.waitFor(() => expect(f.sent.filter((one) => one.id === started.id).map((one) => one.text)).toContain('/goal Tests pass'))
+  })
+})
+
+describe('Manager token economy', () => {
+  const settle = async (): Promise<void> => { for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setImmediate(resolve)) }
+  const updates = (f: Awaited<ReturnType<typeof fixture>>, main: string): readonly string[] => f.sent.filter((one) => one.id === main && one.text.includes('[Worker update')).map((one) => one.text)
+  const running = (id: string, status: 'running' | 'completed', command = 'while true; do python3 find.py; sleep 20; done') => ({ kind: 'task' as const, task: { id, kind: 'local_bash', what: '', command, status, started: 1, ...(status === 'completed' ? { ended: 2 } : {}) } })
+
+  it('does not wake Manager when a working worker finishes a background command, and labels commands when it ends', async () => {
+    const f = await fixture()
+    const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Find leads' }, 'manager', 'leads')
+    await settle()
+    const before = updates(f, main).length
+    for (const status of ['running', 'completed'] as const) { f.hear(worker, { items: [], gone: [], signals: [running('poll', status)] }); await settle() }
+    expect(updates(f, main)).toHaveLength(before)
+    f.finish(worker, 'Found 35 companies.')
+    await vi.waitFor(() => expect(updates(f, main)).toHaveLength(before + 1))
+    const last = updates(f, main).at(-1) ?? ''
+    expect(last).toContain('"label":"while true; do python3 find.py; sleep 20; done"')
+    expect(last).not.toContain('"command"')
+  })
+
+  it('answers updates that arrive while it works in one turn', async () => {
+    const f = await fixture()
+    const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
+    const workers = [await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'One' }, 'manager', 'one'), await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Two' }, 'manager', 'two'), await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Three' }, 'manager', 'three')]
+    await settle()
+    await f.manager.sendApp({ id: 'app:busy', text: 'Plan the week', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Plan the week'))).toBe(true))
+    const before = updates(f, main).length
+    for (const worker of workers) { f.finish(worker, 'Done.'); await settle() }
+    expect(updates(f, main)).toHaveLength(before)
+    f.finish(main, 'Planned.')
+    await vi.waitFor(() => expect(updates(f, main)).toHaveLength(before + 1))
+    await settle()
+    expect(updates(f, main)).toHaveLength(before + 1)
+    for (const worker of workers) expect(updates(f, main).at(-1)).toContain(worker)
+  })
+
+  it('compacts its conversation at the threshold, holds messages meanwhile and restores its record after', async () => {
+    const f = await fixture()
+    const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
+    await f.manager.sendApp({ id: 'app:first', text: 'First request', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('First request'))).toBe(true))
+    f.hear(main, { items: [{ kind: 'theirs', id: 'answer:first', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 300_000 }, { kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(1))
+    expect((await f.manager.view()).hold).toBe('compacting')
+    await f.manager.sendApp({ id: 'app:second', text: 'Second request', session: main })
+    await settle()
+    expect(f.sent.some((one) => one.id === main && one.text.includes('Second request'))).toBe(false)
+    f.hear(main, { items: [{ kind: 'theirs', id: 'answer:compact', text: 'Compacted.' }], gone: [], signals: [{ kind: 'spend', used: 20_000 }, { kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Second request'))).toBe(true))
+    const second = f.sent.find((one) => one.id === main && one.text.includes('Second request'))?.text ?? ''
+    expect(second).toContain('[Conversation compacted.')
+    expect(f.sent.filter((one) => one.id === main && one.input === '/compact')).toHaveLength(1)
+  })
+
+  it('does not compact when the setting is off, and refuses an invalid threshold', async () => {
+    const f = await fixture()
+    const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
+    await expect(f.manager.configure({ compactAt: 1000 })).rejects.toThrow('Choose 0 (off)')
+    expect((await f.manager.configure({ compactAt: 0 })).config.compactAt).toBe(0)
+    await f.manager.sendApp({ id: 'app:off', text: 'Request', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Request'))).toBe(true))
+    f.hear(main, { items: [{ kind: 'theirs', id: 'answer:off', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 900_000 }, { kind: 'ended', how: 'done' }] })
+    await settle()
+    expect(f.sent.some((one) => one.input === '/compact')).toBe(false)
+  })
+
+  it('does not try again after a failed compaction until another turn ends', async () => {
+    const f = await fixture()
+    const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
+    await f.manager.sendApp({ id: 'app:fail', text: 'Request', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Request'))).toBe(true))
+    f.hear(main, { items: [{ kind: 'theirs', id: 'answer:fail', text: 'Done.' }], gone: [], signals: [{ kind: 'spend', used: 300_000 }, { kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(f.sent.filter((one) => one.input === '/compact')).toHaveLength(1))
+    f.hear(main, { items: [], gone: [], signals: [{ kind: 'ended', how: 'failed', text: 'Compaction failed.' }] })
+    await settle()
+    f.manager.observeSessions(await f.sessions.allForManager([f.root]))
+    await settle()
+    expect(f.sent.filter((one) => one.input === '/compact')).toHaveLength(1)
+    const view = await f.manager.view()
+    expect(view.error).toBeUndefined()
+    expect(view.hold).toBeUndefined()
+  })
+
+  it('waits after a usage limit resets when only worker updates are queued, and goes on with the next message', async () => {
+    const f = await fixture()
+    const main = (await f.manager.configure({ enabled: true })).session?.id ?? ''
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Search' }, 'manager', 'search')
+    await f.manager.sendApp({ id: 'app:limit', text: 'Start the search', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Start the search'))).toBe(true))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const resetsAt = Date.now() + 60 * 60_000
+    f.hear(main, { items: [], gone: [], signals: [{ kind: 'ended', how: 'limit', resetsAt }] })
+    await settle()
+    f.finish(worker, 'Found them.')
+    await settle()
+    const sentBefore = f.sent.filter((one) => one.id === main).length
+    await vi.advanceTimersByTimeAsync(resetsAt - Date.now() + 20_000)
+    await settle()
+    expect(f.sent.filter((one) => one.id === main)).toHaveLength(sentBefore)
+    const view = await f.manager.view()
+    expect(view.hold).toBe('limit-reset')
+    expect(view.error).toBeUndefined()
+    await f.manager.sendApp({ id: 'app:after', text: 'How is it going?', session: main })
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('How is it going?'))).toBe(true))
+    expect(f.sent.find((one) => one.id === main && one.text.includes('How is it going?'))?.text).toContain('usage limit reset')
   })
 })

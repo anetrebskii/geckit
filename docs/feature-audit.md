@@ -2,6 +2,16 @@
 
 This is the supporting audit. The concise, user-approved feature list is [docs/features.md](features.md).
 
+## Manager token economy - 2026-11-19 (working tree, not released)
+
+Spec `specs/037-manager-token-economy/`, prompted by the EntechBot incident (Manager on Claude Max 5x spending the plan with nobody using it). The features.md entry awaits Alex's approval.
+
+- Milestone-only wake: `isMilestone` and `updateLine` in `client/src/main/manager-economy.ts`, used by `observeSessions` in `client/src/main/manager.ts`; a background command ending while its worker keeps working no longer wakes Manager, and updates carry a 120-character task label, never the command text. Tests: `client/test/manager-economy.test.ts`, `client/test/manager.test.ts` "Manager token economy".
+- Grouped updates: `groupUpdates` and `mergeUpdates`, delivered as one turn by `#dispatch`.
+- Compaction: `compactAt` in `ManagerConfig` (default 240,000, 0 off, 50,000 to 2,000,000) in `client/src/shared/manager.ts`, validated in `Manager.configure`, the CLI patch schema and configuration import; `#maybeCompact` sends `/compact` through `Sessions.compactManager` once per completed turn and restores the durable record on the next message. Assistant contract: `LlmProvider.compacts` and optional `Driver.compact()` (`docs/provider-plugins.md`, Compaction). Setup row "Compact conversation at" (phone "Compact At") and the Compacting state in `client/src/renderer/src/chat/Manager.tsx` and `manager-label.ts`.
+- Limit reset: `#limitReset` waits for a real message when only worker updates are waiting, then delivers it first with a reconciliation line; Manager instructions forbid scheduling its own continuation.
+- Verified: typecheck, changed-file lint, full vitest (2233 passed); renderer preview reviewed on desktop and phone in light and dark. Unverified: live `/compact` against real Claude Code and Codex CLIs, and a live limit reset.
+
 ## Release notes items - 2026-11-17 (Development v1.258.0)
 
 Alex asked to save the week's release notes to the feature list (Claude session https://claude.ai/code/session_012rPUxX3xkeMuaWdDwyQJEJ). Release status was checked with `git merge-base --is-ancestor <commit> v1.258.0` and `gh release list`; v1.258.0 is a Development pre-release, not promoted to Stable.

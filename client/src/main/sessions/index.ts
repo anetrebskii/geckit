@@ -399,6 +399,8 @@ interface Live {
   back: NodeJS.Timeout | undefined
   /** When the plan's limit that stopped it ends, in milliseconds, while it stands. */
   limitUntil: number | undefined
+  /** A Manager compaction turn in hand: its end settles this instead of reaching Manager as an answer. */
+  compaction?: { readonly resolve: () => void; readonly reject: (error: Error) => void } | undefined
   stopping: NodeJS.Timeout | undefined
   /** Set with /goal, as the tool's file last said or as it was just sent. */
   goal: SessionGoal | undefined
@@ -749,6 +751,44 @@ export class Sessions {
     this.#note(id, { title: 'Manager', mode: options.mode, here: true, question: true, stays: true, managerPrompt: prompt, ...(options.model === undefined ? {} : { model: options.model }) })
     this.#changed()
     return id
+  }
+
+  /** Whether an assistant can compact a conversation when GeckIt asks. */
+  compacts(family: SessionProvider): boolean {
+    const backend = this.#providers.plugins.get(family) ?? (family === 'codex' ? this.#providers.codex : family === 'claude' ? this.#providers.stream : undefined)
+    return backend?.compacts === true
+  }
+
+  /** Whether GeckIt can compact this conversation: its assistant says so, through its driver or as a built-in that takes `/compact`. */
+  canCompact(id: string): boolean {
+    const family = providerOf(id)
+    if (!this.compacts(family)) return false
+    return family === 'claude' || family === 'codex' || this.#live.get(id)?.driver?.compact !== undefined
+  }
+
+  /** Compacts a Manager conversation while it is idle: the driver's own `compact`, or for the built-in assistants a `/compact` turn whose end is not Manager's answer. */
+  async compactManager(id: string): Promise<void> {
+    if (!this.isManager(id)) throw new Error('That is not a Manager session.')
+    if (this.#suspendedManagers.has(id)) throw new Error('This Manager session is paused or archived.')
+    if (this.busy(id)) throw new Error('Manager is working.')
+    const family = providerOf(id)
+    const backend = this.#provider(family)
+    if (backend.compacts !== true) throw new Error(`${backend.name} can't compact conversations.`)
+    const live = this.#live.get(id)
+    if (live?.driver?.compact !== undefined) { await live.driver.compact(); return }
+    if (family !== 'claude' && family !== 'codex') throw new Error(`${backend.name} can't compact conversations.`)
+    const root = live?.root ?? this.#rows.get(id)?.root
+    if (root === undefined) throw new Error('Manager session is not open.')
+    const message: SessionMessage = { session: id, root, provider: family, mode: live?.mode ?? 'auto', text: '/compact' }
+    let settle: { readonly resolve: () => void; readonly reject: (error: Error) => void } | undefined
+    const ended = new Promise<void>((resolve, reject) => { settle = { resolve, reject } })
+    this.#managerMessages.add(message)
+    const sending = this.send(message)
+    const target = this.#live.get(id)
+    if (target === undefined || settle === undefined) { await sending; throw new Error('Manager session is not open.') }
+    target.compaction = settle
+    try { await sending } catch (error) { target.compaction = undefined; throw error }
+    return ended
   }
 
   updateManager(id: string, prompt: string): void {
@@ -2662,7 +2702,7 @@ export class Sessions {
     const managerPrompt = this.#deps.notes.all()[live.id]?.managerPrompt
     if (live.driver === undefined) throw new Error('The assistant disconnected before dispatch.')
     try {
-      live.driver.send(managerPrompt === undefined ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
+      live.driver.send(managerPrompt === undefined || saying.text === '/compact' ? saying.text : managerContext(managerPrompt, saying.text), saying.images, told.flatMap((one) => one.blocks))
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       this.#finishDelivery(delivery, live.id, 'failed', { reason })
@@ -3818,7 +3858,13 @@ export class Sessions {
       this.#tellItems({ id: live.id, items, ...(heard.gone.length > 0 ? { gone: heard.gone } : {}) })
     }
     for (const signal of heard.signals) this.#signal(live, signal)
-    if (this.#deps.notes.all()[live.id]?.managerPrompt !== undefined && heard.signals.some((signal) => signal.kind === 'ended' && signal.how === 'done')) {
+    const ended = heard.signals.find((signal) => signal.kind === 'ended')
+    if (live.compaction !== undefined && ended?.kind === 'ended') {
+      const settle = live.compaction
+      live.compaction = undefined
+      if (ended.how === 'done') settle.resolve()
+      else settle.reject(new Error(ended.text ?? `Compaction ended: ${ended.how}.`))
+    } else if (this.#deps.notes.all()[live.id]?.managerPrompt !== undefined && ended?.kind === 'ended' && ended.how === 'done') {
       const all = [...live.items.values()]
       const last = all.findLastIndex((item) => item.kind === 'mine')
       this.#managerOutput?.(live.id, all.slice(last + 1).flatMap((item) => item.kind === 'theirs' ? [item.text] : []).join('\n\n'))

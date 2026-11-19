@@ -44,6 +44,8 @@ export interface LlmProvider extends LlmProviderInfo {
   readonly nativeGoals: boolean
   readonly idleMs: number
   readonly waitForExit: boolean
+  /** It can compact a held conversation when GeckIt asks: the driver's `compact`, or for the built-in assistants a `/compact` turn. Absent is no. */
+  readonly compacts?: boolean
   account(): Promise<ClaudeAccount>
   program(): Promise<ClaudeProgram | undefined>
   models(root?: string): Promise<ClaudeModel[] | undefined>
@@ -95,6 +97,7 @@ export function llmProvider(deps: ProviderDeps, family: 'claude' | 'codex'): Llm
     nativeGoals: true,
     idleMs: 10 * 60_000,
     waitForExit: true,
+    compacts: true,
     account: () => deps.codex?.account() ?? Promise.resolve({ provider: 'codex', here: false, signedIn: undefined }),
     program: async () => (await deps.codex?.account())?.program,
     models: (root) => root !== undefined && isRemote(root) ? Promise.resolve(undefined) : deps.codex?.models() ?? Promise.resolve(undefined),
@@ -147,6 +150,7 @@ export function llmProvider(deps: ProviderDeps, family: 'claude' | 'codex'): Llm
     nativeGoals: false,
     idleMs: 10 * 60_000,
     waitForExit: false,
+    compacts: true,
     account: () => (deps.claudeAccount ?? claudeAccount)(),
     program: () => (deps.claudeProgram ?? claudeProgram)(),
     models: (root) => (deps.claudeModels ?? claudeModels)(root),

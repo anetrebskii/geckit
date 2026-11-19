@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS } from '../shared/api'
 import type { Settings } from '../shared/api'
 import type { Configuration } from '../shared/configuration'
 import { LOCAL_SETTINGS, PREFERENCE_SECTIONS } from '../shared/configuration'
-import { DEFAULT_MANAGER_CONFIG } from '../shared/manager'
+import { DEFAULT_MANAGER_CONFIG, validCompactAt } from '../shared/manager'
 import { recurrenceError } from '../shared/recurrence'
 import { configuration, parseConfiguration, writeJson } from './configuration'
 
@@ -82,6 +82,7 @@ export function importableConfiguration(text: string): Configuration {
       if (json.manager[key] !== undefined && typeof json.manager[key] !== typeof value) throw new Error(INVALID)
     }
     if (object(json.manager) && json.manager.intake !== undefined && !object(json.manager.intake)) throw new Error(INVALID)
+    if (object(json.manager) && json.manager.compactAt !== undefined && !validCompactAt(json.manager.compactAt)) throw new Error(INVALID)
     return config
   } catch { throw new Error(INVALID) }
 }

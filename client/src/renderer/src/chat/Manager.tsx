@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { ClaudeModel, Settings } from '../../../shared/api'
+import { DEFAULT_COMPACT_AT } from '../../../shared/manager'
 import type { ManagerConfig, ManagerView } from '../../../shared/manager'
 import { llmProviderInfo } from '../../../shared/providers'
 import { Menu, Picker } from '../ui/Menu'
@@ -9,6 +10,11 @@ import type { Choice } from '../ui/Menu'
 import { Cell } from './PhoneKit'
 import { ManagerFlow } from './ManagerFlow'
 import { managerLabel, useManager } from './useManager'
+
+const COMPACT_SIZES = [100_000, 160_000, DEFAULT_COMPACT_AT, 400_000, 600_000]
+const COMPACT_NOTE = 'Manager summarises its conversation when it reaches this size, so each answer rereads less. Default 240,000 tokens.'
+const TOKENS = new Intl.NumberFormat('en-US')
+const compactLabel = (tokens: number): string => tokens === 0 ? 'Off' : `${TOKENS.format(tokens)} tokens`
 
 const PROJECTS = 'Works in all projects, current and future, across every profile. Telegram, Slack and Discord reach Manager from Settings, Channels.'
 
@@ -52,11 +58,15 @@ function useManagerSetup(settings: Settings) {
   const pickModel = (value: string): void => { if (value !== model) configure({ chatModel: value }) }
   const modelName = model === '' ? 'Provider default' : models?.find((one) => one.value === model)?.name ?? model
   const assistantName = llmProviderInfo(provider, 'stream', settings.providerPlugins).name
-  return { view, provider, model, loading, modelError, saving, confirm, setConfirm, error, setError, run, modelUnavailable, available, choices, modelChoices, pickProvider, pickModel, modelName, assistantName, retryModels: () => setReload((count) => count + 1) }
+  const compactAt = view?.config.compactAt ?? DEFAULT_COMPACT_AT
+  const compactChoices: Choice[] = [0, ...new Set([...COMPACT_SIZES, ...(compactAt === 0 ? [] : [compactAt])])].sort((a, b) => a - b).map((tokens) => ({ value: String(tokens), label: compactLabel(tokens) }))
+  const pickCompact = (value: string): void => { if (Number(value) !== compactAt) void run(() => window.geckit.manager.configure({ compactAt: Number(value) })) }
+  const compactNote = available?.compacts === false ? `${assistantName} can't compact conversations. Manager's conversation keeps growing.` : COMPACT_NOTE
+  return { compactAt, compactChoices, pickCompact, compactNote, view, provider, model, loading, modelError, saving, confirm, setConfirm, error, setError, run, modelUnavailable, available, choices, modelChoices, pickProvider, pickModel, modelName, assistantName, retryModels: () => setReload((count) => count + 1) }
 }
 
 export function ManagerSettings({ settings, embedded = false }: { readonly settings: Settings; readonly embedded?: boolean }): React.JSX.Element {
-  const { view, provider, model, loading, modelError, saving, confirm, setConfirm, error, setError, run, modelUnavailable, available, choices, modelChoices, pickProvider, pickModel, modelName, assistantName, retryModels } = useManagerSetup(settings)
+  const { compactAt, compactChoices, pickCompact, compactNote, view, provider, model, loading, modelError, saving, confirm, setConfirm, error, setError, run, modelUnavailable, available, choices, modelChoices, pickProvider, pickModel, modelName, assistantName, retryModels } = useManagerSetup(settings)
   if (view === undefined) return <p role="status">Loading Manager...</p>
   return <section className="manager-settings">
     {embedded ? null : <><h3>Manager</h3><p>Give Manager work in the app or a connected channel. It delegates work to separate sessions and brings back results.</p></>}
@@ -64,6 +74,7 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
     <div className="manager-group">
       <div className="manager-setting"><span>Assistant</span><Picker title="Manager assistant" chosen={provider} label={assistantName} choices={choices} explained disabled={saving} onPick={pickProvider} /></div>
       <div className="manager-setting"><span>Model</span><Picker title="Manager model" chosen={model} label={loading ? 'Loading...' : modelName} disabled={saving || loading} choices={modelChoices} onPick={pickModel} /></div>
+      <div className="manager-setting"><span>Compact conversation at</span><Picker title="Compact conversation at" chosen={String(compactAt)} label={compactLabel(compactAt)} disabled={saving} choices={compactChoices} onPick={pickCompact} /></div>
       <div className="manager-setting">
         <span>Status</span>
         <span className="manager-status">
@@ -75,6 +86,7 @@ export function ManagerSettings({ settings, embedded = false }: { readonly setti
       </div>
     </div>
     <p className="manager-note">New Manager conversations use this. Each conversation keeps the model it was given.</p>
+    <p className="manager-note">{compactNote}</p>
     {modelError ? <p className="manager-message" role="status">Could not load models. <button type="button" className="quiet small" onClick={retryModels}>Try again</button></p> : null}
     {modelUnavailable ? <p className="manager-error" role="alert">This model is unavailable. Choose another model.</p> : null}
     {available?.available === false ? <p className="manager-error" role="alert">{available.reason}</p> : null}
@@ -119,14 +131,15 @@ function ManagerConfirm({ busy, working, error, onCancel, onConfirm }: { readonl
 
 /** Manager's setup on the phone, as grouped rows: the assistant and model it runs on, each picked from a sheet, and how it stands. */
 export function PhoneManagerSetup({ settings }: { readonly settings: Settings }): React.JSX.Element {
-  const { view, provider, model, loading, modelError, saving, confirm, setConfirm, error, setError, run, modelUnavailable, available, choices, modelChoices, pickProvider, pickModel, modelName, assistantName, retryModels } = useManagerSetup(settings)
-  const [picking, setPicking] = useState<'assistant' | 'model'>()
+  const { compactAt, compactChoices, pickCompact, compactNote, view, provider, model, loading, modelError, saving, confirm, setConfirm, error, setError, run, modelUnavailable, available, choices, modelChoices, pickProvider, pickModel, modelName, assistantName, retryModels } = useManagerSetup(settings)
+  const [picking, setPicking] = useState<'assistant' | 'model' | 'compact'>()
   if (view === undefined) return <div className="phone-group" aria-busy="true"><div className="phone-cell"><span className="skeleton-line" /></div><div className="phone-cell"><span className="skeleton-line" /></div></div>
   const trouble = modelUnavailable ? 'This model is unavailable. Choose another model.' : available?.available === false ? available.reason ?? '' : available === undefined ? (view.providers.length === 0 ? 'Enable an assistant in Assistants on your computer to run Manager.' : 'This assistant is disabled. Choose an enabled assistant.') : confirm === undefined ? error || view.error || '' : ''
   return <>
     <div className="phone-group">
       <Cell label="Assistant" value={assistantName} onPress={() => { if (!saving) setPicking('assistant') }} />
       <Cell label="Model" value={loading ? 'Loading…' : modelName} onPress={() => { if (!saving && !loading) setPicking('model') }} />
+      <Cell label="Compact At" value={compactLabel(compactAt)} onPress={() => { if (!saving) setPicking('compact') }} />
       <Cell label="Status" value={saving ? 'Saving…' : managerLabel(view)} />
       {view.state === 'paused' ? <Cell label="Resume" accent onPress={() => { void run(() => window.geckit.manager.resume()) }} /> : null}
       {view.state === 'blocked' ? <Cell label="Try Again" accent onPress={() => { void run(() => window.geckit.manager.retry()) }} /> : null}
@@ -134,7 +147,8 @@ export function PhoneManagerSetup({ settings }: { readonly settings: Settings })
     </div>
     <div className="phone-note">{trouble !== '' ? trouble : modelError ? 'Could not load models.' : 'New Manager conversations use this. Each conversation keeps the model it was given.'}</div>
     {modelError ? <div className="phone-group"><Cell label="Load Models Again" accent onPress={retryModels} /></div> : null}
-    {picking === undefined ? null : <Menu anchor={new DOMRect()} title={picking === 'assistant' ? 'Manager Assistant' : 'Manager Model'} chosen={picking === 'assistant' ? provider : model} choices={picking === 'assistant' ? choices : modelChoices} explained onPick={picking === 'assistant' ? pickProvider : pickModel} onClose={() => setPicking(undefined)} />}
+    <div className="phone-note">{compactNote}</div>
+    {picking === undefined ? null : <Menu anchor={new DOMRect()} title={picking === 'assistant' ? 'Manager Assistant' : picking === 'compact' ? 'Compact Conversation At' : 'Manager Model'} chosen={picking === 'assistant' ? provider : picking === 'compact' ? String(compactAt) : model} choices={picking === 'assistant' ? choices : picking === 'compact' ? compactChoices : modelChoices} explained onPick={picking === 'assistant' ? pickProvider : picking === 'compact' ? pickCompact : pickModel} onClose={() => setPicking(undefined)} />}
     {confirm === undefined ? null : <Menu anchor={new DOMRect()} title={view.state === 'working' || view.session?.state === 'working' ? 'Restart the Manager session? Its current turn stops. Task history is kept and workers continue.' : 'Restart the Manager session? Task history is kept and workers continue.'} choices={[{ value: 'restart', label: 'Restart Session', danger: true }]} onPick={() => { void run(() => window.geckit.manager.restart()) }} onClose={() => setConfirm(undefined)} />}
   </>
 }
