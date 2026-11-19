@@ -32,6 +32,20 @@ describe('what a client keeps for itself', () => {
     expect(one.own(server)).toMatchObject({ profile: '', chatProjects: [], chatAll: true })
   })
 
+  it('keeps page selections independent for clients of the same server', () => {
+    const one = clientOwn('desktop:one:server:a:own')
+    const other = clientOwn('desktop:two:server:a:own')
+    const shared = { ...server, chatPlace: 'settings' }
+    expect(one.own(shared).chatPlace).toBe('tasks')
+    expect(one.take({ chatPlace: 'manager' })).toEqual({ here: { chatPlace: 'manager' }, there: {} })
+    expect(other.own(shared).chatPlace).toBe('tasks')
+    other.take({ chatPlace: 'team' })
+    expect(other.own(shared).chatPlace).toBe('team')
+    expect(one.own({ ...shared, chatPlace: 'browsers' }).chatPlace).toBe('manager')
+    expect(clientOwn('desktop:one:server:a:own').own(shared).chatPlace).toBe('manager')
+    expect(clientOwn('desktop:one:server:b:own').own(shared).chatPlace).toBe('tasks')
+  })
+
   it('is counted under an id of its own, made the first time and forgotten when counting is turned off', () => {
     const one = clientOwn('server:a:own')
     const first = one.client()

@@ -1,7 +1,8 @@
+import { DEFAULT_SETTINGS } from './api'
 import type { Settings } from './api'
 
 /** What a client keeps for itself rather than the computer: how it looks, which projects it shows, and what it sends. */
-export const OWN = ['theme', 'profile', 'chatProjects', 'chatAll', 'analytics', 'analyticsAsked', 'sendErrors', 'client'] as const
+export const OWN = ['theme', 'profile', 'chatProjects', 'chatAll', 'chatPlace', 'analytics', 'analyticsAsked', 'sendErrors', 'client'] as const
 
 /**
  * What a client on a link keeps for itself rather than the computer it reads: how it looks, which projects it shows,
@@ -20,7 +21,7 @@ export function clientOwn(key: string) {
     /** The computer's settings as this client shows them. */
     own: (settings: Settings): Settings => {
       last = settings
-      const kept = { ...settings, analytics: false, analyticsAsked: false, sendErrors: false, client: '', ...mine }
+      const kept = { ...settings, chatPlace: DEFAULT_SETTINGS.chatPlace, analytics: false, analyticsAsked: false, sendErrors: false, client: '', ...mine }
       const gone = mine.profile !== undefined && mine.profile !== '' && !settings.profiles.some((one) => one.id === mine.profile)
       return gone ? { ...kept, profile: '', chatProjects: [], chatAll: true } : kept
     },

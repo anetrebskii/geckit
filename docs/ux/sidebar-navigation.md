@@ -130,6 +130,8 @@ stateDiagram-v2
 
 Every place reaches every other place by its item; the diagram draws only the paths through Tasks to stay legible.
 
+Each client remembers its sidebar page for the computer it is viewing. A remote desktop starts on Tasks until it has chosen a page for that computer. Selecting a page leaves other connected clients on their current pages, including when they receive a settings update or reconnect.
+
 ```mermaid
 stateDiagram-v2
   direction LR
