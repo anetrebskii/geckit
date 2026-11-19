@@ -278,10 +278,12 @@ it('does not silently upgrade an existing scoped device to full control', async 
 
 it('sends a remote client the Manager view with its conversations cut to what Manager draws', () => {
   const heavy: ChatSession = { id: 'codex:w', root: '/p', title: 'Worker', stands: 'Working', state: 'working', at: 5, here: true, mode: 'auto', status: 'blocked', moves: Array.from({ length: 500 }, (_, at) => ({ status: 'progress' as const, at })), tasks: [{ id: 't', kind: 'local_bash', what: 'x'.repeat(5000), status: 'running', started: 1 }], queued: [{ id: 'q', text: 'y'.repeat(5000), images: 0 }] }
-  const backing: ChatSession = { ...heavy, id: 'manager-1', manager: true, model: 'opus', retryNotice: 'Retrying' }
+  const backing: ChatSession = { ...heavy, id: 'manager-1', manager: true, model: 'opus', retryNotice: 'Retrying', spend: { used: 163_000, window: 1_000_000, cost: 12.864 } }
   const lean = forRemote({ appChat: true, queued: 0, config: DEFAULT_MANAGER_CONFIG, state: 'working', session: backing, workers: [heavy], activity: [{ id: 'a', at: 1, command: ['x'], state: 'done' }], providers: [], decisions: [], threads: [{ id: 'main', title: 'Manager', provider: 'claude', model: '', labels: {}, session: backing.id, conversation: backing, state: 'working', at: 1, owns: [heavy.id] }] })
   expect(lean.workers[0]).toEqual({ id: 'codex:w', root: '/p', title: 'Worker', stands: 'Working', state: 'working', at: 5, here: true, mode: 'auto', status: 'blocked' })
   expect(lean.session).toMatchObject({ id: 'manager-1', state: 'working', model: 'opus', retryNotice: 'Retrying', manager: true })
+  expect(lean.session?.spend).toEqual({ used: 163_000, window: 1_000_000, cost: 12.864 })
+  expect(lean.threads?.[0]?.conversation?.spend).toEqual({ used: 163_000, window: 1_000_000, cost: 12.864 })
   expect(lean.session?.moves).toBeUndefined()
   expect(lean.threads?.[0]?.conversation?.tasks).toBeUndefined()
   expect(lean.activity).toEqual([])
