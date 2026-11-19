@@ -1196,6 +1196,29 @@ describe('a task checklist', () => {
     expect(built.fake.sent.filter((one) => one.text === '/goal Deployed to development')).toHaveLength(1)
   })
 
+  it('starts a saved Codex checklist with no first goal after a normal turn', async () => {
+    const id = 'codex:checklist-first-goal-lost'
+    const objective = 'Development build is published'
+    const notes = memoryNotes()
+    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>().mockResolvedValue({ threadId: id, objective, status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1_000, updatedAt: 1_000 })
+    const held = heldCodex(id, { setGoal })
+    const built = build({ later: soon, codex: held.codex, notes })
+    try {
+      await built.sessions.send({ root: ROOT, mode: 'manual', provider: 'codex', text: 'Check the working tree' })
+      held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await settled()
+      notes.set(id, { ...notes.all()[id], checklist: { items: [{ id: 'a', title: objective, check: 'none' }, { id: 'b', title: 'Release notes are ready', check: 'none' }] } })
+
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'continue' })
+      expect(setGoal).not.toHaveBeenCalled()
+      held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await vi.waitFor(() => expect(held.fake.sent.at(-1)?.text).toBe(`Next on the checklist: ${objective}`))
+      expect(setGoal).toHaveBeenCalledExactlyOnceWith(id, objective)
+      expect(of(built.rows, id)?.goal?.condition).toBe(objective)
+      expect(of(built.rows, id)?.checklist?.items.map((one) => one.state)).toEqual([undefined, undefined])
+    } finally { built.sessions.dispose() }
+  })
+
   it('moves the goal to an edited current item once the conversation rests', async () => {
     const built = build({ later: soon })
     const id = await started(built)
