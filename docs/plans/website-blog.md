@@ -77,3 +77,8 @@
 - Initial upload of the permanent checkout was rejected by automatic approval review because it could export unrelated local edits. It did not run. Safer upload used sources downloaded from the existing Weroost site into /private/tmp/geckit-blog-publish/geckit--landing, with only 14 reviewed blog files changed. Baseline hashes verified homepage, shared CSS and settings unchanged from server sources. Existing server navigation matched the pre-task local snapshot before overlay. This isolated upload was approved and built successfully.
 - Git delivery: Alex authorized direct main commits and pushes for the website and supporting records. Delivered commit identifiers and remote verification are recorded in the day-plan task. No temporary Git worktree created; permanent checkouts and unrelated edits retained. Verification tab closed; shared test browser not stopped.
 - No remaining website blocker. Day-plan validation reports a pre-existing duplicate release link for separate Entech and TwinsAI deployment tasks, unrelated to this task; their records were preserved.
+
+## Metric explanation correction
+
+- Alex requested a short definition and direction for each reported metric. Added explanations for CreepJS headless and like-headless percentages, BrowserScan fingerprint authenticity, page mutations and wheel events. A wheel count has no established ideal; neither CreepJS percentage is a bot probability. Original measurements unchanged.
+- Own English standard used for this assistant-written revision; article checker completed with the retained source-list flag. Updated article and page-trace chart only; verification and delivery recorded in the day plan.

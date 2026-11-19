@@ -64,7 +64,7 @@ Publication date is November 19, 2026, matching the supplied experiment. No esti
 | Open article | "Read article" |
 | Return link | "All articles" |
 
-Article body is the supplied docs/reports/browser-detection-post.md, with image paths adapted to the website. Comparison tables containing images become labeled figures so they stack on a phone. Claims and measurements remain unchanged.
+Article body is the supplied docs/reports/browser-detection-post.md, with image paths adapted to the website. Comparison tables containing images become labeled figures so they stack on a phone. Claims and measurements remain unchanged. Each reported metric also explains what it measures and whether higher or lower is better. CreepJS percentages count detection signs (lower means fewer); BrowserScan fingerprint authenticity favors higher scores; added elements and attributes favor lower counts. Wheel event counts have no ideal value in this experiment and are explained as evidence of input events, not a score.
 
 ## 8. Edge cases
 
