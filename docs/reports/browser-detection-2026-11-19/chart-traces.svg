@@ -1,0 +1,22 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='760' height='276' viewBox='0 0 760 276' font-family='-apple-system, Segoe UI, Helvetica, Arial, sans-serif'>
+<rect width='760' height='276' fill='#fcfcfb'/>
+<text x='24' y='34' font-size='19' font-weight='600' fill='#0b0b0b'>Changes GeckIt made to the page it worked on</text>
+<text x='24' y='56' font-size='13' fill='#52514e'>Elements and attributes added while reading, typing, scrolling and clicking.</text>
+<line x1='230.0' y1='70' x2='230.0' y2='240' stroke='#e4e3df' stroke-width='1'/><text x='230.0' y='258' font-size='11.5' fill='#52514e' text-anchor='middle'>0</text>
+<line x1='383.33333333333337' y1='70' x2='383.33333333333337' y2='240' stroke='#e4e3df' stroke-width='1'/><text x='383.33333333333337' y='258' font-size='11.5' fill='#52514e' text-anchor='middle'>4</text>
+<line x1='536.6666666666667' y1='70' x2='536.6666666666667' y2='240' stroke='#e4e3df' stroke-width='1'/><text x='536.6666666666667' y='258' font-size='11.5' fill='#52514e' text-anchor='middle'>8</text>
+<line x1='690.0' y1='70' x2='690.0' y2='240' stroke='#e4e3df' stroke-width='1'/><text x='690.0' y='258' font-size='11.5' fill='#52514e' text-anchor='middle'>12</text>
+<text x='216' y='85' font-size='13.5' font-weight='600' fill='#0b0b0b' text-anchor='end'>Camoufox</text>
+<text x='216' y='102' font-size='11.5' fill='#52514e' text-anchor='end'>new test browser</text>
+<g fill='#2a78d6'></g>
+<rect x='230' y='76' width='2' height='20' fill='#2a78d6'/>
+<text x='237.0' y='90.5' font-size='12.5' fill='#0b0b0b'>none</text>
+<text x='216' y='137' font-size='13.5' font-weight='600' fill='#0b0b0b' text-anchor='end'>Chrome for Testing</text>
+<text x='216' y='154' font-size='11.5' fill='#52514e' text-anchor='end'>old test browser</text>
+<g fill='#2a78d6'><path d='M230,128 H609.3333333333333 Q613.3333333333333,128 613.3333333333333,132 V144 Q613.3333333333333,148 609.3333333333333,148 H230 Z'/></g>
+<text x='620.3333333333333' y='142.5' font-size='12.5' fill='#0b0b0b'>10</text>
+<text x='216' y='189' font-size='13.5' font-weight='600' fill='#0b0b0b' text-anchor='end'>Chrome + GeckIt extension</text>
+<text x='216' y='206' font-size='11.5' fill='#52514e' text-anchor='end'>a person's own Chrome</text>
+<g fill='#2a78d6'><path d='M230,180 H494.3333333333333 Q498.3333333333333,180 498.3333333333333,184 V196 Q498.3333333333333,200 494.3333333333333,200 H230 Z'/></g>
+<text x='505.3333333333333' y='194.5' font-size='12.5' fill='#0b0b0b'>7</text>
+</svg>
