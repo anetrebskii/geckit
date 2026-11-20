@@ -154,7 +154,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut, place = false }
   }
   const openTask = (id: ChatSession['id']): void => request(() => onOpen(id))
   const openCount = (id: Employee['id']): number => tasksFor(id).filter((one) => one.status !== 'done' && one.status !== 'archived').length
-  const empty = view.employees.length === 0 && !loading && !loadError && draft === undefined
+  const showWelcome = view.employees.length === 0 && !loading && !loadError && draft === undefined && shownId !== 'none' && shownId !== 'manager'
   const shortcuts = current === undefined ? [] : chat.settings.shortcuts.filter((one) => one.employeeId === current.id)
   const scheduledCount = shortcuts.filter((one) => one.on && (one.cron !== undefined || one.recurrence !== undefined)).length
 
@@ -225,7 +225,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut, place = false }
       {place ? null : <button type="button" className="icon-button" aria-label="Back to tasks" title="Back to tasks (Esc)" onClick={() => request(onClose)}><Icon name="left" size={13} /></button>}
       <h2>Team</h2>
       <span className="spacer" />
-      {empty ? null : <button type="button" className="quiet employee-new" disabled={saving} onClick={() => request(make)}><Icon name="plus" size={12} />New employee</button>}
+      {showWelcome ? null : <button type="button" className="quiet employee-new" disabled={saving} onClick={() => request(make)}><Icon name="plus" size={12} />New employee</button>}
     </header>
     {loadError ? <p className="employee-alert team-alert" role="alert">Could not load employees. <button type="button" className="quiet" onClick={reload}>Retry</button></p> : null}
     {view.error === undefined ? null : <p className="employee-alert team-alert" role="alert">{view.error.trim() || 'Employee saved. Assistant instructions could not be updated.'} <button type="button" className="quiet" disabled={saving} onClick={retry}>Retry</button></p>}
@@ -262,7 +262,7 @@ export function Team({ chat, first, onClose, onOpen, onShortcut, place = false }
         {view.employees.some((one) => one.archived) ? <label className="check"><input type="checkbox" checked={archived} onChange={(event) => setArchived(event.target.checked)} />Show archived</label> : null}
       </aside>
       <div className="team-main">
-        {empty && shownId !== 'none' && shownId !== 'manager' ? <div className="employee-welcome">
+        {showWelcome ? <div className="employee-welcome">
           <span className="employee-stack" aria-hidden="true">{EMPLOYEE_AVATARS.slice(0, 3).map((one) => <EmployeeAvatar key={one.id} employee={{ name: '', avatar: one.id }} large />)}</span>
           <strong>No employees yet</strong>
           <p className="employee-note">An employee is a role with its own rules and shortcuts. Tasks given to it build its memory.</p>
