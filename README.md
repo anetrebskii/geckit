@@ -6,7 +6,7 @@
 
 Working with several Codex or Claude Code conversations at once? See which are working, which are waiting for you and which are done.
 
-GeckIt puts Codex and Claude Code conversations on one Kanban board across your projects. It also corrects selected text and transcribes speech with a shortcut.
+GeckIt puts Codex and Claude Code conversations on one Kanban board across your projects. Conversations can be employees with a role, and a Manager hands them work, including requests written in Slack, Telegram or Discord. It also corrects selected text and transcribes speech with a shortcut.
 
 <p align="center">
   <a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-arm64.dmg"><img src="docs/download-macos-arm.svg" height="48" alt="Download for macOS, Apple Silicon"></a>
@@ -19,11 +19,11 @@ GeckIt puts Codex and Claude Code conversations on one Kanban board across your 
 
 <p align="center">GeckIt is not made by or affiliated with Anthropic or OpenAI. Claude and Claude Code are trademarks of Anthropic.</p>
 
-<a href="https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec">
-  <img src="docs/video/geckit-light.webp" alt="A new task with a goal is started, Claude works on it, a question from another task is answered, and the new card moves to In review by itself">
+<a href="https://geckit.app/shots/demo.mp4">
+  <img src="docs/video/geckit-light.webp" alt="A Slack request reaches the Manager, Researcher's card appears on the board and collects clinics, Writer asks which product to lead with, the answer is given and the clinics card moves to Done">
 </a>
 
-A new task is started with a goal. While Claude works on it, another task asks to run a command and gets an answer. When the goal holds, the card moves to In review by itself. [Play it as a video](https://github.com/user-attachments/assets/3dbb1aa1-d750-4e84-a60e-d579cb2aa5ec).
+A request in Slack reaches the Manager, who hands it to Researcher. Writer asks one question before drafting, gets an answer, and the finished task moves to Done. [Play it as a video](https://geckit.app/shots/demo.mp4).
 
 The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e). It is in Apple's review now, so the link opens once the review passes.
 
@@ -32,16 +32,16 @@ The iPhone app is on [TestFlight](https://testflight.apple.com/join/7B7vbk2e). I
 Working in terminal tabs, it is easy to miss a conversation that is waiting for you. GeckIt shows Codex and Claude Code conversations as cards on one board, across projects.
 
 <picture>
-  <img src="docs/screenshots/board-light.png" alt="The board: Claude Code conversations from three projects as cards in In progress, In review and Done">
+  <img src="docs/screenshots/board-light.png" alt="The board: conversations from three projects as cards in To do, In progress, Done and Archived, with the employee on each card">
 </picture>
 
-- Three columns: To do, In progress, Done. A card is dragged from one to the next, and To do is ordered by hand, and Done is grouped by the day a card was closed. View options in the top bar shows any of them, one or several.
+- Four columns: To do, In progress, Done and Archived. A card is dragged from one to the next, To do is ordered by hand, In progress puts what needs you first, and Done is grouped by the day a card was closed. View options in the top bar shows any of them, one or several.
 - A card shows its project, whether the assistant is working or waiting for you, its goal and links from the conversation.
 - New task starts a conversation in a project, with an optional goal, or plans it in To do without sending. The assistant keeps working until the goal holds, then the card shows Goal reached and stays where it is.
 - All projects on one board, or one project at a time with Cmd+K.
 - Cmd+click or Shift+click picks several cards, and they are moved, hidden or deleted together. Hidden conversations are behind their own button in the top bar.
 - A conversation keeps its process for ten minutes after it answers; the card's menu lets it go sooner, and the next message takes it up again from its file.
-- Ask (Cmd+Shift+N) is a question outside any project. It is not put on the board.
+- A quick chat (Cmd+Shift+N) is a question outside any project. It is not put on the board.
 
 ### Search
 
@@ -59,12 +59,28 @@ Keep work and your own projects apart. A profile is a set of projects, for examp
   <img src="docs/screenshots/profiles-light.png" alt="Settings, Profiles: All projects, Work and Side projects">
 </picture>
 
+## Team
+
+Give work to employees instead of to a list of chats. An employee is an assistant with a name, a role and its own instructions, and every task it does stays in its history.
+
+<picture>
+  <img src="docs/screenshots/team-light.png" alt="Team: Manager, Researcher, Writer, Assistant and Analyst, with Researcher's tasks and rules open">
+</picture>
+
+- Team lists the employees with their open tasks. Each one has its shortcuts, tasks, rules and the conversations it can read back.
+- The Manager is a conversation that hands work to employees, follows it and answers you. Write to it in GeckIt, or connect Slack, Telegram or Discord in Settings, Channels, and write to it there.
+- Each Slack thread or Telegram chat is its own Manager thread, and the Manager's answer goes back to where you asked.
+
+<picture>
+  <img src="docs/screenshots/manager-light.png" alt="The Manager chat: a request from Slack #sales, handed to Researcher and then to Writer">
+</picture>
+
 ## Conversations
 
 Press a card and the conversation opens over the board. Work with Codex or Claude Code there instead of switching between terminal tabs.
 
 <picture>
-  <img src="docs/screenshots/board-open-light.png" alt="A card opened over the board: the Claude Code conversation, marked In review">
+  <img src="docs/screenshots/board-open-light.png" alt="A card opened over the board: Researcher's conversation collecting dental clinics, still working">
 </picture>
 
 - Ctrl+Tab switches between conversations as it works in VS Code between files.
@@ -83,6 +99,26 @@ Press a card and the conversation opens over the board. Work with Codex or Claud
 
 <picture>
   <img src="docs/screenshots/list-light.png" alt="The list view: conversations grouped by project in a sidebar, with favorites at the top">
+</picture>
+
+## Browser, secrets and checklists
+
+Employees work on websites in your own Chrome, in the tabs you are signed in to, through the GeckIt Browser extension. Every browser step is in the conversation, with a picture of the page it saw.
+
+<picture>
+  <img src="docs/screenshots/browser-light.png" alt="A conversation with its browser steps: Google Maps searched, clinic websites opened, and a screenshot of one clinic's page">
+</picture>
+
+When a task needs a password or an API key, the conversation sends you a link. You type the value on that page, it is encrypted there for your computer, and the conversation uses it by name without ever seeing it. Settings, Secrets lists what is kept and where each is used.
+
+<p align="center">
+  <img src="docs/screenshots/secret-light.png" width="300" alt="The secret page on an iPhone: a CRM login asked for by a task, with where it will be used">
+</p>
+
+A task's goal can be a checklist: results in order, each checked by a command, by evidence shown in the conversation, or by you. GeckIt sets one item at a time as the goal, and an item for a person stops the task until you press Approve.
+
+<picture>
+  <img src="docs/screenshots/checklist-light.png" alt="A task with its checklist open: two items passed, Drafts approved waiting for Approve, and Approved emails sent next">
 </picture>
 
 ## Screen recording
