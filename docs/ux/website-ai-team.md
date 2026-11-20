@@ -246,6 +246,23 @@ stateDiagram-v2
 | Slack scopes and events in a collapsed block | Long lists would bury the steps |
 | No GLM or MiniMax repository named | No library link exists in the repository; "Another model" explains Add assistant in general |
 | No time estimate | Not measured |
-| Chrome through GeckIt marked "not available on Windows yet" | `SettingsDialog.tsx` shows "Not on Windows yet." |
+| Chrome through GeckIt shown for every platform | Windows support shipped in e5ca0c43; the "Not on Windows yet." label in `SettingsDialog.tsx` is unreachable since `browser.ts` always reports supported |
 
 Entry points: hero "Install it yourself", the `#install` section, the nav link "Install guide" (replaces "Setup"; the "Get set up" button still goes to `/#setup`).
+
+## Phone menu and colleague follow-up (2026-11-19)
+
+- Below 761 px the nav links fold into a Menu button (two lines, an X when open) beside "Get set up". The menu lists Team, Slack, Install guide, Desktop, Mobile, Blog and GitHub. It closes on a link, Escape (focus returns to the button), a tap outside, or widening past 760 px. Before this, phones showed no links and 561-760 px showed only GitHub.
+- Footer links wrap and stay visible on phone; a rule had hidden all but the last.
+- The Slack demo shows a colleague continuing the same thread, so the Manager keeps the context between people:
+
+| # | Who | Text |
+|---|---|---|
+| 1 | You | "@GeckIt find dental clinics in Austin that have a website and add them to our leads sheet" |
+| 2 | GeckIt | "On it. Researcher is collecting the clinics, then Assistant adds them to the sheet." |
+| 3 | GeckIt | "Done. The clinics are in the leads sheet, each with its website and phone number." |
+| 4 | Sam | "@GeckIt nice. Now draft a short intro email for each of them" |
+| 5 | GeckIt | "Sure. Writer is drafting them from what Researcher found on each website." |
+| 6 | GeckIt | "Done. The drafts are in the sheet next to each clinic, ready for you to check." |
+
+Delays between messages: 1.2 s, 2.5 s, 1.8 s, 1.2 s, 2.5 s; the longer pauses come before each result. "Researcher is going through the clinic websites now." was dropped to keep the thread readable on a phone.
