@@ -344,6 +344,8 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
   const { addFiles } = chat
 
   const goal = chat.session?.goal
+  const goalState = goal?.state === 'stopped' ? 'Goal stopped' : goal?.state === 'paused' ? 'Goal paused' : undefined
+  const goalPicker = `picker goal-picker goal-control${goalState === undefined ? '' : ' inactive'}`
   const taskList = shownChecklist(chat.session?.checklist, goal?.condition, chat.session?.goalMet)
   const approval = ON_PHONE || !checklistShown ? awaitingApproval(chat.session?.checklist) : undefined
   const approve = (): void => {
@@ -419,7 +421,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
       {chat.session !== undefined && editingGoal === chat.session.id ? (
         <TaskChecklistEditor
           checklist={taskList}
-          goal={goal?.condition}
+          goal={goalState === undefined ? goal?.condition : undefined}
           personItem={chat.session.personItem}
           onSave={(next, typing) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, typing) }}
           onClear={() => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, { items: [] }); if (goal !== undefined) chat.say('/goal clear'); setEditingGoal(undefined) }}
@@ -979,20 +981,20 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
               Checklist
             </button>
           ) : chat.session?.checklist === undefined && goal !== undefined ? (
-            <button type="button" className="picker goal-picker goal-control" title={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`} aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}>
-              <span className="remote-dot" />
-              <span className="goal-text">{`Goal: ${goal.condition}`}</span>
+            <button type="button" className={goalPicker} title={goalState === undefined ? `Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}` : `${goalState}: ${goal.condition}`} aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}>
+              {goalState === undefined ? <span className="remote-dot" /> : <span className="goal-state">{goalState}</span>}
+              <span className="goal-text">{goalState === undefined ? `Goal: ${goal.condition}` : `· ${goal.condition}`}</span>
               <Icon name="down" size={11} />
             </button>
           ) : (
             <button
               type="button"
-              className={`picker goal-picker goal-control${currentItem(taskList)?.state === 'approval' ? ' approval' : ''}`}
-              title={goal === undefined ? checklistLabel(taskList) : `Now: ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`}
+              className={`${goalPicker}${currentItem(taskList)?.state === 'approval' ? ' approval' : ''}`}
+              title={goal === undefined ? checklistLabel(taskList) : goalState === undefined ? `Now: ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}` : `${goalState}: ${goal.condition}`}
               aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}
             >
-              {goal === undefined ? null : <span className="remote-dot" />}
-              <span className="goal-text">{checklistLabel(taskList)}</span>
+              {goalState !== undefined ? <span className="goal-state">{goalState}</span> : goal === undefined ? null : <span className="remote-dot" />}
+              <span className="goal-text">{goalState === undefined ? '' : '· '}{checklistLabel(taskList)}</span>
               <Icon name="down" size={11} />
             </button>
           )}

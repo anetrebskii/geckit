@@ -1,4 +1,4 @@
-import type { CodexRateLimit, ReasoningEffort, SessionItem, SessionMode } from '../../shared/api'
+import type { CodexRateLimit, ReasoningEffort, SessionGoal, SessionItem, SessionMode } from '../../shared/api'
 
 export type RpcId = string | number
 export type { Json } from '../../shared/elicitation'
@@ -41,6 +41,19 @@ export interface CodexGoal {
   timeUsedSeconds: number
   createdAt: number
   updatedAt: number
+}
+
+export function stoppedCodexGoal(status: CodexGoal['status'] | undefined): boolean {
+  return status === 'blocked' || status === 'budgetLimited' || status === 'usageLimited'
+}
+
+export function nativeSessionGoal(goal: SessionGoal | undefined, status: CodexGoal['status'] | undefined): SessionGoal | undefined {
+  if (status === 'complete' || goal === undefined) return undefined
+  if (status === undefined) return goal
+  const state = status === 'paused' ? 'paused' : stoppedCodexGoal(status) ? 'stopped' : undefined
+  if (goal.state === state) return goal
+  const { state: _state, ...rest } = goal
+  return state === undefined ? rest : { ...rest, state }
 }
 
 export type CodexItem =

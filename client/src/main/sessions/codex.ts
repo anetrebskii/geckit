@@ -11,7 +11,7 @@ import type { Conversation, Found } from './disk'
 import type { Driver, Heard, Signal } from './heard'
 import { askId } from './heard'
 import { codexHistory, codexItem } from './codex-read'
-import { codexOptions } from './codex-protocol'
+import { codexOptions, nativeSessionGoal } from './codex-protocol'
 import { browserBridgeOn, browserFolder } from '../../cli/browser'
 import type { ApprovalEvent, CodexEvent, CodexGoal, CodexInput, CodexItem, CodexTurn, RpcId, RpcParams, RpcResults } from './codex-protocol'
 import { CodexRpc, launchCodex } from './codex-rpc'
@@ -22,7 +22,7 @@ import { searchCodex } from './search'
 import { PROMPTS } from '../../prompts/prompts'
 
 const native = (id: string): string => id.slice('codex:'.length)
-const shownGoal = (goal: CodexGoal | null): SessionGoal | undefined => goal === null || goal.status === 'complete' ? undefined : { condition: goal.objective, checks: 0 }
+const shownGoal = (goal: CodexGoal | null): SessionGoal | undefined => goal === null ? undefined : nativeSessionGoal({ condition: goal.objective, checks: 0 }, goal.status)
 const isDraining = (message?: string): boolean => message?.toLowerCase().includes('server is draining') ?? false
 const hasOtherWriter = (message: string): boolean => message.endsWith('already has an active writer')
 
@@ -274,7 +274,7 @@ export class CodexSessions {
 
   async setGoal(id: string, objective: string): Promise<CodexGoal> {
     const rpc = await this.#connection()
-    return (await rpc.request('thread/goal/set', { threadId: native(id), objective })).goal
+    return (await rpc.request('thread/goal/set', { threadId: native(id), objective, status: 'active' })).goal
   }
 
   async clearGoal(id: string): Promise<void> {
@@ -537,6 +537,16 @@ export class CodexSessions {
     })
     void ready.catch(() => undefined)
     return {
+      readyForGoal: async () => {
+        await ready
+        const connection = await this.#connection()
+        if (connection !== rpc) {
+          remembered.clear()
+          rpc = connection
+          await resume(connection)
+        }
+        stopped = false
+      },
       inject: async (text, images = [], before = []) => {
         await ready
         if (over || stopped || !active || turnId === undefined || rpc === undefined || this.#rpc !== rpc) throw new Error('The assistant is no longer working. Your message is still queued.')

@@ -82,6 +82,7 @@ import { cardId } from './heard'
 import type { Driver, Heard, Signal } from './heard'
 import type { McpChange } from './mcp'
 import { llmProvider } from './provider'
+import { nativeSessionGoal, stoppedCodexGoal } from './codex-protocol'
 import { ProviderMeasurements } from './provider-usage'
 import type { LlmProvider } from './provider'
 import type { SessionListStatus } from '../../shared/session-list'
@@ -571,6 +572,7 @@ export class Sessions {
   readonly #dispatching = new Set<string>()
   readonly #closingSessions = new Set<string>()
   readonly #settling = new Map<string, () => void>()
+  readonly #settingChecklistGoal = new Set<string>()
   readonly #personSends = new WeakSet<SessionMessage>()
   readonly #preparedSending = new Set<string>()
   readonly #live = new Map<string, Live>()
@@ -919,7 +921,7 @@ export class Sessions {
   #advance(id: string): void {
     const note = this.#deps.notes.all()[id]
     const checklist = note?.checklist
-    if (checklist === undefined || note?.prepared !== undefined || this.#settling.has(id)) return
+    if (checklist === undefined || note?.prepared !== undefined || this.#settling.has(id) || this.#settingChecklistGoal.has(id)) return
     const live = this.#live.get(id)
     if (live !== undefined && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) {
       live.checklistPending = true
@@ -933,7 +935,12 @@ export class Sessions {
     }
     const next = nextCondition(checklist)
     if (next === undefined || (live?.goal ?? note?.goal)?.condition === next && note?.goalMet !== next) return
-    void this.#sendGoal(id, next).catch(() => undefined)
+    this.#settingChecklistGoal.add(id)
+    void this.#sendGoal(id, next).catch(() => undefined).finally(() => {
+      this.#settingChecklistGoal.delete(id)
+      const latest = this.#deps.notes.all()[id]?.checklist
+      if (this.#live.has(id) && latest !== undefined && nextCondition(latest) !== next) this.#advance(id)
+    })
   }
 
   #handoffLost(live: Live): boolean {
@@ -972,7 +979,7 @@ export class Sessions {
     const root = live?.root ?? this.#rows.get(id)?.root ?? note?.unborn
     if (root === undefined) return
     const base = { session: id, root, mode: live?.mode ?? note?.mode ?? 'auto', ...(live?.chosen === undefined ? {} : { model: live.chosen }) } as const
-    await this.send(isCodexProvider(providerOf(id)) ? { ...base, text: `Next on the checklist: ${condition}`, goal: condition } : { ...base, text: `/goal ${condition}` })
+    await this.send(isCodexProvider(providerOf(id)) ? { ...base, text: '', goal: condition } : { ...base, text: `/goal ${condition}` })
   }
 
   /** The person's edit of a task's checklist: kept as is, and the goal moves to its current item once the conversation rests. While `typing`, the goal waits for the person to finish. */
@@ -1284,12 +1291,12 @@ export class Sessions {
       const goal = goals[index]
       const note = this.#deps.notes.all()[row.id]
       if (goal === undefined || note === undefined) continue
-      const shown = goal.goal
+      const shown = nativeSessionGoal(goal.goal, goal.status)
       const live = this.#live.get(row.id)
       if (live?.messages !== messages[index] || live?.driver !== undefined || (live?.queued.length ?? 0) > 0) continue
       if (goal.status === 'complete' && live !== undefined && live.messages > 0 && live.goal === undefined) continue
       if (live !== undefined) live.goal = shown
-      const blocked = (goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited') && note.status === undefined
+      const blocked = stoppedCodexGoal(goal.status) && note.status === undefined && (note.goal?.state !== 'stopped' || note.goal.condition !== shown?.condition)
       this.#note(row.id, { goal: shown, ...(blocked ? { status: 'blocked' as const } : {}), ...(goal.status === 'complete' ? { goalMet: shown?.condition ?? note.goal?.condition ?? '' } : goal.status === 'active' && shown?.condition !== note.goalMet ? { goalMet: undefined } : {}) })
     }
     // A model not seen before is measured, so its rows can say how much context it holds.
@@ -1409,7 +1416,7 @@ export class Sessions {
         ...(note?.status === undefined ? {} : { status: note.status }),
         ...(queued.length === 0
           ? {}
-          : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text, images: message.images?.length ?? 0, ...(message.again === undefined ? {} : { again: message.again }), ...(/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(message.text.trim()) || message.goal?.trim() ? { command: true as const } : {}) })) }),
+          : { queued: queued.map(({ id: key, message }) => ({ id: key, text: message.text || (message.goal === undefined ? '' : `/goal ${message.goal}`), images: message.images?.length ?? 0, ...(message.again === undefined ? {} : { again: message.again }), ...(/^!|^\/[a-z][\w-]*(?:\s|$)/i.test(message.text.trim()) || message.goal?.trim() ? { command: true as const } : {}) })) }),
         ...(live?.state === 'working' && live.asks.size === 0 && live.stopping === undefined && live.driver?.inject !== undefined ? { canInject: true as const } : {}),
         ...(live?.driver?.control === undefined ? {} : { canStopTasks: true as const }),
         ...(live?.checkingIp === true ? { checkingIp: true as const } : {}),
@@ -1952,7 +1959,7 @@ export class Sessions {
       const goal = live.goal
       await this.#reread(live)
       // What it cost is only in the file, so the row learns it here.
-      if (live.spent !== spent || live.goal?.condition !== goal?.condition) this.#changed()
+      if (live.spent !== spent || live.goal?.condition !== goal?.condition || live.goal?.state !== goal?.state) this.#changed()
     } else if (this.#for(live).nativeGoals) await this.#goal(live)
     return [...live.items.values()].map((item) => this.#deps.notes.all()[id]?.managerPrompt === undefined ? item : managerVisibleItem(managerHistoryItem(item)))
   }
@@ -2403,7 +2410,8 @@ export class Sessions {
       } finally { this.#preparedSending.delete(id) }
     }
     if (message.session !== undefined && this.#holders.has(message.session)) throw new Error('Answer the request first: nothing is said in its card.')
-    if (message.session !== undefined && guardSource === undefined && queued === undefined && message.again === undefined && !this.#personSends.has(message) && !this.isManager(message.session) && !/^[!/]/.test(message.text.trim()) && this.#onPersonItem(message.session)) {
+    const goalOnly = message.text === '' && Boolean(message.goal?.trim())
+    if (message.session !== undefined && guardSource === undefined && queued === undefined && message.again === undefined && !goalOnly && !this.#personSends.has(message) && !this.isManager(message.session) && !/^[!/]/.test(message.text.trim()) && this.#onPersonItem(message.session)) {
       const id = message.session
       const stale = this.#live.get(id)?.goal ?? this.#deps.notes.all()[id]?.goal
       if (stale !== undefined && isPersonGoal(stale.condition)) await this.send({ session: id, root: message.root, mode: message.mode, text: '/goal clear' })
@@ -2486,12 +2494,12 @@ export class Sessions {
         target = this.#fresh(id, message.question === true ? homedir() : message.root, firstLine(message.text, 80), message.mode, message.question === true)
       }
       const existing = message.again === undefined ? undefined : target.items.get(message.again)
-      if (existing?.kind !== 'mine' && !go && !(guardSource !== undefined && [...target.items.values()].some((one) => one.kind === 'mine' && one.unsent === true))) {
+      if (!goalOnly && existing?.kind !== 'mine' && !go && !(guardSource !== undefined && [...target.items.values()].some((one) => one.kind === 'mine' && one.unsent === true))) {
         const mine: Extract<SessionItem, { kind: 'mine' }> = { kind: 'mine', id: `mine:${randomUUID()}`, text: message.text, at: this.#now(), unsent: true, ...(message.images === undefined ? {} : { images: message.images }) }
         target.items.set(mine.id, mine)
         this.#tellItems({ id: target.id, items: [mine] })
       }
-      const mine = existing?.kind === 'mine' ? existing : [...target.items.values()].findLast((one) => one.kind === 'mine' && one.unsent === true)
+      const mine = goalOnly ? undefined : existing?.kind === 'mine' ? existing : [...target.items.values()].findLast((one) => one.kind === 'mine' && one.unsent === true)
       const retained: HeldOperation = { ...operation, message: { ...message, ...(mine === undefined || message.session === undefined ? {} : { again: mine.id }) } }
       if (cancelled) target.state = 'failed'
       this.#finishDelivery(delivery, target.id, 'blocked', { reason: text })
@@ -2543,9 +2551,16 @@ export class Sessions {
     if (!backend.images && (message.images?.length ?? 0) > 0) {
       throw new Error(`${backend.name} accepts text only. Choose an assistant that supports images.`)
     }
-    const nativeGoal = backend.nativeGoals ? goalSent(message.text) : undefined
-    if (nativeGoal !== undefined && nativeGoal.toLowerCase() !== 'pause' && nativeGoal.toLowerCase() !== 'resume') {
+    const goalOnly = backend.nativeGoals && message.text === '' ? message.goal?.trim() || undefined : undefined
+    const busy = live.state === 'working' || live.state === 'asks' || live.injecting !== undefined
+    const held = !busy && !go && (!live.question || this.#managerIds.has(live.id)) && (live.queued.length > 0 || !this.#may())
+    const nativeGoal = backend.nativeGoals ? goalOnly ?? goalSent(message.text) : undefined
+    if (nativeGoal !== undefined && (goalOnly === undefined ? nativeGoal.toLowerCase() !== 'pause' && nativeGoal.toLowerCase() !== 'resume' : !busy && !held)) {
       if ((await backend.account()).key === true) throw new Error('Sign in with your ChatGPT plan to change a Codex goal.')
+      if (goalOnly !== undefined) {
+        await this.#hold(live, attempt)
+        await live.driver?.readyForGoal?.()
+      }
       if (this.#deps.beforeSend !== undefined) await this.#check(live, attempt)
       if (this.#live.get(live.id) !== live || this.#closingSessions.has(live.id)) throw new Error('The conversation was released before dispatch. Nothing was sent.')
       assertProviderAvailable(providerOf(live.id))
@@ -2567,10 +2582,8 @@ export class Sessions {
     live.messages += 1
     live.goalStatus = undefined
     if (this.#deps.notes.all()[live.id]?.status !== undefined) this.mark(live.id, undefined)
-    const busy = live.state === 'working' || live.state === 'asks' || live.injecting !== undefined
     // Written by the person, it is theirs again to be sent; a message waits behind the ones already queued, and for a slot.
     if (!go) live.parked = false
-    const held = !busy && !go && (!live.question || this.#managerIds.has(live.id)) && (live.queued.length > 0 || !this.#may())
     if (busy || held) {
       // A goal keeps the turn going until it holds, so it is cleared by stopping the turn and clearing it once it has.
       if (busy && live.goal !== undefined && goalSent(message.text) === '') {
@@ -2582,7 +2595,7 @@ export class Sessions {
         return live.id
       }
       // A goal waiting its turn stands on the row already, as one sent straight away does.
-      const waiting = message.goal?.trim() || (backend.nativeGoals ? undefined : goalSent(message.text))
+      const waiting = goalOnly === undefined ? message.goal?.trim() || (backend.nativeGoals ? undefined : goalSent(message.text)) : undefined
       if (waiting !== undefined && waiting !== '') live.goal = { condition: waiting, checks: 0 }
       if (message.goal?.trim()) this.#note(live.id, { goal: live.goal })
       const entry: Queued = { id: `queued:${randomUUID()}`, message: { ...message, session: live.id }, at: this.#now() }
@@ -4076,10 +4089,13 @@ export class Sessions {
         return
       case 'goal': {
         const previous = live.goal
-        const terminal = signal.status === 'complete' || signal.status === 'blocked' || signal.status === 'budgetLimited' || signal.status === 'usageLimited'
+        const stopped = stoppedCodexGoal(signal.status)
+        const terminal = signal.status === 'complete' || stopped
         if (terminal && previous === undefined && signal.goal === undefined && live.messages > 0) return
-        live.goal = signal.goal
-        this.#note(live.id, { goal: signal.goal })
+        const goal = nativeSessionGoal(signal.goal ?? (stopped ? previous : undefined), signal.status)
+        if (stopped && previous?.state === 'stopped' && goal?.condition === previous.condition) return
+        live.goal = goal
+        this.#note(live.id, { goal })
         if (terminal) {
           if (previous !== undefined) {
             const item: SessionItem = { kind: 'note', id: `goal:${String(this.#now())}`, note: 'goal', text: signal.status === 'complete' ? `Goal met: ${previous.condition}` : `Goal stopped: ${previous.condition}` }
@@ -4088,13 +4104,13 @@ export class Sessions {
           }
           const ended = signal.status === 'complete' ? 'met' : 'blocked'
           if (live.state === 'working' || live.state === 'asks') {
-            live.goalStatus = live.queued.length === 0 ? { ended, condition: previous?.condition ?? '' } : undefined
+            live.goalStatus = live.queued.length === 0 ? { ended, condition: previous?.condition ?? goal?.condition ?? '' } : undefined
           } else if (live.queued.length === 0) {
-            this.#goalEnded(live.id, ended, previous?.condition ?? '')
+            this.#goalEnded(live.id, ended, previous?.condition ?? goal?.condition ?? '')
           }
         } else {
           live.goalStatus = undefined
-          if (signal.goal !== undefined && signal.goal.condition !== previous?.condition) this.#note(live.id, { goalMet: undefined })
+          if (goal !== undefined && goal.condition !== previous?.condition) this.#note(live.id, { goalMet: undefined })
         }
         this.#changed()
         return
@@ -4360,10 +4376,10 @@ export class Sessions {
       const had = live.goal
       const goal = await backend.goal(live.root, live.id).catch(() => undefined)
       if (goal === undefined || this.#live.get(live.id) !== live || live.goal !== had || live.messages !== messages) return
-      const shown = goal.goal
-      const terminal = goal.status === 'complete' || goal.status === 'blocked' || goal.status === 'budgetLimited' || goal.status === 'usageLimited'
+      const shown = nativeSessionGoal(goal.goal, goal.status)
+      const terminal = goal.status === 'complete' || stoppedCodexGoal(goal.status)
       if (terminal && (live.state === 'working' || live.state === 'asks' || live.queued.length > 0)) return
-      if (had?.condition === shown?.condition && (!terminal || had === undefined || this.#deps.notes.all()[live.id]?.status !== undefined)) return
+      if (had?.condition === shown?.condition && had?.state === shown?.state) return
       this.#signal(live, { kind: 'goal', goal: shown, ...(goal.status === undefined ? {} : { status: goal.status }) })
       return
     }

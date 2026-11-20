@@ -79,6 +79,10 @@ block-beta
 
 ### Task checklist
 
+When Codex reports that a goal has stopped or paused, the composer starts with "Goal stopped" or "Goal paused", followed by the checklist progress and current item. The item stays unchecked and uses the existing "Next" row treatment. An ordinary follow-up leaves that goal inactive unless Codex reports it active again. On resume, the row shows "Goal" and the active highlight returns.
+
+For Codex, GeckIt activates the next automated item using the native goal control once the chat is idle and has a slot. Codex starts the goal's turn, and no user message is added to the transcript. Person items still use the review-preparation turn described above.
+
 | State | When | What the person sees | What to do |
 |---|---|---|---|
 | None | Field left empty | Card has no progress line; composer "Checklist" | Add items any time |

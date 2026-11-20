@@ -523,6 +523,7 @@ export function goalMet(session: Pick<ChatSession, 'goal' | 'goalMet'>): boolean
 /** A goal set with `/goal` or attached to a new task. */
 export interface SessionGoal {
   readonly condition: string
+  readonly state?: 'paused' | 'stopped'
   /** How many checks have found it does not hold yet. */
   readonly checks: number
   /** What the last of them said. */

@@ -5183,6 +5183,10 @@ html:not(.phone) .composer-bar > .goal-picker {
   min-width: 96px;
 }
 
+html:not(.phone) .composer-bar > .goal-picker.inactive {
+  min-width: 112px;
+}
+
 html:not(.phone) .composer-bar > .spacer,
 html:not(.phone) .composer-bar > .composer-hint {
   flex-shrink: 1;
@@ -5196,7 +5200,8 @@ html:not(.phone) .composer-bar > .composer-hint {
   }
 }
 
-.goal-picker .remote-dot {
+.goal-picker .remote-dot,
+.goal-picker .goal-state {
   flex-shrink: 0;
 }
 
@@ -10004,6 +10009,9 @@ html.phone .composer-bar .goal-control {
 
 html.phone .composer-bar .goal-picker {
   max-width: 220px;
+}
+
+html.phone .composer-bar .goal-picker:not(.inactive) {
   color: var(--accent);
   background: var(--accent-soft);
 }

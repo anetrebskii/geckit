@@ -1015,6 +1015,8 @@ describe('Codex app-server', () => {
     driver.send('/goal pause')
     await tick()
     expect(server.goals.get(id.slice(6))?.status).toBe('paused')
+    await expect(codex.read(ROOT, id)).resolves.toMatchObject({ goal: { condition: 'Tests pass', checks: 0, state: 'paused' } })
+    expect(heard.flatMap((one) => one.signals)).toContainEqual({ kind: 'goal', goal: { condition: 'Tests pass', checks: 0, state: 'paused' }, status: 'paused' })
     driver.send('/goal resume')
     await tick()
     expect(server.goals.get(id.slice(6))?.status).toBe('active')
@@ -1501,6 +1503,38 @@ describe('provider routing', () => {
     expect(rows.at(-1)?.find((one) => one.id === id)?.goalMet).toBeUndefined()
     expect(rows.at(-1)?.find((one) => one.id === id)?.goal?.condition).toBe('A new outcome is verified')
     sessions.dispose()
+  })
+
+  it('attaches a cold checklist conversation before activating a native goal without sending a user message', async () => {
+    const { server, codex } = setup()
+    const id = 'codex:terminal'
+    const notes = memoryNotes()
+    notes.set(id, { shown: true })
+    const rows: ChatSession[][] = []
+    const items: SessionItems[] = []
+    const sessions = new Sessions({ codex, notes, later: (run) => { const timer = setTimeout(run, 0); return () => clearTimeout(timer) }, changed: (all) => rows.push([...all]), items: (one) => items.push(one), account: () => undefined, notify: () => undefined, there: async () => true, disk: { list: async () => [], read: async () => undefined, has: async () => false } })
+    try {
+      await sessions.list([ROOT])
+      sessions.setChecklist(id, { items: [{ id: 'a', title: 'Tests pass', check: 'none' }, { id: 'b', title: 'Docs updated', check: 'none' }] })
+      await vi.waitFor(() => expect(server.goals.get('terminal')).toMatchObject({ objective: 'Tests pass', status: 'active' }))
+      const resume = server.requests.findIndex((one) => one.method === 'thread/resume')
+      const set = server.requests.findIndex((one) => one.method === 'thread/goal/set')
+      expect(resume).toBeGreaterThan(-1)
+      expect(set).toBeGreaterThan(resume)
+      expect(server.requests[set]?.params).toMatchObject({ threadId: 'terminal', objective: 'Tests pass', status: 'active' })
+      server.event({ method: 'turn/started', params: { threadId: 'terminal', turn: { id: 'turn-terminal', status: 'inProgress', startedAt: 100, error: null, items: [] } } })
+      await vi.waitFor(() => expect(rows.at(-1)?.find((one) => one.id === id)).toMatchObject({ state: 'working', goal: { condition: 'Tests pass' } }))
+      const current = server.goals.get('terminal')
+      if (current === undefined) throw new Error('Expected a native goal')
+      const completed = { ...current, status: 'complete' as const }
+      server.goals.set('terminal', completed)
+      server.event({ method: 'thread/goal/updated', params: { threadId: 'terminal', turnId: 'turn-terminal', goal: completed } })
+      server.complete('terminal')
+      await vi.waitFor(() => expect(server.goals.get('terminal')).toMatchObject({ objective: 'Docs updated', status: 'active' }))
+      expect(server.requests.filter((one) => one.method === 'thread/goal/set')).toHaveLength(2)
+      expect(server.requests.some((one) => one.method === 'turn/start')).toBe(false)
+      expect(items.flatMap((one) => one.items).some((one) => one.kind === 'mine')).toBe(false)
+    } finally { sessions.dispose() }
   })
 
   it('reconciles a goal completed while GeckIt was closed', async () => {
