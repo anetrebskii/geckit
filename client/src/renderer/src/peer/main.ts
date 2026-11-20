@@ -2,6 +2,7 @@ import { listen } from '../link'
 import type { Link } from '../link'
 import type { SessionImage } from '../../../shared/api'
 import { PAIR_AGAIN, SIGNAL } from '../../../shared/pairing'
+import { tabVideoSender } from './tab-video'
 
 /**
  * The hidden window with WebRTC that main lacks: it scales pictures for the
@@ -37,8 +38,6 @@ async function screenTrack(): Promise<MediaStreamTrack> {
     })
   const track = stream.getVideoTracks()[0]
   if (track === undefined) throw new Error('The host gave no picture of its screen')
-  // Encoded for sharp text rather than smooth motion.
-  track.contentHint = 'text'
   return track
 }
 
@@ -171,6 +170,18 @@ window.geckit.peer.onScale?.((id, image, width) => {
 
 window.geckit.peer.onShares(keepShares)
 void window.geckit.peer.shares().then(keepShares)
+
+const video = tabVideoSender()
+let loadingVideoRooms: Set<string> | undefined = new Set()
+window.geckit.peer.onTabVideo((event) => { loadingVideoRooms?.add(event.key); video(event) })
+void window.geckit.peer.tabVideos().then((rooms) => {
+  for (const [key, jpeg] of rooms) {
+    if (loadingVideoRooms?.has(key)) continue
+    video({ type: 'start', key })
+    if (jpeg !== undefined) video({ type: 'frame', key, jpeg })
+  }
+  loadingVideoRooms = undefined
+})
 
 void window.geckit.peer.pairing().then((pairing) => {
   if (pairing === undefined) return

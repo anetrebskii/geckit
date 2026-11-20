@@ -53,6 +53,8 @@ describe('what the peer window tells phones', () => {
           pairing: () => Promise.resolve({ key: 'k', signal: 's' }),
           shares: () => Promise.resolve([{ id: 'link-1', key: 'link-key' }]),
           onShares: () => () => undefined,
+          tabVideos: () => Promise.resolve([]),
+          onTabVideo: () => () => undefined,
           share: (...args: unknown[]) => {
             shareCalls.push(args)
             return Promise.resolve({ kind: 'file', title: 'report.html', expiresAt: 1 })

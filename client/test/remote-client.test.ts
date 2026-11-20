@@ -7,7 +7,7 @@ import { stringifyRemote } from '../src/shared/remote/codec'
 import { REMOTE_PROTOCOL, requestOf } from '../src/shared/remote/protocol'
 import type { RemoteChannel, RemoteIdentity, RemoteRequest, RemoteResponse, RemoteTrust } from '../src/shared/remote/protocol'
 
-vi.mock('../src/renderer/src/remote/transport', () => ({ remoteDial: vi.fn() }))
+vi.mock(import('../src/renderer/src/remote/transport'), async (original) => ({ ...await original(), remoteDial: vi.fn() }))
 vi.mock('../src/renderer/src/remote/storage', () => ({ devicePublicKey: vi.fn(), signDevice: vi.fn(), rememberServer: vi.fn(async () => undefined) }))
 
 function channel() {

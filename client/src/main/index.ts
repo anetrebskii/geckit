@@ -398,9 +398,11 @@ function keepPhone(on: boolean, key: string): void {
 }
 
 
+const tabVideoRooms = new Map<string, string | undefined>()
+
 /** The peer window is there while Phone is on or a link is shared. */
 function keepPeer(): void {
-  const needed = phoneOn || (snapshot?.shares.length ?? 0) > 0
+  const needed = phoneOn || (snapshot?.shares.length ?? 0) > 0 || tabVideoRooms.size > 0
   if (needed) peerWindow()
   else if (shownPeer() !== undefined) closePeer()
 }
@@ -498,6 +500,18 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
       const peer = shownPeer()
       if (peer === undefined) void invoke('desktop:scaled', id).catch(report)
       else peer.webContents.send('peer:scale', id, image, width)
+      return
+    }
+    case 'core:tabVideo': {
+      const [video] = event.args
+      if (video.type === 'start') tabVideoRooms.set(video.key, undefined)
+      if (video.type === 'stop') tabVideoRooms.delete(video.key)
+      if (video.type === 'frame') {
+        if (!tabVideoRooms.has(video.key)) return
+        tabVideoRooms.set(video.key, video.jpeg)
+      }
+      if (video.type !== 'frame') keepPeer()
+      shownPeer()?.webContents.send('peer:tabVideo', video)
       return
     }
     case 'core:idle': void invoke('desktop:idle', event.args[0], powerMonitor.getSystemIdleState(AWAY_AFTER) !== 'active').catch(report); return
@@ -747,6 +761,7 @@ function wire(): void {
   )
 
   ipcMain.handle('peer:shares', (event) => (event.sender === shownPeer()?.webContents ? snapshot?.shares ?? [] : []))
+  ipcMain.handle('peer:tabVideos', (event) => (event.sender === shownPeer()?.webContents ? [...tabVideoRooms] : []))
 
   // A link page may ask only about its own link, and only these three things.
   ipcMain.handle('peer:share', async (event, id: string, name: string, args: readonly NativeValue[]) => {
@@ -1005,7 +1020,12 @@ else {
       },
       onEvent: coreEvent,
       onConnect: applySnapshot,
-      onDisconnect: (error) => tellChats('chat:notice', { session: '', title: error?.message ?? 'GeckIt service disconnected. Reconnecting...', subtitle: '', body: '', asks: false }),
+      onDisconnect: (error) => {
+        for (const key of tabVideoRooms.keys()) shownPeer()?.webContents.send('peer:tabVideo', { type: 'stop', key })
+        tabVideoRooms.clear()
+        keepPeer()
+        tellChats('chat:notice', { session: '', title: error?.message ?? 'GeckIt service disconnected. Reconnecting...', subtitle: '', body: '', asks: false })
+      },
     })
     applySnapshot(service.snapshot)
     try { await migrateSecrets() } catch { log.warn('Could not migrate saved credentials to the service') }

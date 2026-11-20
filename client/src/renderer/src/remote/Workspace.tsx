@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RemoteServer } from '../../../shared/remote/protocol'
+import type { SignInLink } from '../../../shared/live-view'
 import type { connectRemote } from './client'
 import type { RemoteComputer } from './Computer'
 import { ConnectProgress } from './ConnectProgress'
@@ -11,6 +12,7 @@ export interface WorkspaceMount {
   readonly connection: WorkspaceConnection
   readonly server: RemoteServer
   readonly phone: boolean
+  readonly onSignIn: (link: SignInLink) => Promise<void>
   readonly onClose?: () => void
   readonly source?: RemoteComputer
 }
@@ -23,7 +25,7 @@ declare global {
 
 type WorkspaceProps = Omit<WorkspaceMount, 'phone'> & { readonly steps: ConnectSteps; readonly quick?: boolean; readonly onCancel?: () => void }
 
-export function Workspace({ connection, server, onClose, onCancel, source, steps, quick = false }: WorkspaceProps): React.JSX.Element {
+export function Workspace({ connection, server, onSignIn, onClose, onCancel, source, steps, quick = false }: WorkspaceProps): React.JSX.Element {
   const frame = useRef<HTMLIFrameElement>(null)
   const [trouble, setTrouble] = useState('')
   const [mounted, setMounted] = useState(false)
@@ -62,7 +64,7 @@ export function Workspace({ connection, server, onClose, onCancel, source, steps
       onLoad={() => {
         const mount = frame.current?.contentWindow?.mountRemoteWorkspace
         if (mount === undefined) { setTrouble('Could not open the server workspace. Reopen Servers to try again.'); return }
-        void mount({ connection, server, phone: document.documentElement.classList.contains('phone'), ...(onClose === undefined ? {} : { onClose }), ...(source === undefined ? {} : { source }) }).then(() => setMounted(true), (error: Error) => setTrouble(error.message))
+        void mount({ connection, server, onSignIn, phone: document.documentElement.classList.contains('phone'), ...(onClose === undefined ? {} : { onClose }), ...(source === undefined ? {} : { source }) }).then(() => setMounted(true), (error: Error) => setTrouble(error.message))
       }}
     />
   </section>

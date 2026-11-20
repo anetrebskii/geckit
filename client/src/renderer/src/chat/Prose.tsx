@@ -10,6 +10,7 @@ import { pictureData, picturePath } from '../../../shared/pictures'
 import { issuesIn } from '../../../shared/issues'
 import { isRemote } from '../../../shared/hosts'
 import { pathIn, pathOfLink, pathsIn } from '../../../shared/paths'
+import { readSignIn } from '../../../shared/live-view'
 
 /**
  * What the assistant said, drawn as the Markdown it wrote, tables and all.
@@ -233,7 +234,16 @@ const BUILT = 2000
 export function Prose({ text }: { readonly text: string }): JSX.Element {
   let tree = built.get(text)
   built.delete(text)
-  tree ??= Markdown({ children: text, remarkPlugins: PLUGINS, components: COMPONENTS, urlTransform: (url, key) => key === 'src' && (picturePath(url) !== undefined || pictureData(url)) ? url : defaultUrlTransform(url) })
+  tree ??= Markdown({
+    children: text,
+    remarkPlugins: PLUGINS,
+    components: COMPONENTS,
+    urlTransform: (url, key) => {
+      if (key === 'href' && url.startsWith('geckit:') && readSignIn(url) !== undefined) return url
+      if (key === 'src' && (picturePath(url) !== undefined || pictureData(url))) return url
+      return defaultUrlTransform(url)
+    },
+  })
   if (text.length < 256 * 1024) built.set(text, tree)
   if (built.size > BUILT) built.delete(built.keys().next().value ?? '')
   return <div className="prose">{tree}</div>

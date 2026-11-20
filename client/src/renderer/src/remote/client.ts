@@ -5,14 +5,14 @@ import { parseRemote, stringifyRemote } from '../../../shared/remote/codec'
 import type { CoreMethods } from '../../../core/application'
 import type { CoreEvent } from '../../../core/events'
 import type { RemoteCall, RemoteChannel, RemoteHistory, RemoteRequest, RemoteResponse, RemoteResult, RemoteSignal, RemoteSnapshot, RemoteTrust } from '../../../shared/remote/protocol'
-import { remoteDial } from './transport'
+import { DIAL_STAGES, remoteDial } from './transport'
 import { devicePublicKey, rememberServer, signDevice } from './storage'
 // A call made while the link is down waits this long for it to be back.
 export const HOLD = 60_000
 export const LINK_DOWN = 'The link to the computer is down. Try again when it is back.'
 export type ConnectionState = 'connecting' | 'pending' | 'connected' | 'reconnecting' | 'disconnected' | 'expired' | 'reused' | 'revoked' | 'incompatible' | 'error'
 /** The steps of a connect, in order: the pairing service, the computer's answer, the link, proving who each side is, its state, the workspace starting, the conversation list. */
-export const CONNECT_STAGES = ['service', 'answer', 'joining', 'proving', 'snapshot', 'bootstrap', 'list'] as const
+export const CONNECT_STAGES = [...DIAL_STAGES, 'proving', 'snapshot', 'bootstrap', 'list'] as const
 export type ConnectStage = typeof CONNECT_STAGES[number]
 /** When each step of the connect under way began, with what it brought in characters, the last one still going until `ready`. */
 export type ConnectSteps = readonly { readonly stage: ConnectStage | 'ready'; readonly at: number; readonly size?: number }[]

@@ -207,6 +207,7 @@ export function withMoves(was: SessionNote | undefined, note: SessionNote, at: n
 interface Queued {
   readonly id: string
   readonly message: SessionMessage
+  readonly linkCompletion?: true
   /** When it was queued, which is where a conversation started with it copies this one up to. */
   readonly at?: number
 }
@@ -1576,6 +1577,20 @@ export class Sessions {
     this.#glance()
   }
 
+  linkCompleted(id: string, text: string): void {
+    const note = this.#deps.notes.all()[id]
+    if (this.#closingSessions.has(id) || note?.hidden || note?.status === 'done' || note?.status === 'archived') return
+    const live = this.#live.get(id) ?? this.#adopt(id)
+    if (live === undefined) return
+    const message: SessionMessage = {
+      session: id, root: live.root, mode: live.mode, text,
+      ...(live.chosen === undefined ? {} : { model: live.chosen }),
+      ...(live.reasoning === undefined ? {} : { reasoning: live.reasoning }),
+    }
+    this.#queue(live, [...live.queued, { id: `queued:${randomUUID()}`, message, linkCompletion: true, at: this.#now() }])
+    this.again()
+  }
+
   /** How many conversations a session is waiting to be let start, where it is. */
   #asking(id: string): number | undefined {
     const live = this.#live.get(id)
@@ -1759,6 +1774,12 @@ export class Sessions {
     const next = live?.queued[0]
     if (live === undefined || next === undefined || live.injecting !== undefined) return
     if (this.#dispatching.has(id)) return
+    const note = this.#deps.notes.all()[id]
+    if (next.linkCompletion && (note?.hidden || note?.status === 'done' || note?.status === 'archived')) {
+      this.#queue(live, live.queued.slice(1))
+      this.again()
+      return
+    }
     this.#dispatching.add(id)
     const message = { ...next.message, mode: live.mode }
     if (this.#managerIds.has(id)) this.#managerMessages.add(message)

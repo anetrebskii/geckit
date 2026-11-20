@@ -63,7 +63,7 @@ export class Secrets {
 
   private now(): number { return this.host.now?.() ?? Date.now() }
 
-  async request(ask: SecretAsk): Promise<{ readonly link?: string; readonly expiresAt?: number; readonly existing?: SecretMetadata }> {
+  async request(ask: SecretAsk, onSaved?: () => void): Promise<{ readonly link?: string; readonly expiresAt?: number; readonly existing?: SecretMetadata }> {
     if (!SECRET_NAME.test(ask.name)) throw new BrokerRefusal('name', 'Name the secret with lowercase letters, digits and hyphens, such as openai-key.')
     const wrong = placesValid(ask.kind, ask.places)
     if (wrong !== undefined) throw new BrokerRefusal('place', wrong)
@@ -81,11 +81,11 @@ export class Secrets {
     if (opened.status !== 200) throw new BrokerRefusal('relay', `The secret link could not be made (${String(opened.json['error'] ?? opened.status)}).`)
     const expiresAt = Number(opened.json['expiresAt'] ?? this.now() + LINK_LIFE)
     this.asked.set(id, { ask, expiresAt })
-    this.watch(id, owner, ask, expiresAt)
+    this.watch(id, owner, ask, expiresAt, onSaved)
     return { link: `${process.env['GECKIT_SIGNAL_URL'] ?? VIEWER}/s/#${id}.${linkKey}.${await keyHashOf(brokerKey)}`, expiresAt }
   }
 
-  private watch(id: string, owner: string, ask: SecretAsk, expiresAt: number): void {
+  private watch(id: string, owner: string, ask: SecretAsk, expiresAt: number, onSaved: (() => void) | undefined): void {
     const tick = async (): Promise<void> => {
       this.waiting.delete(id)
       let answer: { status: number; json: Record<string, unknown> }
@@ -101,7 +101,9 @@ export class Secrets {
           this.host.notify(ask.taskId, `${ask.name} was entered`, `${ask.name} is ready (${ask.kind}, ${ask.places.join(', ')}${(ask.user ?? '') !== '' ? ` as ${ask.user ?? ''}` : typed === '' ? '' : ` as ${typed}`}), ${until}.${device === '' ? '' : ` Entered from ${device}.`}`)
         } catch (error) {
           this.host.notify(ask.taskId, `${ask.name} was not saved`, error instanceof Error ? error.message : String(error))
+          return
         }
+        onSaved?.()
         return
       }
       if (state === 'expired' || state === 'collected' || answer.status === 404 || this.now() > expiresAt + 60_000) { this.asked.delete(id); return }

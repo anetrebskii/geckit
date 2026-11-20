@@ -8,6 +8,7 @@ import { afterEach, expect, it } from 'vitest'
 import { makeTestAccount, profilesFolder, updateTestProfile } from '../src/cli/testing'
 import { exportTestProfile, importTestProfile } from '../src/cli/profile-archive'
 import { registerBrowserConversation } from '../src/cli/browser-lifecycle'
+import { tabVideo } from '../src/service/remote/tab-video'
 
 interface Reply { readonly ok: boolean; readonly error?: string; readonly result?: { readonly id?: number; readonly title?: string; readonly lines?: string[]; readonly text?: string; readonly jpeg?: string; readonly png?: string; readonly gif?: string; readonly sheet?: string; readonly value?: { readonly cookie?: string; readonly stored?: string; readonly moves?: number; readonly trusted?: boolean; readonly webdriver?: boolean }; readonly url?: string; readonly width?: number; readonly height?: number; readonly dark?: boolean; readonly still?: boolean; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string }; readonly fields?: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] } }
 const wait = (ms = 50): Promise<void> => new Promise((done) => setTimeout(done, ms))
@@ -128,6 +129,45 @@ it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('runs persistent p
   const other = (await ask(second, { cmd: 'open', conversation: 'b', url })).result?.id
   const refused = await ask(second, { cmd: 'text', conversation: 'a', tab: other }, false)
   expect(refused.ok).toBe(false); expect(refused.error).toContain('another conversation')
+  const key = randomUUID()
+  const existing = { tab: own, conversation: 'a' }
+  expect((await ask(second, { cmd: 'handoff-check', ...existing })).ok).toBe(true)
+  expect((await ask(second, { cmd: 'view-handoff', tab: other, conversation: 'a', key }, false)).error).toContain('another conversation')
+  await ask(second, { cmd: 'view-handoff', ...existing, key })
+  expect((await ask(second, { cmd: 'view-handoff', ...existing, key: randomUUID() }, false)).error).toContain('already has a live view')
+  expect((await ask(second, { cmd: 'text', ...existing }, false)).error).toContain('person is using this tab')
+  expect((await ask(second, { cmd: 'view-frame' }, false)).error).toContain('another sign-in')
+  expect((await ask(second, { cmd: 'view-frame', key })).result?.url).toBe(`${url}/`)
+  let jpeg: string | undefined
+  let streamStopped = false
+  const video = await tabVideo((event) => {
+    if (event.type === 'frame') jpeg = event.jpeg
+    if (event.type === 'stop') streamStopped = true
+    return true
+  })
+  if (video === undefined) throw new Error('Could not listen for the tab screencast.')
+  try {
+    expect((await ask(second, { cmd: 'view-video', key: randomUUID(), url: video.endpoint }, false)).ok).toBe(false)
+    await ask(second, { cmd: 'view-video', key, url: video.endpoint })
+    await until(() => jpeg !== undefined)
+    const firstFrame = jpeg
+    await ask(second, { cmd: 'view-input', key, input: { type: 'click', x: 140, y: 155 } })
+    await ask(second, { cmd: 'view-input', key, input: { type: 'text', text: 'same-tab' } })
+    const metadata = (await ask(second, { cmd: 'view-metadata', key })).result
+    expect(metadata).toMatchObject({ url: `${url}/`, jpeg: '', caret: expect.any(Object), focusedField: expect.any(Object) })
+    await until(() => jpeg !== firstFrame)
+    await ask(second, { cmd: 'view-input', key, input: { type: 'key', key: 'Enter' } })
+    await wait(300)
+    expect((await ask(second, { cmd: 'view-frame', key })).result?.url).toContain('/login?account=same-tab')
+    await ask(second, { cmd: 'view-input', key, input: { type: 'click', x: 10, y: 10 } })
+    await until(() => streamStopped)
+    expect((await ask(second, { cmd: 'view-frame', key })).result?.url).toContain('/other')
+    await ask(second, { cmd: 'view-input', key, input: { type: 'click', x: 10, y: 10 } })
+  } finally { video.stop() }
+  await ask(second, { cmd: 'view-close', key })
+  expect((await ask(second, { cmd: 'view-frame', key }, false)).ok).toBe(false)
+  expect((await ask(second, { cmd: 'eval', ...existing, code: 'location.search' })).result).toMatchObject({ value: '?account=same-tab' })
+  expect((await ask(second, { cmd: 'text', conversation: 'b', tab: other })).ok).toBe(true)
   expect((await ask(second, { cmd: 'view-open', conversation: 'a', url }, false)).error).toContain('Only the person')
   registerBrowserConversation('a', '/local-test', true, folder(second))
   await until(() => !cards(second)[0]?.tabs.includes(own ?? -1))

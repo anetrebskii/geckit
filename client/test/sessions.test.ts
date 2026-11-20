@@ -160,6 +160,36 @@ const last = <T>(all: readonly T[]): T | undefined => all.at(-1)
 const of = (all: readonly (readonly ChatSession[])[], id: string): ChatSession | undefined =>
   last(all)?.find((one) => one.id === id)
 
+describe('link completion', () => {
+  it('continues the issuing conversation after its current turn', async () => {
+    const { sessions, fake, rows } = build()
+    const id = await sessions.send({ root: ROOT, mode: 'manual', text: 'Open the sign-in link.' })
+    const text = 'GeckIt: Browser tab returned.'
+    sessions.linkCompleted('missing-conversation', text)
+    sessions.linkCompleted(id, text)
+    expect(of(rows, id)?.queued?.map((entry) => entry.text)).toEqual([text])
+    expect(fake.sent.map((entry) => entry.text)).toEqual(['Open the sign-in link.'])
+    fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(fake.sent.map((entry) => entry.text)).toEqual(['Open the sign-in link.', text]))
+    expect(fake.made).toHaveLength(1)
+    sessions.dispose()
+  })
+
+  it('does not reopen a conversation marked Done while its completion was queued', async () => {
+    const { sessions, fake, rows } = build()
+    const id = await sessions.send({ root: ROOT, mode: 'manual', text: 'Request a key.' })
+    sessions.linkCompleted(id, 'GeckIt: Secret ready: test-key.')
+    sessions.mark(id, 'done')
+    sessions.linkCompleted(id, 'GeckIt: Secret ready: another-key.')
+    expect(of(rows, id)?.queued).toHaveLength(1)
+    fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(rows, id)?.queued ?? []).toHaveLength(0))
+    expect(fake.sent.map((entry) => entry.text)).toEqual(['Request a key.'])
+    expect(of(rows, id)?.status).toBe('done')
+    sessions.dispose()
+  })
+})
+
 describe('the list a client is answered with', () => {
   it('reads the disk once, then answers from what it holds and reads again behind the answer only after 30 s', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] })

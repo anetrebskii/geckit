@@ -446,9 +446,21 @@ async function deviceCommand(rest: readonly string[]): Promise<{ readonly ok: bo
   return told.ok ? { ok: true, said: (told as Reply & { readonly said?: string }).said ?? '' } : { ok: false, said: told.error ?? 'The profile was not moved.' }
 }
 
-async function signInCommand(named: string | undefined): Promise<{ readonly ok: boolean; readonly said: string }> {
-  const name = testName(named ?? '') ?? named ?? ''
+async function signInCommand(rest: readonly string[]): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const named = rest[0] ?? ''
+  const name = testName(named) ?? named
   if (!validTestName(name)) return { ok: false, said: 'Give the profile to sign in to, such as geckit browser signin github-work.' }
+  if (rest.includes('--tab')) {
+    if (rest.length !== 3 || rest[1] !== '--tab') return { ok: false, said: 'Use geckit browser signin <profile> --tab <id>.' }
+    const tab = Number(option(rest, '--tab'))
+    const conversation = requestingSession()
+    if (!Number.isSafeInteger(tab) || tab <= 0 || conversation === undefined) return { ok: false, said: 'Give the tab ID from geckit browser pages in the conversation that opened it.' }
+    const told = await askService('signin', { name, tab, conversation })
+    if (!told.ok || told.link === undefined) return { ok: false, said: told.error ?? 'No link was made.' }
+    return { ok: true, said: `${told.link}
+Give this link only to the person in a private conversation. It opens the existing tab once within 15 minutes. Ask them to press Done. GeckIt resumes this conversation when Done returns the tab. End the turn without a timer or polling.` }
+  }
+  if (rest.length !== 1) return { ok: false, said: 'Use geckit browser signin <profile> [--tab <id>].' }
   if (!testBrowsersState().profiles.some((one) => one.name === name)) return { ok: false, said: `There is no ${TEST_PREFIX}${name}. Make it first with geckit browser profiles create ${name}.` }
   const told = await askService('signin', { name })
   if (!told.ok || told.link === undefined) return { ok: false, said: told.error ?? 'No link was made.' }
@@ -478,16 +490,30 @@ async function ask(request: object, folder: string = browserFolder(), to?: numbe
     renameSync(`${asked}.part`, asked)
   } catch { return { ok: false, error: `This sandbox may not write to ${folder}, where requests for Chrome are left. GeckIt's own Codex conversations may; elsewhere ask the person to allow writing there.` } }
   const told = join(folder, `${name}.told`)
-  for (let waited = 0; waited < 70_000; waited += 100) {
-    if (existsSync(told)) {
-      const reply = JSON.parse(readFileSync(told, 'utf8')) as Reply
-      rmSync(told, { force: true })
-      return reply
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => { watcher?.close(); clearInterval(poll); clearTimeout(deadline) }
+    const check = (): void => {
+      if (!existsSync(told)) return
+      cleanup()
+      try {
+        const reply = JSON.parse(readFileSync(told, 'utf8')) as Reply
+        rmSync(told, { force: true })
+        resolve(reply)
+      } catch (error) { reject(error) }
     }
-    await new Promise((done) => setTimeout(done, 100))
-  }
-  rmSync(asked, { force: true })
-  return { ok: false, error: 'The GeckIt Browser bridge did not answer within 70 seconds.' }
+    let watcher: ReturnType<typeof watch> | undefined
+    const poll = setInterval(check, 100)
+    const deadline = setTimeout(() => {
+      cleanup()
+      rmSync(asked, { force: true })
+      resolve({ ok: false, error: 'The GeckIt Browser bridge did not answer within 70 seconds.' })
+    }, 70_000)
+    try {
+      watcher = watch(folder, { persistent: false }, (_event, file) => { if (file === null || file === `${name}.told`) check() })
+      watcher.on('error', () => { watcher?.close(); watcher = undefined })
+    } catch { /* Poll if the file watcher is unavailable. */ }
+    check()
+  })
 }
 
 export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension, and test browsers, Camoufox driven by GeckIt.
@@ -508,6 +534,7 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
                                 archives can contain sensitive website data; sign-ins and saved passwords
                                 may need to be set up again on another computer
   signin <name>                 a link the person opens in GeckIt to see geckit:<name> live and sign in themselves
+  signin <name> --tab <id>      a private HTTPS link the person opens once to take over your existing test tab
   signin <name> --done          when they say they are done: the sign-in is kept and the browser closes
   start <profile>               open a window of a profile that has GeckIt Browser but is closed
   start geckit                  start or reuse this conversation project test browser; no profile name needed
@@ -679,7 +706,7 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
   if (what === 'profiles' && rest[0] === 'device') return deviceCommand(rest)
   if (what === 'profiles' && rest.length > 0) return { ok: false, said: `Unknown profiles command ${rest[0]}.\n\n${BROWSER_HELP}` }
   if (what === 'profiles') return { ok: true, said: listProfiles() }
-  if (what === 'signin') return rest.includes('--done') ? signInDone(rest.find((one) => !one.startsWith('--'))) : signInCommand(rest[0])
+  if (what === 'signin') return rest.includes('--done') && !rest.includes('--tab') ? signInDone(rest.find((one) => !one.startsWith('--'))) : signInCommand(rest)
   if (what === 'clipboard') {
     try {
       const clip = readClipboard(process.platform, process.env['DISPLAY'] === undefined ? profiles().find((one) => one.display !== undefined)?.display : undefined)

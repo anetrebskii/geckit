@@ -652,6 +652,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       screen: () => Promise.resolve({}),
       shares: () => Promise.resolve([]),
       onShares: never,
+      tabVideos: () => Promise.resolve([]),
+      onTabVideo: never,
       share: () => Promise.resolve(undefined),
       onScale: never,
       scaled: nothing,

@@ -13,7 +13,7 @@ function scopedStorage(storage: Storage, prefix: string): Storage {
 }
 
 let mounted = false
-window.mountRemoteWorkspace = async ({ connection, server, phone, source }: WorkspaceMount): Promise<void> => {
+window.mountRemoteWorkspace = async ({ connection, server, phone, source, onSignIn }: WorkspaceMount): Promise<void> => {
   if (mounted) return
   mounted = true
   document.documentElement.classList.toggle('phone', phone)
@@ -24,7 +24,7 @@ window.mountRemoteWorkspace = async ({ connection, server, phone, source }: Work
   window.updateRemoteComputer = (computer) => { window.geckitRemoteComputer = computer; window.dispatchEvent(new Event('geckit:computer')) }
   if (source !== undefined) window.updateRemoteComputer(source)
   const { workspaceApi } = await import('./workspace-api')
-  const api = await workspaceApi(connection, server, phone)
+  const api = await workspaceApi(connection, server, phone, onSignIn)
   Object.defineProperty(window, 'geckit', { value: api })
   await import('../chat/main')
 }

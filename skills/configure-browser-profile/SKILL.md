@@ -21,7 +21,7 @@ Establish the site, required account, project, execution computer and need for i
 4. For ordinary isolated project work, `start geckit` reuses the project's persistent profile. Do not create another named profile just to reproduce this default. Projects keep separate profiles; conversations in one project share sign-ins with separate owned pages.
 5. For a required named account profile, search again before creating. Use a project-derived lowercase name. Add account or purpose to distinguish profiles within one project. Choose an unused name within the CLI's restrictions and a note naming site and intended account. Create only after establishing that no allowed profile fits.
 6. Respect project account-profile mappings. A globally listed named profile is not automatically selectable from this conversation. If access is not configured, report the missing project mapping; do not widen it silently or select another account.
-7. Start the selected profile and verify the command result. For human sign-in, create the link and put it in the final chat reply or originating thread. The person enters credentials themselves. Run sign-in completion only after they say they finished, then verify the expected signed-in site without reading secrets.
+7. Start the selected profile and verify the command result. Follow `use-browser` for the sign-in choice and [profile commands](references/profiles.md) for the corresponding link. After the person finishes, verify the expected account without reading secrets.
 8. Reuse a task-owned page for verification. Preserve other conversations' pages and existing sign-in progress. Do not stop a shared managed browser. Done can close this task's pages while retaining its profile and cookies.
 
 ## Unknowns

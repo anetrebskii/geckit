@@ -13,7 +13,8 @@ import { countEvent } from '../../../shared/counting'
 import type { EventName } from '../../../shared/counting'
 import { LINK_DOWN } from './client'
 import type { PhoneCalls } from '../phone-calls'
-import type { WorkspaceConnection } from './Workspace'
+import type { WorkspaceConnection, WorkspaceMount } from './Workspace'
+import { readSignIn } from '../../../shared/live-view'
 import { clientData } from '../../../shared/client-data'
 import { keep, readKept } from '../kept'
 
@@ -21,7 +22,7 @@ import { keep, readKept } from '../kept'
 const NOTICE_FOR = 6000
 const CODE_SHOWN = 60_000
 
-export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean) {
+export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean, onSignIn?: WorkspaceMount['onSignIn']) {
   // A server older than service:about answers only the whole bootstrap.
   const readAbout = () => connection.call('service:about').catch(() => connection.call('service:bootstrap'))
   const asked = readAbout()
@@ -132,7 +133,10 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
       }
       if (channel === 'open:link') {
         const href = args[0]
-        if (typeof href === 'string' && /^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
+        if (typeof href !== 'string') return
+        const signIn = href.startsWith('geckit:') ? readSignIn(href) : undefined
+        if (signIn !== undefined && onSignIn !== undefined) void onSignIn(signIn).catch(report)
+        else if (/^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
         return
       }
       if (['chat:openFile', 'chat:reveal', 'chat:fileMenu'].includes(channel)) {

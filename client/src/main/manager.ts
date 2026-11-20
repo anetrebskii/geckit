@@ -534,6 +534,12 @@ export class Manager {
   }
 
   threadOf(session: string): string | undefined { return this.#threadOfSession(session) }
+
+  linkCompleted(session: string, text: string): void {
+    const thread = this.#threadOfSession(session)
+    if (thread !== undefined && this.#open(thread)) this.#reconcile(text, thread)
+  }
+
   threadRecord(thread: string): Pick<ThreadRecord, 'id' | 'channel' | 'key' | 'place' | 'shared'> | undefined { return this.#threadRecord(thread) }
 
   async view(): Promise<ManagerView> {

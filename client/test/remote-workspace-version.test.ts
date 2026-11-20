@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CoreMethods } from '../src/core/application'
-import type { WorkspaceConnection } from '../src/renderer/src/remote/Workspace'
+import type { WorkspaceConnection, WorkspaceMount } from '../src/renderer/src/remote/Workspace'
 import type { PhoneCalls } from '../src/renderer/src/phone-calls'
 import { workspaceApi } from '../src/renderer/src/remote/workspace-api'
 import type { RemoteServer } from '../src/shared/remote/protocol'
@@ -20,6 +20,23 @@ function connection() {
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
+
+describe('links in the phone workspace', () => {
+  it('opens sign-in in GeckIt and keeps ordinary web links in the browser', async () => {
+    const open = vi.fn<Window['open']>()
+    const onSignIn = vi.fn<WorkspaceMount['onSignIn']>().mockResolvedValue(undefined)
+    vi.stubGlobal('window', { parent: {}, open })
+    const api = await workspaceApi(connection().link, server, true, onSignIn)
+    api.chat.openLink('geckit://signin?computer=remote-version&name=Remote%20server&profile=cws-publisher&t=fixture_token_123456')
+    api.chat.openLink('geckit://signin?computer=remote-version&profile=cws-publisher')
+    expect(onSignIn).toHaveBeenCalledExactlyOnceWith({
+      computer: 'remote-version', name: 'Remote server', profile: 'cws-publisher', token: 'fixture_token_123456',
+    })
+    expect(open).not.toHaveBeenCalled()
+    api.chat.openLink('https://example.com/')
+    expect(open).toHaveBeenCalledExactlyOnceWith('https://example.com/', '_blank', 'noopener,noreferrer')
+  })
+})
 
 describe('the connected computer version', () => {
   it('reads the remote version when Settings opens and reads it again after a server update', async () => {

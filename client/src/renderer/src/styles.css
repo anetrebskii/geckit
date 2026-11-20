@@ -16250,6 +16250,86 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
   filter: saturate(0.4);
 }
 
+.live-view-picture > canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.browser-opening {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--text);
+  background: var(--bg-sunken);
+  text-align: center;
+}
+
+.browser-opening p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.browser-opening-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.browser-opening-icon::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid transparent;
+  border-block-start-color: var(--accent);
+  border-radius: inherit;
+  animation: spin 900ms linear infinite;
+}
+
+.live-view-tap {
+  position: absolute;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  pointer-events: none;
+  border: 2px solid var(--pointer-edge);
+  outline: 1px solid var(--pointer-fill);
+  border-radius: 50%;
+  animation: live-view-tap var(--settle) var(--ease) forwards;
+}
+
+@keyframes live-view-tap {
+  from { transform: scale(.7); }
+  to { opacity: 0; transform: scale(1.2); }
+}
+
+@keyframes live-view-tap-still {
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-opening-icon::after {
+    animation: none;
+    border-color: var(--accent);
+  }
+
+  .live-view-tap {
+    animation-name: live-view-tap-still;
+    animation-duration: var(--settle) !important;
+  }
+}
+
 /* Firefox leaves the caret out of its pictures, so GeckIt draws it where the page says it is, in the field's own caret colour, and blinks it as a Mac does. */
 .live-view-caret {
   position: absolute;
@@ -16259,6 +16339,11 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
   border-radius: 1px;
   pointer-events: none;
   animation: caret-blink 1.06s steps(1, end) infinite;
+}
+
+.live-view.handoff .live-view-caret {
+  width: 1px;
+  margin-left: 0;
 }
 
 @keyframes caret-blink {

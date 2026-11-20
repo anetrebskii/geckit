@@ -15,6 +15,7 @@ import { channelManifest, loadChannel } from '../src/main/channels/libraries'
 import type { CoreEvent } from '../src/core/events'
 import type { ChatSession, Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
+import { tabHandoffUrl } from '../src/shared/live-view'
 import type { ManagerHistoryBoundary, ManagerView } from '../src/shared/manager'
 import type { ChannelView } from '../src/shared/channels'
 import { CHANNEL_CAPABILITIES, grantedCapabilities } from '../src/shared/channels'
@@ -381,6 +382,24 @@ it('Slack: ignores an old user allowlist and answers other workspace users', asy
   await vi.waitFor(() => expect(run.sent).toHaveLength(1))
   expect(run.sent[0]?.[0]).toBe('channel:slack:C1:3.0')
   await run.channel.stop()
+})
+
+it('Slack: sends one-time browser links only in direct messages and disables link previews', async () => {
+  const run = slackHarness()
+  const link = tabHandoffUrl('a'.repeat(43), Date.now() + 60_000, 'one-time-test')
+  await run.channel.start()
+  try {
+    run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> open the tab' })
+    run.event({ type: 'message', channel_type: 'im', user: 'U1', channel: 'D1', ts: '4.0', text: 'open the tab' })
+    await vi.waitFor(() => expect(run.watchers.size).toBe(2))
+    run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'answer', text: link })
+    run.watchers.get('channel:slack:D1:4.0')?.({ kind: 'answer', text: link })
+    await vi.waitFor(() => expect(run.posted).toHaveLength(2))
+    expect(run.posted.find((post) => post.channel === 'C1')?.text).toBe('Send me a direct message to open the browser tab privately.')
+    expect(run.posted.find((post) => post.channel === 'D1')).toMatchObject({ text: link, unfurl_links: false, unfurl_media: false })
+  } finally {
+    await run.channel.stop()
+  }
 })
 
 it('Slack: one message says what Manager does while it prepares an answer, edited in place and deleted when the answer comes', async () => {

@@ -1,4 +1,5 @@
 import type { Dialog, Download, Frame, Page } from 'playwright-core'
+import WebSocket from 'ws'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
@@ -7,8 +8,10 @@ import { basename, extname, join } from 'node:path'
 import type { TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
-import { signInLink } from './live-view'
-import { addressOf } from '../shared/live-view'
+import { signInLink, tabHandoffLink } from './live-view'
+import type { TabHandoffTarget } from './live-view'
+import { addressOf, TAB_HANDOFF_LEASE, TAB_HANDOFF_TTL } from '../shared/live-view'
+import type { TabHandoffPngFrame } from '../shared/live-view'
 import { serveSecretFiles } from './secrets-serve'
 import { receiver, type SealedValue } from '../shared/secret-seal'
 import { alive, camoufoxLibraries, camoufoxSupported, downloading, migrateChromeProfiles, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
@@ -54,7 +57,7 @@ export function scrubSecrets(value: PageValue, secrets: readonly string[]): Page
   return JSON.parse(text) as PageValue
 }
 interface ViewSettings { readonly width?: number; readonly height?: number; readonly phone?: boolean; readonly scheme?: 'light' | 'dark'; readonly motion?: 'reduce' | 'no-preference' }
-interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly count?: number; readonly button?: 'left' | 'right'; readonly append?: boolean; readonly files?: readonly string[]; readonly folder?: string; readonly to?: string; readonly offset?: { readonly x: number; readonly y: number }; readonly load?: boolean; readonly gone?: string; readonly accept?: boolean; readonly kind?: string; readonly setting?: string; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: ViewSettings; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string; readonly input?: ViewInput; readonly keyId?: string; readonly sealed?: SealedValue }
+interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly count?: number; readonly button?: 'left' | 'right'; readonly append?: boolean; readonly files?: readonly string[]; readonly folder?: string; readonly to?: string; readonly offset?: { readonly x: number; readonly y: number }; readonly load?: boolean; readonly gone?: string; readonly accept?: boolean; readonly kind?: string; readonly setting?: string; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: ViewSettings; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string; readonly input?: ViewInput; readonly keyId?: string; readonly sealed?: SealedValue; readonly patches?: true }
 type Center = { readonly x: number; readonly y: number; readonly label: string }
 type Box = Omit<Center, 'label'> & { readonly width: number; readonly height: number; readonly scrollX: number; readonly scrollY: number }
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
@@ -124,19 +127,38 @@ export const CARET_SCRIPT = `(() => {
   const style = view.getComputedStyle(field)
   if (field.tagName === 'INPUT') {
     const box = field.getBoundingClientRect()
-    const pen = new OffscreenCanvas(1, 1).getContext('2d')
-    pen.font = style.font || (style.fontWeight + ' ' + style.fontSize + ' ' + style.fontFamily)
-    if ('letterSpacing' in pen && style.letterSpacing !== 'normal') pen.letterSpacing = style.letterSpacing
-    const text = field.type === 'password' ? '\u2022'.repeat(field.value.length) : field.value
-    const before = pen.measureText(text.slice(0, field.selectionStart ?? text.length)).width
-    const whole = pen.measureText(text).width
+    const doc = field.ownerDocument
+    const mirror = doc.createElement('span')
+    Object.assign(mirror.style, { all: 'initial', position: 'fixed', visibility: 'hidden', pointerEvents: 'none', top: '0', left: '0', whiteSpace: 'pre', unicodeBidi: 'isolate' })
+    for (const name of ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings', 'fontOpticalSizing', 'letterSpacing', 'wordSpacing', 'textTransform', 'direction']) mirror.style[name] = style[name]
+    const text = doc.createTextNode(field.type === 'password' ? '\\u2022'.repeat(field.value.length) : field.value)
+    mirror.appendChild(text)
+    doc.body.appendChild(mirror)
+    const range = doc.createRange()
+    range.setStart(text, field.selectionStart)
+    range.collapse(true)
+    const line = mirror.getBoundingClientRect()
+    const before = text.length === 0 ? 0 : range.getBoundingClientRect().left - line.left
+    mirror.remove()
     const edge = (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.paddingLeft) || 0)
     const inner = box.width - edge - (parseFloat(style.borderRightWidth) || 0) - (parseFloat(style.paddingRight) || 0)
-    const align = style.textAlign === 'center' ? Math.max(0, (inner - whole) / 2) : style.textAlign === 'right' || style.textAlign === 'end' ? Math.max(0, inner - whole) : 0
-    const left = edge + align + before - field.scrollLeft
+    const rtl = style.direction === 'rtl'
+    const alignRight = style.textAlign === 'right' || (style.textAlign === 'end' && !rtl) || (style.textAlign === 'start' && rtl)
+    const room = inner - line.width
+    const align = style.textAlign === 'center' ? Math.max(0, room / 2) : alignRight ? (rtl ? room : Math.max(0, room)) : 0
+    let left = edge + align + before - field.scrollLeft
     const size = parseFloat(style.fontSize) || 16
     const height = Math.min(parseFloat(style.lineHeight) || size * 1.2, size * 1.3)
     if (left < 0 || left > box.width) return null
+    if (text.length > 0) {
+      try {
+        const hit = doc.caretPositionFromPoint?.(box.left + left, box.top + box.height / 2)
+        if (hit?.offsetNode === field && hit.offset === field.selectionStart) {
+          const native = hit.getClientRect()
+          if (native?.height > 0) left = native.left - box.left
+        }
+      } catch { /* Firefox can omit a rectangle for a focused input. */ }
+    }
     return done({ left: box.left + left, top: box.top + (box.height - height) / 2, width: 0, height }, height)
   }
   const mirror = field.ownerDocument.createElement('div')
@@ -164,18 +186,29 @@ export const CARET_SCRIPT = `(() => {
 export const FIELDS_SCRIPT = `(() => {
   const kinds = new Set(['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number'])
   const found = []
-  const look = (doc, dx, dy) => {
+  let focusedField
+  const look = (doc, dx, dy, focused) => {
     for (const one of doc.querySelectorAll('input, textarea, [contenteditable=""], [contenteditable="true"], iframe')) {
       if (found.length >= 80) return
       const box = one.getBoundingClientRect()
       if (box.width <= 0 || box.height <= 0 || box.bottom + dy < 0 || box.top + dy > innerHeight || box.right + dx < 0 || box.left + dx > innerWidth) continue
-      if (one.tagName === 'IFRAME') { try { if (one.contentDocument) look(one.contentDocument, dx + box.left, dy + box.top) } catch {} continue }
+      const active = focused && one === doc.activeElement
+      if (one.tagName === 'IFRAME') { try { if (one.contentDocument) look(one.contentDocument, dx + box.left, dy + box.top, active) } catch {} continue }
       if (one.disabled || one.readOnly || (one.tagName === 'INPUT' && !kinds.has(one.type))) continue
-      found.push({ x: Math.round(dx + box.left), y: Math.round(dy + box.top), width: Math.round(box.width), height: Math.round(box.height) })
+      const field = { x: Math.round(dx + box.left), y: Math.round(dy + box.top), width: Math.round(box.width), height: Math.round(box.height) }
+      found.push(field)
+      if (active) focusedField = field
     }
   }
-  look(document, 0, 0)
-  return found
+  look(document, 0, 0, true)
+  return { fields: found, focusedField }
+})()`
+
+const FRAME_METADATA = `(() => {
+  const metadata = { title: document.title }
+  try { metadata.caret = ${CARET_SCRIPT} ?? undefined } catch {}
+  try { Object.assign(metadata, ${FIELDS_SCRIPT}) } catch {}
+  return metadata
 })()`
 
 /** Playwright's launch error ends with its call log; the cause is in the browser's own error lines and exit. */
@@ -289,6 +322,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     const page = targets.get(id)
     if (page === undefined) throw new Error(`No tab ${id}. Run geckit browser pages for the current ids.`)
     owners.authorize(activeConversation, String(id))
+    if (handoff !== undefined && (page === viewPage || viewOpeners.includes(page))) throw new Error('The person is using this tab. Wait for them to finish.')
     return page
   }
   const evaluate = async (page: Page, expression: string): Promise<PageValue | undefined> => {
@@ -539,14 +573,29 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   }
   let viewPage: Page | undefined
   const viewOpeners: Page[] = []
+  let handoff: { readonly key: string; readonly expires: number; heard: number } | undefined
+  let handoffPoll: ReturnType<typeof setInterval> | undefined
+  let stopVideo: (() => void) | undefined
+  const releaseHandoff = (): void => {
+    stopVideo?.()
+    clearInterval(handoffPoll)
+    handoffPoll = undefined
+    handoff = undefined
+    viewPage = undefined
+    viewOpeners.length = 0
+  }
+  const followed = new WeakSet<Page>()
   /** A popup the sign-in page opens, such as Sign in with Google, is shown in its place until it closes, then the page that opened it again. */
   const follow = (page: Page): void => {
+    if (followed.has(page)) return
+    followed.add(page)
     page.on('popup', (popup) => {
       if (viewPage !== page) return
+      stopVideo?.()
       viewOpeners.push(page)
       viewPage = popup
       follow(popup)
-      void popup.setViewportSize(VIEW_SIZE).then(() => popup.bringToFront()).catch(() => undefined)
+      if (handoff === undefined) void popup.setViewportSize(VIEW_SIZE).then(() => popup.bringToFront()).catch(() => undefined)
       popup.on('close', () => {
         if (viewPage !== popup) return
         let back = viewOpeners.pop()
@@ -556,6 +605,49 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     })
   }
   const viewTarget = (): Page => { if (viewPage === undefined || viewPage.isClosed()) throw new Error('The sign-in tab is closed. Start the sign-in again.'); return viewPage }
+  const streamTab = (endpoint: string | undefined): object => {
+    if (handoff === undefined || endpoint === undefined || !/^ws:\/\/127\.0\.0\.1:\d{1,5}\/[a-f0-9]{64}$/.test(endpoint) || stopVideo !== undefined) throw new Error('The tab stream is unavailable.')
+    const page = viewTarget()
+    const socket = new WebSocket(endpoint, { perMessageDeflate: false, handshakeTimeout: 2000 })
+    const stop = (): void => {
+      if (stopVideo !== stop) return
+      stopVideo = undefined
+      page.off('close', stop)
+      page.off('framenavigated', checkPage)
+      socket.terminate()
+      void page.screencast.stop().catch(() => undefined)
+    }
+    const checkPage = (): void => {
+      if (page !== viewPage || !/^https?:\/\//i.test(page.url())) stop()
+    }
+    stopVideo = stop
+    socket.on('error', stop)
+    socket.on('close', stop)
+    page.on('close', stop)
+    page.on('framenavigated', checkPage)
+    let pending: Buffer | undefined
+    let sending = false
+    const send = (): void => {
+      checkPage()
+      if (sending || pending === undefined || socket.readyState !== WebSocket.OPEN) return
+      const data = pending
+      pending = undefined
+      sending = true
+      socket.send(data, (error) => {
+        sending = false
+        if (error) stop()
+        else send()
+      })
+    }
+    socket.once('open', () => {
+      if (stopVideo !== stop) return
+      void page.screencast.start({ quality: 80, size: { width: 1920, height: 1200 }, onFrame: ({ data }) => {
+        pending = data
+        send()
+      } }).catch(stop)
+    })
+    return {}
+  }
   const viewInput = async (input: ViewInput | undefined): Promise<object> => {
     if (input === undefined) throw new Error('Nothing to do.')
     const page = viewTarget()
@@ -576,7 +668,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       case 'ping': return { version: `Camoufox ${binary.version}` }
       case 'acquire': return {}
       case 'quit': if (owners.conversations.size > 0) throw new Error('This browser still belongs to conversations. Move their cards to Done to release it.'); setTimeout(() => { void context.close() }, 100); return {}
-      case 'pages': return Promise.all([...targets.entries()].filter(([one]) => activeConversation === undefined ? !owners.managed : owners.tabs.get(String(one)) === activeConversation).map(async ([one, page]) => ({ ...await describe(page, one), window: 0, active: false, ...(openers.has(one) ? { opener: openers.get(one) } : {}) })))
+      case 'pages': return Promise.all([...targets.entries()].filter(([one, page]) => (handoff === undefined || (page !== viewPage && !viewOpeners.includes(page))) && (activeConversation === undefined ? !owners.managed : owners.tabs.get(String(one)) === activeConversation)).map(async ([one, page]) => ({ ...await describe(page, one), window: 0, active: false, ...(openers.has(one) ? { opener: openers.get(one) } : {}) })))
       case 'open': {
         const page = await context.newPage()
         const made = track(page)
@@ -664,10 +756,45 @@ export async function testBrowser(name: string, folder: string = browserFolder()
         return evaluate(page, '({width: innerWidth, height: innerHeight, dark: matchMedia("(prefers-color-scheme: dark)").matches, still: matchMedia("(prefers-reduced-motion: reduce)").matches})')
       }
       case 'record': return record(request)
+      case 'handoff-check': {
+        if (activeConversation === undefined) throw new Error('Only the conversation that opened this tab can share it.')
+        if (!/^https?:\/\//i.test(targetOf(id).url())) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        return {}
+      }
+      case 'view-handoff': {
+        if (request.key === undefined || request.tab === undefined || request.conversation === undefined) throw new Error('The browser tab is unavailable.')
+        if (viewPage !== undefined && !viewPage.isClosed()) throw new Error('This browser already has a live view.')
+        const page = targetOf(request.tab)
+        if (!/^https?:\/\//i.test(page.url())) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        const now = Date.now()
+        handoff = { key: request.key, expires: now + TAB_HANDOFF_TTL, heard: now }
+        handoffPoll = setInterval(pick, 40).unref()
+        viewOpeners.length = 0
+        viewPage = page
+        follow(page)
+        return {}
+      }
       case 'view-open': if (viewPage === undefined || viewPage.isClosed()) { viewOpeners.length = 0; viewPage = await context.newPage(); follow(viewPage) } await viewPage.setViewportSize(VIEW_SIZE); await viewPage.bringToFront(); if (request.url) await navigate(viewPage, request.url); return { ...VIEW_SIZE }
-      case 'view-frame': { const page = viewTarget(); return { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60, caret: 'initial' })).toString('base64'), ...(page.viewportSize() ?? VIEW_SIZE), url: page.url(), title: await page.title(), ...await page.evaluate(CARET_SCRIPT).then((caret) => caret === null || caret === undefined ? {} : { caret: caret as NonNullable<ViewFrame['caret']> }, () => ({})), ...await page.evaluate(FIELDS_SCRIPT).then((fields) => ({ fields: fields as NonNullable<ViewFrame['fields']> }), () => ({})), ...pointerShown(page) } satisfies ViewFrame }
+      case 'view-video': return streamTab(request.url)
+      case 'view-metadata':
+      case 'view-frame': {
+        const page = viewTarget()
+        if (handoff !== undefined && !/^https?:\/\//i.test(page.url())) {
+          await page.waitForURL(/^https?:\/\//i, { waitUntil: 'commit', timeout: 5000 })
+          if (!/^https?:\/\//i.test(page.url())) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        }
+        const viewport = page.viewportSize() ?? await page.evaluate<Pick<ViewFrame, 'width' | 'height'>>('({ width: innerWidth, height: innerHeight })')
+        const png = request.cmd === 'view-frame' && handoff !== undefined && request.patches ? await page.screenshot({ type: 'png', scale: 'css', caret: 'hide' }) : undefined
+        const pixels = request.cmd === 'view-metadata' ? { jpeg: '' } : png !== undefined && png.length <= 1_000_000
+          ? { png: png.toString('base64') }
+          : { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60, caret: 'initial' })).toString('base64') }
+        const metadata = await page.evaluate<Pick<ViewFrame, 'title' | 'caret' | 'fields' | 'focusedField'>>(FRAME_METADATA)
+        const url = page.url()
+        if (handoff !== undefined && !/^https?:\/\//i.test(url)) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        return { ...pixels, ...viewport, url, ...metadata, ...pointerShown(page) } satisfies ViewFrame | TabHandoffPngFrame
+      }
       case 'view-input': return viewInput(request.input)
-      case 'view-close': { const pages = [...viewOpeners, ...(viewPage === undefined ? [] : [viewPage])]; viewPage = undefined; viewOpeners.length = 0; for (const page of pages) if (!page.isClosed()) await page.close(); return {} }
+      case 'view-close': { const pages = handoff === undefined ? [...viewOpeners, ...(viewPage === undefined ? [] : [viewPage])] : []; releaseHandoff(); for (const page of pages) if (!page.isClosed()) await page.close(); return {} }
       default: throw new Error(`Unknown command ${request.cmd}.`)
     }
   }
@@ -714,13 +841,25 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     if (owners.managed && owners.conversations.size === 0) { closing = true; setTimeout(() => { void context.close() }, 100) }
   }
   let queue: Promise<Reply> = Promise.resolve({ ok: true })
+  const expireHandoff = (): void => {
+    const now = Date.now()
+    if (handoff !== undefined && (now >= handoff.expires || now - handoff.heard >= TAB_HANDOFF_LEASE)) releaseHandoff()
+  }
   const handle = (request: object): Promise<Reply> => {
     const run = async (): Promise<Reply> => {
       const asked = request as Request
       try {
         if (closing) throw new Error('This test browser is closing. Start test again.')
+        expireHandoff()
         if (asked.cmd.startsWith('view-')) {
-          if (asked.conversation !== undefined) throw new Error('Only the person signs in, through GeckIt.')
+          if (asked.cmd === 'view-handoff') {
+            activeConversation = asked.conversation
+            if (handoff !== undefined) throw new Error('This browser already has a live view.')
+          } else {
+            if (asked.conversation !== undefined) throw new Error('Only the person signs in, through GeckIt.')
+            if (asked.key !== handoff?.key || (handoff !== undefined && asked.cmd === 'view-open')) throw new Error('This browser view belongs to another sign-in.')
+            if (handoff !== undefined) handoff.heard = Date.now()
+          }
           return await answer(asked).then((result) => ({ ok: true, result }), (error: Error) => ({ ok: false, error: error.message }))
         }
         activeConversation = asked.conversation
@@ -746,7 +885,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   }
   const pick = serveAsks(folder, (to) => to === process.pid, handle)
   watch(folder, pick)
-  setInterval(() => { say(); pick(); queue = queue.then(async () => { await release(); return { ok: true } }, async () => { await release(); return { ok: true } }) }, 1_000)
+  setInterval(() => { say(); pick(); queue = queue.then(async () => { expireHandoff(); await release(); return { ok: true } }, async () => { expireHandoff(); await release(); return { ok: true } }) }, 1_000)
 }
 
 const tell = (source: string, reply: object): void => { writeFileSync(`${source}.told.part`, JSON.stringify(reply)); renameSync(`${source}.told.part`, `${source}.told`) }
@@ -778,10 +917,11 @@ export function serveTestLaunches(executable: string, script: string, folder: st
     serveSecretFiles(folder, files)
     for (const file of files.filter((one) => one.endsWith('.signin'))) {
       const source = join(folder, file)
-      let name: string
-      try { name = (JSON.parse(readFileSync(source, 'utf8')) as { name: string }).name } catch { continue }
+      let asked: Pick<TabHandoffTarget, 'name'> & Partial<Omit<TabHandoffTarget, 'name'>>
+      try { asked = JSON.parse(readFileSync(source, 'utf8')) as typeof asked } catch { continue }
       rmSync(source, { force: true })
-      try { tell(source, { ok: true, ...signInLink(name) }) } catch (error) { tell(source, { ok: false, error: error instanceof Error ? error.message : String(error) }) }
+      void Promise.resolve().then(() => asked.tab === undefined || asked.conversation === undefined ? signInLink(asked.name) : tabHandoffLink({ name: asked.name, tab: asked.tab, conversation: asked.conversation }))
+        .then((link) => tell(source, { ok: true, ...link }), (error: Error) => tell(source, { ok: false, error: error.message }))
     }
     files = files.filter((one) => one.endsWith('.launch'))
     for (const file of files) {

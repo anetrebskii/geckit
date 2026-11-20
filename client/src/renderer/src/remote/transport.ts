@@ -3,8 +3,8 @@ import { transportBinding } from '../../../shared/remote/identity'
 import { remoteChannel } from '../../../shared/remote/channel'
 import { answer, iceFor, postSignal } from '../../../shared/remote/signaling'
 import type { RemoteChannel, RemoteSignal } from '../../../shared/remote/protocol'
-import type { ConnectStage } from './client'
-export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal, stage: (at: ConnectStage) => void = () => undefined): Promise<RemoteChannel> {
+export const DIAL_STAGES = ['service', 'answer', 'joining'] as const
+export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal, stage: (at: typeof DIAL_STAGES[number]) => void = () => undefined, answerPollMs = 1000): Promise<RemoteChannel> {
   stage('service')
   const peer = new RTCPeerConnection({ iceServers: await iceFor(pairing) })
   const channel = peer.createDataChannel('geckit', { ordered: true })
@@ -18,10 +18,11 @@ export async function remoteDial(pairing: RemoteSignal, signal: AbortSignal, sta
     const offer = peer.localDescription?.sdp ?? ''
     await postSignal(pairing, 'offers', id, { sdp: offer, at: Date.now() })
     stage('answer')
+    const quickUntil = Date.now() + 8_000
     let description = await answer(pairing, id)
     while (description === undefined) {
       if (signal.aborted || Date.now() > until) throw new Error('the server did not answer. Check that GeckIt is running there and the code is new.')
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, Date.now() < quickUntil ? answerPollMs : 1000))
       description = await answer(pairing, id)
     }
     stage('joining')

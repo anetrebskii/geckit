@@ -14,8 +14,9 @@ import { secretsAt } from '../main/hosts/secrets'
 import type { Secrets } from '../main/hosts/secrets'
 import type { HostConfig, HostDraft } from '../shared/hosts'
 import type { SessionImage } from '../shared/api'
+import type { TabVideoEvent } from '../shared/live-view'
 
-export type ServiceEvents = CoreEvents & { 'core:trash': (id: string, path: string) => void; 'core:scale': (id: string, image: SessionImage, width: number) => void; 'core:idle': (id: string) => void }
+export type ServiceEvents = CoreEvents & { 'core:trash': (id: string, path: string) => void; 'core:scale': (id: string, image: SessionImage, width: number) => void; 'core:idle': (id: string) => void; 'core:tabVideo': (event: TabVideoEvent) => void }
 export type MigratedHostSecret = Pick<HostConfig, 'id'> & Required<Pick<HostDraft, 'password'>>
 export interface SecretMigration {
   readonly hosts: readonly MigratedHostSecret[]

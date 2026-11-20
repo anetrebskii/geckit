@@ -2,16 +2,27 @@ import { randomBytes } from 'node:crypto'
 import { askTest, openTest, profiles, stopTest } from './browser'
 import { TEST_PREFIX, validTestName } from './testing'
 import type { ViewFrame, ViewInput } from '../shared/api'
+import { TAB_HANDOFF_TTL } from '../shared/live-view'
 
-export const SIGNIN_TTL = 15 * 60_000
+export const SIGNIN_TTL = TAB_HANDOFF_TTL
 export interface LiveServer { readonly id: string; readonly name: string }
 interface Link { readonly name: string; readonly expires: number; used: boolean }
+export type TabHandoffTarget = Pick<Link, 'name'> & { readonly tab: number; readonly conversation: string }
+type TabHandoffLink = ReturnType<typeof signInLink>
 
 let server: () => LiveServer | undefined = () => undefined
+let handoff: ((target: TabHandoffTarget) => Promise<TabHandoffLink>) | undefined
 const links = new Map<string, Link>()
 
 /** Which GeckIt a sign-in link names, set by the service once remote access has an identity. */
 export const setLiveServer = (one: () => LiveServer | undefined): void => { server = one }
+export const setTabHandoff = (start: typeof handoff): void => { handoff = start }
+
+export function tabHandoffLink(target: TabHandoffTarget): Promise<TabHandoffLink> {
+  if (handoff === undefined) throw new Error('Open-tab sign-in links are unavailable on this computer.')
+  if (!validTestName(target.name) || !Number.isSafeInteger(target.tab) || target.tab <= 0 || typeof target.conversation !== 'string' || target.conversation === '') throw new Error('Give the tab ID from geckit browser pages in the conversation that opened it.')
+  return handoff(target)
+}
 
 export function signInLink(name: string, now = Date.now()): { readonly link: string; readonly expires: number } {
   if (!validTestName(name)) throw new Error('Name the profile with lowercase letters, digits and hyphens, such as github-work.')

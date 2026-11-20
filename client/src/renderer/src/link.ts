@@ -205,6 +205,7 @@ function linkOver(channel: RTCDataChannel, peer: RTCPeerConnection, video: RTCRt
     screen: () => seen?.(),
     share: async (track) => {
       if (video === undefined) return
+      if (track !== null) track.contentHint = 'text'
       await video.sender.replaceTrack(track)
       if (track === null) return
       const parameters = video.sender.getParameters()

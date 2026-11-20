@@ -7,7 +7,7 @@ description: Work on websites through GeckIt, in the person's Chrome or a GeckIt
 
 ## Browser boundary
 
-Use `{{said}} browser` for all browser actions and page reading through GeckIt's browser integration. GeckIt's own test browser is available only for the documented test-browser scenarios.
+Use `{{said}} browser` for all browser actions and page reading. Use GeckIt's test browser only in the documented scenarios.
 
 Work only in the tab the person named or a new background tab you open for this task. Do not take over unrelated tabs or switch Chrome profiles to find the target tab.
 
@@ -33,30 +33,25 @@ For profile creation or account reuse, load `{{profilesSkill}}` from {{profilesP
 
 - When the site or account cannot be told from the request, ask.
 - `{{said}} browser profiles` lists Chrome profiles. Pick one before opening anything: for a site that needs an account, the profile signed in to it, by email; for a public page, the one used last; when two fit and the choice matters, ask.
-- `open <url> --profile <email or name>` opens a tab there; `pages` lists tabs by profile, and a tab id needs no `--profile` after that. `start <profile>` opens a closed profile that has GeckIt Browser. A profile without it cannot be used: say so and name those that can.
+- `open <url> --profile <email or name>` opens a tab there. `pages` lists tab IDs usable without `--profile`. `start <profile>` opens a closed profile with GeckIt Browser. If the profile lacks it, name the available profiles.
 - For a site the extension cannot reach, work kept away from the person's tabs, or no usable profile, read [test browsers](references/test-browsers.md) first.
 
 ## Work
 
-```
-{{said}} browser pages
-{{said}} browser find <tab> "the reply button under the second post"
-{{said}} browser read <tab>
-{{said}} browser click <tab> <ref>
-{{said}} browser type <tab> <ref> "text"
-{{said}} browser text <tab>
-{{said}} browser shot <tab>
-```
-
-- Start with `find`: it returns the matching `[ref] role "name"` lines. `read` lists every heading and control; use it when `find` misses.
-- One command per call. `text` gives the main text; `shot` prints a PNG's path. `{{said}} browser help` lists the rest.
+- Start with `find <tab> "<what to find>"`. Use `read <tab>` when `find` misses. Click or type using the returned ref. Run one command per call. `{{said}} browser help` lists commands.
 - For files, downloads, key combinations, dragging, the clipboard, waiting, dialogs, new tabs and frames, read [actions](references/actions.md).
 - Refs hold until reload; after a click changes the page, read again.
-- For a design, layout or animation check, read [design checks](references/design-checks.md). When the work needs a password, API key or SSH key, use {{secrets}}.
+- For design, layout or animation, read [design checks](references/design-checks.md).
+
+### Sign-in
+
+- When sign-in is required, default to a private, single-use link to the open tab via `{{profilesSkill}}`. In the same reply, offer to send a separate link to save the password if the site supports password sign-in. Send the credential link only after opt-in.
+- Fill a password only after opt-in for that site and account. Use {{secrets}} for password entry, API tokens and SSH keys.
+- For passkeys, 2FA or CAPTCHAs, pause and hand over the same tab, including after autofill. Keep one-time codes out of chat and the secrets form. After Done, GeckIt resumes. Skip timers and polling. Verify the expected account before continuing.
 
 ## Unknowns
 
-Take refs and page state from the latest `find` or `read`, never from memory. Hand a missing sign-in, a captcha or a payment step to the person. Quote a refused or failed command as it came back.
+Take refs and page state from the latest `find` or `read`, never from memory. Hand payment steps to the person. Quote a refused or failed command as it came back.
 
 ## Output
 
