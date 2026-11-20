@@ -234,3 +234,18 @@ stateDiagram-v2
 - Old Kanban, hosts, terms and developer FAQ moved to `/desktop`; the phone section moved to `/mobile`.
 - GLM and MiniMax are listed: Alex confirmed GeckIt supports them, and other models through plugins.
 - The nav button became "Get set up" on every page, pointing to `/#setup`.
+
+## Get started page (2026-11-19)
+
+`/get-started/` is the path for "Install it yourself": seven numbered steps (install, connect your AI, connect where your team talks, hire employees, browser and passwords, phone, first task), each ending in "Stuck? We'll set it up for you" to `/#setup`. Running on a server is a collapsed "Advanced" item that links to `docs/headless-service.md`, because the server version is built from source.
+
+| Decision | Why |
+|---|---|
+| One page, short steps, links to repo docs for depth | Copying full docs drifts from the app |
+| UI labels quoted as in the source (`SettingsDialog.tsx`, channel setup modules) | Several docs use old names (Libraries, Integrations, Web Browser) |
+| Slack scopes and events in a collapsed block | Long lists would bury the steps |
+| No GLM or MiniMax repository named | No library link exists in the repository; "Another model" explains Add assistant in general |
+| No time estimate | Not measured |
+| Chrome through GeckIt marked "not available on Windows yet" | `SettingsDialog.tsx` shows "Not on Windows yet." |
+
+Entry points: hero "Install it yourself", the `#install` section, the nav link "Install guide" (replaces "Setup"; the "Get set up" button still goes to `/#setup`).
