@@ -318,6 +318,30 @@ it('keeps working after the operator disconnects and requires an explicit native
   expect(await proposed).toMatchObject({ ok: true, result: expect.stringContaining('Created employee Requested employee') })
 }, 20_000)
 
+it('accepts a background task request from a provider session between turns', async () => {
+  const parent = await send('find follow-up work')
+  const rows = () => read<ChatSession[]>('sessions', 'list')
+  await eventually(rows, (all) => all.some((one) => one.id === parent && one.state === 'unread' && one.held === true))
+  const requested = exec(process.execPath, [join(folder, 'service', 'cli.js'), 'start', '--project', 'project', '--json', 'handle follow-up work'], {
+    cwd: client, env: { ...env, CLAUDE_CODE_SESSION_ID: parent.slice('plugin:fixture:'.length) }, timeout: 10_000,
+  }).catch((error) => {
+    if (error instanceof Error && 'stdout' in error) throw new Error(String(error.stdout).trim() || error.message, { cause: error })
+    throw error
+  })
+  const pending = await Promise.race([
+    eventually(() => read<SessionItem[]>('sessions', 'pending', parent), (all) => all.some((one) => one.kind === 'request')),
+    requested.then(() => { throw new Error('Task request completed before approval.') }),
+  ])
+  const request = pending.find((one) => one.kind === 'request')
+  if (request === undefined) throw new Error('Task approval card is missing.')
+  expect((await rows()).some((one) => one.parent === parent)).toBe(false)
+  await cli('sessions', 'answer-request', parent, request.id, JSON.stringify({ start: [true], notes: [''] }))
+  const child = (await rows()).find((one) => one.parent === parent)
+  if (child === undefined) throw new Error('Approved task was not created.')
+  expect(JSON.parse((await requested).stdout)).toMatchObject({ tasks: [{ answer: 'started', id: child.id }] })
+  await eventually(() => items(child.id), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:handle follow-up work'))
+}, 20_000)
+
 it('preserves program-request approval, settings and history through a clean restart', async () => {
   await cli('manager', 'configure', JSON.stringify({ instructions: 'Headless test instructions', delegation: 'approve' }))
   expect((await read<ManagerView>('manager', 'view')).config.instructions).toBe('Headless test instructions')
