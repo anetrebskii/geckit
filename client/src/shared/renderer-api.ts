@@ -1,4 +1,4 @@
-import type { TaskChecklist } from './checklists'
+import type { ChecklistEdit, TaskChecklist } from './checklists'
 import type { ShortcutRun } from './shortcut-runs'
 import type { ShortcutDestinationChannel } from './shortcut-destinations'
 import type {
@@ -324,7 +324,7 @@ return {
     transport: (id: string, transport: ClaudeTransport): void => rendererTransport.send('chat:transport', id, transport),
     assignEmployee: (id: string, employeeId: string | null): Promise<void> => rendererTransport.invoke('chat:assignEmployee', id, employeeId),
     rename: (id: string, title: string): void => rendererTransport.send('chat:rename', id, title),
-    setChecklist: (id: string, checklist: TaskChecklist, typing?: boolean): void => rendererTransport.send('chat:setChecklist', id, checklist, typing),
+    setChecklist: (id: string, checklist: TaskChecklist, edit?: ChecklistEdit): void => rendererTransport.send('chat:setChecklist', id, checklist, edit),
     mark: (id: string, status: SessionStatus | undefined): void => rendererTransport.send('chat:mark', id, status ?? null),
     hide: (id: string): void => rendererTransport.send('chat:hide', id),
     /** Keeps a general question for good, or lets it go a day after its last answer again. */

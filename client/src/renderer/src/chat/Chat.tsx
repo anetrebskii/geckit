@@ -1,4 +1,4 @@
-import { shownChecklist, TaskChecklistEditor } from './TaskChecklist'
+import { canStartChecklistGoal, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
 import { Servers } from '../remote/Servers'
 import { readSignIn } from '../../../shared/live-view'
 import type { SignInLink } from '../../../shared/live-view'
@@ -987,10 +987,11 @@ export function Chat(): React.JSX.Element {
             <TaskChecklistEditor
               key={chat.session.id}
               panel
+              canStart={canStartChecklistGoal(chat.session)}
               checklist={shownChecklist(chat.session.checklist, chat.session.goal?.condition, chat.session.goalMet)}
               goal={chat.session.goal?.state === undefined ? chat.session.goal?.condition : undefined}
               personItem={chat.session.personItem}
-              onSave={(next, typing) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, typing) }}
+              onSave={(next, edit) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, edit) }}
               onClear={() => { if (chat.session === undefined) return; chat.setChecklist(chat.session.id, { items: [] }); if (chat.session.goal !== undefined) chat.say('/goal clear') }}
               onClose={() => showChecklist(false)}
             />

@@ -18,6 +18,8 @@ export interface ChecklistItem {
 
 export type ItemState = 'passed' | 'approval'
 
+export type ChecklistEdit = boolean | 'start'
+
 /** A saved checklist, shared or belonging to one folder. */
 export interface Checklist {
   readonly id: string

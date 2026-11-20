@@ -1,4 +1,4 @@
-import type { TaskChecklist } from '../../../shared/checklists'
+import type { ChecklistEdit, TaskChecklist } from '../../../shared/checklists'
 import { taskChecklist } from '../../../shared/checklists'
 import { readAccount } from './accounts'
 import { matchesEmployee } from '../employees/Employees'
@@ -203,7 +203,7 @@ export interface Chat {
   setCompacting: (from: 'typed' | 'clicked' | undefined) => void
   rename: (id: string, title: string) => void
   /** The person's edit of a task's checklist. */
-  setChecklist: (id: string, checklist: TaskChecklist, typing?: boolean) => void
+  setChecklist: (id: string, checklist: TaskChecklist, edit?: ChecklistEdit) => void
   /** To do, blocked or done; a message sent takes the mark off. */
   mark: (id: string, status: SessionStatus | undefined) => void
   hide: (id: string) => void
@@ -1028,7 +1028,7 @@ export function useChat(): Chat {
   )
 
   const rename = useCallback((id: string, title: string) => window.geckit.chat.rename(id, title), [])
-  const setChecklist = useCallback((id: string, checklist: TaskChecklist, typing?: boolean) => window.geckit.chat.setChecklist(id, checklist, typing), [])
+  const setChecklist = useCallback((id: string, checklist: TaskChecklist, edit?: ChecklistEdit) => window.geckit.chat.setChecklist(id, checklist, edit), [])
   const mark = useCallback((id: string, status: SessionStatus | undefined) => window.geckit.chat.mark(id, status), [])
 
   const hide = useCallback(

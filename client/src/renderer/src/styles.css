@@ -16975,6 +16975,8 @@ html.phone .phone-checklist-done { width: 100%; min-height: 50px; font-size: 17p
 .task-checklist-editor { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; }
 .task-checklist-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
 .task-checklist-items { display: contents; }
+.task-checklist-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+html.phone .task-checklist-actions .primary { min-height: 44px; }
 .task-checklist-hint { margin: 0; }
 .task-checklist-phone { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 16px; }
 .task-checklist-editor .danger,

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { ChecklistItem, TaskChecklist } from '../../../shared/checklists'
-import { checklistDone, checklistProgress, currentItem, itemCondition, newItem } from '../../../shared/checklists'
+import type { ChatSession } from '../../../shared/api'
+import type { ChecklistEdit, ChecklistItem, TaskChecklist } from '../../../shared/checklists'
+import { checklistDone, checklistProgress, currentItem, itemCondition, newItem, nextCondition } from '../../../shared/checklists'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
@@ -30,19 +31,23 @@ const plain = (list: readonly ChecklistItem[]): string => JSON.stringify(list.fi
 /** How long an edit rests before it is saved: a pause in typing, not each key. */
 const SAVE_AFTER = 600
 
+export function canStartChecklistGoal(session: ChatSession): boolean {
+  return (session.state === 'idle' || session.state === 'unread') && session.prepared !== true && session.goal === undefined && session.personItem === undefined && session.heldSend !== true && !session.queued?.length
+}
+
 /** The task's checklist, ticked as goals are met and edited by the person. Every change saves itself; ticks that land meanwhile are kept, and an edit made elsewhere shows when nothing here is waiting to save. */
-export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onClear, onClose, panel = false }: {
+export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onClear, onClose, panel = false, canStart = false }: {
   readonly checklist: TaskChecklist
   /** The conversation's goal now, so the item it was set from stands out. */
   readonly goal?: string | undefined
   /** The person's item being worked, the goal though none is set. */
   readonly personItem?: string | undefined
-  /** `typing` while an item is still being typed: saved, but not made the goal yet. */
-  readonly onSave: (checklist: TaskChecklist, typing: boolean) => void
+  readonly onSave: (checklist: TaskChecklist, edit: ChecklistEdit) => void
   readonly onClear: () => void
   readonly onClose: () => void
   /** Beside the conversation on the desktop, shown and hidden from the header. */
   readonly panel?: boolean
+  readonly canStart?: boolean
 }): React.JSX.Element {
   const [items, setItems] = useState<readonly ChecklistItem[]>(() => (checklist.items.length === 0 ? [newItem()] : checklist.items))
   const [ticked, setTicked] = useState<ReadonlyMap<string, boolean>>(new Map())
@@ -53,6 +58,7 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
   const [clearing, setClearing] = useState(false)
   const typing = useRef(false)
   const held = useRef(false)
+  const addButton = useRef<HTMLButtonElement>(null)
   if (seen !== checklist) {
     setSeen(checklist)
     setTicked((was) => (was.size === 0 ? was : new Map([...was].filter(([id, passed]) => (checklist.items.find((one) => one.id === id)?.state === 'passed') !== passed))))
@@ -136,10 +142,20 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
           }}
         />
       </div>
-      <button type="button" className="shortcut-add-goal checklist-add" onClick={add}>
-        <Icon name="plus" size={11} />
-        Add an item
-      </button>
+      <div className="task-checklist-actions">
+        <button ref={addButton} type="button" className="shortcut-add-goal checklist-add" onClick={add}>
+          <Icon name="plus" size={11} />
+          Add an item
+        </button>
+        {canStart && now?.check !== 'person' && nextCondition(draft) !== undefined ? (
+          <button type="button" className="primary" onClick={() => {
+            held.current = false
+            setWaiting(false)
+            addButton.current?.focus({ preventScroll: true })
+            onSave(draft, 'start')
+          }}>Start goal</button>
+        ) : null}
+      </div>
       <ChecklistNotes checklist={draft} />
       <p className="checklist-hint task-checklist-hint">Changes save as you make them. Each item becomes the goal in turn; when its goal is met, GeckIt ticks it and sets the next.</p>
     </>

@@ -1257,6 +1257,28 @@ describe('a task checklist', () => {
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Page loads' }))
   })
 
+  it('starts the latest edit of an idle Codex checklist immediately when requested', async () => {
+    const id = 'codex:checklist-start-now'
+    const objective = 'Development build is published'
+    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>().mockResolvedValue({ threadId: id, objective, status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1_000, updatedAt: 1_000 })
+    const held = heldCodex(id, { setGoal })
+    const built = build({ later: soon, codex: held.codex })
+    try {
+      await built.sessions.send({ root: ROOT, mode: 'manual', provider: 'codex', text: 'Check the build' })
+      held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await settled()
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Development build', check: 'none' }] }, true)
+      await settled()
+      expect(setGoal).not.toHaveBeenCalled()
+
+      const checklist = { items: [{ id: 'a', title: objective, check: 'none' as const }] }
+      built.sessions.setChecklist(id, checklist, 'start')
+      await vi.waitFor(() => expect(setGoal).toHaveBeenCalledExactlyOnceWith(id, objective))
+      expect(of(built.rows, id)).toMatchObject({ goal: { condition: objective }, checklist })
+      expect(held.fake.sent).toEqual([{ text: 'Check the build' }])
+    } finally { built.sessions.dispose() }
+  })
+
   it('starts a Codex checklist added during a working turn after that turn finishes', async () => {
     const id = 'codex:checklist-added-while-working'
     const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>().mockResolvedValue({ threadId: id, objective: 'Deployed to development', status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1_000, updatedAt: 1_000 })

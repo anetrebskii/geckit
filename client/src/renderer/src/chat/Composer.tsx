@@ -12,7 +12,7 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
-import { checklistLabel, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
+import { canStartChecklistGoal, checklistLabel, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
 import { awaitingApproval, currentItem } from '../../../shared/checklists'
 import { MOD } from '../ui/Shortcuts'
 import { hostOf, isRemote } from '../../../shared/hosts'
@@ -107,6 +107,10 @@ const TASKS = /^\s*\/(tasks|bashes)\s*$/
 const MCP = /^\s*\/mcp\s*$/
 const GOAL = /^\s*\/goal(\s|$)/
 const COMPACT = /^\s*\/compact(\s|$)/
+
+function checklistHasFocus(): boolean {
+  return document.activeElement?.closest('.task-checklist-panel') != null
+}
 
 /**
  * The field a message is written in, with what it will be sent to under it.
@@ -258,12 +262,12 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
 
   // On the phone a focused field is a keyboard over half the conversation, so it waits for a tap.
   useEffect(() => {
-    if (!ON_PHONE) field.current?.focus()
+    if (!ON_PHONE && !checklistHasFocus()) field.current?.focus()
   }, [chat.focusSeed])
 
   // Once /compact is answered, the caret is back in the field, where a no leaves what was typed.
   useEffect(() => {
-    if (chat.compacting === undefined && !ON_PHONE) field.current?.focus()
+    if (chat.compacting === undefined && !ON_PHONE && !checklistHasFocus()) field.current?.focus()
   }, [chat.compacting])
 
   useLayoutEffect(() => {
@@ -374,6 +378,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
     const action = retained?.querySelector<HTMLButtonElement>('button[data-inject]:not(:disabled)') ?? retained?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? queueList.current?.querySelector<HTMLButtonElement>('button[data-inject]:not(:disabled)')
     queueFocus.current = undefined
     queueNeighbor.current = undefined
+    if (checklistHasFocus()) return
     if (action !== undefined && action !== null) action.focus()
     else field.current?.focus()
   }, [queued, queueLocked])
@@ -420,10 +425,11 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
     <div className="composer">
       {chat.session !== undefined && editingGoal === chat.session.id ? (
         <TaskChecklistEditor
+          canStart={!cannot && canStartChecklistGoal(chat.session)}
           checklist={taskList}
           goal={goalState === undefined ? goal?.condition : undefined}
           personItem={chat.session.personItem}
-          onSave={(next, typing) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, typing) }}
+          onSave={(next, edit) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, edit) }}
           onClear={() => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, { items: [] }); if (goal !== undefined) chat.say('/goal clear'); setEditingGoal(undefined) }}
           onClose={() => setEditingGoal(undefined)}
         />

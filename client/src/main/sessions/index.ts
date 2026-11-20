@@ -10,7 +10,7 @@ import { homedir } from 'node:os'
 import { basename } from 'node:path'
 
 import { letGo, taken } from '../lineup'
-import type { ChecklistItem, TaskChecklist } from '../../shared/checklists'
+import type { ChecklistEdit, ChecklistItem, TaskChecklist } from '../../shared/checklists'
 import { awaitingApproval, checklistContext, checklistMet, currentItem, isPersonGoal, nextCondition, personTurn, taskChecklist } from '../../shared/checklists'
 import { importedNote } from '../session-migration'
 import type { Standing } from '../lineup'
@@ -983,7 +983,7 @@ export class Sessions {
   }
 
   /** The person's edit of a task's checklist: kept as is, and the goal moves to its current item once the conversation rests. While `typing`, the goal waits for the person to finish. */
-  setChecklist(id: string, checklist: TaskChecklist, typing = false): void {
+  setChecklist(id: string, checklist: TaskChecklist, edit: ChecklistEdit = false): void {
     this.#ordinary(id)
     const kept = taskChecklist(checklist)
     const before = this.#deps.notes.all()[id]?.checklist
@@ -992,7 +992,12 @@ export class Sessions {
     this.#changed()
     // The checklist saves as it is edited, so the goal follows only once the edits stop.
     this.#settling.get(id)?.()
-    this.#settling.set(id, (this.#deps.later ?? after)(() => { this.#settling.delete(id); this.#advance(id) }, typing ? CHECKLIST_TYPING : CHECKLIST_SETTLE))
+    if (edit === 'start') {
+      this.#settling.delete(id)
+      this.#advance(id)
+      return
+    }
+    this.#settling.set(id, (this.#deps.later ?? after)(() => { this.#settling.delete(id); this.#advance(id) }, edit ? CHECKLIST_TYPING : CHECKLIST_SETTLE))
   }
 
   /** A message to a task whose person's item waits for approval, or is still being worked, says it is not approved yet: the message is the next round of work on it, and when that turn ends the item waits for Approve again. */
