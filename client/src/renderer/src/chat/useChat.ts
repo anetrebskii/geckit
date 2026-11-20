@@ -729,11 +729,11 @@ export function useChat(): Chat {
   }, [])
 
   const addFiles = useCallback((files: readonly File[]) => {
+    const key = keyOf(shownRef.current)
     const dropped = files.filter((one) => !canShow(one))
     let copying = false
     if (dropped.length > 0) {
       const where = rootRef.current
-      const key = keyOf(shownRef.current)
       for (const one of dropped) {
         const local = window.geckit.pathFor(one)
         if (local !== '' && addLocal(key, where, local, one.name)) copying = true
@@ -748,7 +748,6 @@ export function useChat(): Chat {
       const kept = read.filter((one): one is SessionImage => one !== undefined)
       if (kept.length < wanted.length) setTrouble('A picture was too big to send')
       if (kept.length === 0) return
-      const key = keyOf(shownRef.current)
       setPictures((held) => ({ ...held, [key]: [...(held[key] ?? []), ...kept].slice(0, MOST_PICTURES) }))
     })
   }, [addLocal])
