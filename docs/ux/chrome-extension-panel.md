@@ -98,3 +98,14 @@ stateDiagram-v2
 - A Stop button for one running command: a command takes a second or two; pausing covers stopping the next ones.
 - Which conversation sent a command: the host does not know it, and guessing would mislead.
 - Settings for the model or the folder: they live in GeckIt, where they work.
+
+## Opening local files
+
+When a conversation opens a `file://` URL in a new or existing tab, GeckIt checks the Chrome profile's **Allow access to file URLs** setting. If Chrome denies access, GeckIt reports the failure in the command reply and Activity before attempting navigation.
+
+| From | Event | To | What the person sees |
+| --- | --- | --- | --- |
+| Chrome file access is off | A conversation tries to open a local file | Chrome file access is off | "Couldn't open the local file. In this Chrome profile, go to chrome://extensions > GeckIt Browser > Details, turn on Allow access to file URLs, then try again." |
+| Chrome file access is off | The person enables the setting in Chrome and the conversation retries | Chrome file access is on | The requested page opens with the usual navigation feedback. |
+
+The check runs only when a conversation requests a local file. A granted check is silent. The person controls the setting in Chrome, and each retry reads its current value.

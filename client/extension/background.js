@@ -589,6 +589,9 @@ async function claim(id, opened) {
 }
 
 async function answer(request) {
+  if ((request.cmd === 'open' || request.cmd === 'go') && /^\s*file:/i.test(request.url) && !await chrome.extension.isAllowedFileSchemeAccess()) {
+    throw new Error('Couldn\'t open the local file. In this Chrome profile, go to chrome://extensions > GeckIt Browser > Details, turn on Allow access to file URLs, then try again.')
+  }
   const id = request.tab
   if (Number.isInteger(id) && request.cmd !== 'close') await claim(id, false)
   switch (request.cmd) {
