@@ -115,33 +115,20 @@ export function acquireTestLock(name: string, folder = defaultFolder()): (() => 
   return undefined
 }
 
+export const TEST_TAB_READ_ONLY = 'This tab belongs to another conversation or the person. Open a separate tab in this profile.'
+export const TEST_BROWSER_CLOSING = 'This test browser is closing.'
+
 export class TestTabOwners {
-  readonly conversations = new Set<string>()
-  readonly tabs = new Map<string, string>()
-  constructor(readonly name: string, readonly folder: string, readonly managed: boolean) {}
+  readonly tabs = new Map<number, BrowserConversation['id'] | null>()
+  constructor(readonly name: string, readonly folder: string) {}
 
-  acquire(id: string | undefined): void {
-    if (id === undefined) { if (this.managed) throw new Error('Project test browsers require a registered conversation.'); return }
-    if (!this.managed) throw new Error('This test browser was opened manually and its ownership is unknown. Close it yourself before starting it from a conversation.')
+  identify(id: string | undefined): BrowserConversation['id'] | null {
+    if (id === undefined) return null
     if (conversationTestName(id, this.folder, this.name) !== this.name) throw new Error('This test browser belongs to another project or account profile.')
-    this.conversations.add(id)
+    return browserConversation(id, this.folder)?.id ?? id
   }
 
-  authorize(id: string | undefined, target: string): void {
-    if (id !== undefined && this.tabs.get(target) !== id) throw new Error('This tab belongs to another conversation. Open a separate tab with --profile test.')
-    this.acquire(id)
-  }
-
-  inherit(target: string, opener: string | undefined): void {
-    const owner = opener === undefined ? undefined : this.tabs.get(opener)
-    if (owner !== undefined) this.tabs.set(target, owner)
-  }
-
-  released(): string[] {
-    const released = [...this.conversations].filter((id) => {
-      try { return conversationTestName(id, this.folder, this.name) !== this.name } catch { return true }
-    })
-    for (const id of released) this.conversations.delete(id)
-    return [...this.tabs].filter(([, owner]) => !this.conversations.has(owner)).map(([target]) => target)
+  released(): number[] {
+    return [...this.tabs].flatMap(([tab, owner]) => owner !== null && browserConversation(owner, this.folder)?.done !== false ? [tab] : [])
   }
 }

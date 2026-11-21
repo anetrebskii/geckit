@@ -3,10 +3,11 @@ import { randomUUID } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { requestingSession } from './start'
 import { askSecrets } from './secrets'
-import { conversationTestName } from './browser-lifecycle'
+import { conversationTestName, TEST_BROWSER_CLOSING } from './browser-lifecycle'
 import { profileArchiveCommand } from './profile-archive'
 import { findModelServer, findModelState, findModelUsable, pickRefs } from './find-model'
 import { currentProfile, downloading, profilesFolder, TEST_BROWSER, TEST_PREFIX, testBrowsersState, testingFolder, testLog, testName, validTestName } from './testing'
+import type { TestBrowserRequest } from './testing'
 import { isServer, presentationNow } from './desktop-identity'
 import { BROWSER_STORE_URL } from '../shared/api'
 import type { BrowserBridgeState } from '../shared/api'
@@ -43,7 +44,7 @@ export const setBrowserBridgeOn = (on: boolean): void => { bridgeOn = on }
 export interface Reply { readonly ok: boolean; readonly result?: unknown; readonly error?: string }
 
 /** One Chrome profile with the extension: each starts its own host, which says here who it is and which tabs are its own. */
-interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number; readonly display?: string }
+interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number; readonly display?: string; readonly engine?: 'camoufox' }
 
 /** Chrome's own folders for native messaging hosts of the current user, for the browsers present here. */
 function hostFolders(platform: NodeJS.Platform, root: string): string[] {
@@ -229,56 +230,31 @@ export function browserHost(folder: string = browserFolder()): void {
 
 const percent = (part: number, whole: number): number => whole === 0 ? 0 : Math.round((part / whole) * 100)
 
-/** Starts a test browser through the GeckIt service, which runs outside any conversation's sandbox, making its profile if it is new. */
-async function startTest(name: string, folder: string = browserFolder(), conversation?: string): Promise<{ readonly ok: boolean; readonly said: string }> {
-  if (!validTestName(name)) return { ok: false, said: 'Name the test profile geckit:<name>, with lowercase letters, digits and hyphens, such as geckit:store.' }
+async function launchTest(name: string, folder: string, conversation: TestBrowserRequest['conversation'], previous?: Profile['pid']): Promise<Profile> {
   const label = `${TEST_PREFIX}${name}`
-  if (profiles(folder).some((one) => one.label === label)) {
-    const claimed = await claimTest(name, folder, conversation)
-    if (claimed.ok || !claimed.said.includes('closing')) return claimed
-  }
-  if (!existsSync(wrapperPath())) return { ok: false, said: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
   const launch = join(folder, `${randomUUID()}.launch`)
   try {
     mkdirSync(folder, { recursive: true })
-    writeFileSync(`${launch}.part`, JSON.stringify({ name, ...(conversation === undefined ? {} : { conversation }) }))
+    writeFileSync(`${launch}.part`, JSON.stringify({ name, conversation, previous }))
     renameSync(`${launch}.part`, launch)
-  } catch { return { ok: false, said: `This sandbox may not write to ${folder}. GeckIt's own conversations may; elsewhere ask the person to allow writing there.` } }
-  for (let waited = 0; waited < 15 * 60_000; waited += 500) {
-    await new Promise((done) => setTimeout(done, 500))
-    if (conversation !== undefined) {
-      try { conversationTestName(conversation, folder, name) } catch (error) { rmSync(launch, { force: true }); return { ok: false, said: error instanceof Error ? error.message : String(error) } }
-    }
-    if (profiles(folder).some((one) => one.label === label)) {
-      const claimed = await claimTest(name, folder, conversation)
-      if (claimed.ok || !claimed.said.includes('closing')) return claimed
-    }
-    if (conversation !== undefined && waited > 0 && waited % 2_000 === 0 && !existsSync(launch)) {
-      writeFileSync(`${launch}.part`, JSON.stringify({ name, conversation }))
-      renameSync(`${launch}.part`, launch)
+    for (let waited = 0; waited < 15 * 60_000; waited += 500) {
+      if (conversation !== undefined && conversationTestName(conversation, folder, name) !== name) throw new Error('This test browser belongs to another project or account profile.')
+      const open = profiles(folder).find((one) => one.label === label && one.pid !== previous)
+      if (open !== undefined) return open
+      const fetching = downloading()
+      if (fetching?.error !== undefined && waited > 2_000) throw new Error(`Camoufox did not download: ${fetching.error}.`)
+      if (waited >= 60_000 && fetching === undefined) break
+      await new Promise((done) => setTimeout(done, 500))
     }
     const fetching = downloading()
-    if (waited >= 60_000 && fetching === undefined) break
-    if (fetching?.error !== undefined && waited > 2_000) return { ok: false, said: `Camoufox did not download: ${fetching.error}.` }
+    if (fetching !== undefined) throw new Error(`Camoufox is still downloading, ${percent(fetching.received, fetching.total)}%. Try opening the profile again.`)
+    let log = ''
+    try { log = readFileSync(testLog(name), 'utf8').trim().split('\n').at(-1) ?? '' } catch { /* A driver may never have started. */ }
+    throw new Error(`${label} could not start${log === '' ? '.' : `: ${log}`}`)
+  } finally {
+    rmSync(launch, { force: true })
+    rmSync(`${launch}.part`, { force: true })
   }
-  const fetching = downloading()
-  if (fetching !== undefined) return { ok: true, said: `Downloading Camoufox, ${percent(fetching.received, fetching.total)}%. ${label} opens by itself when it is done; geckit browser profiles says when.` }
-  let log: string
-  try { log = readFileSync(testLog(name), 'utf8').trim().split('\n').at(-1) ?? '' } catch { log = '' }
-  return { ok: false, said: `${label} could not start${log === '' ? '.' : `: ${log}`}` }
-}
-
-async function claimTest(name: string, folder: string, conversation?: string): Promise<{ readonly ok: boolean; readonly said: string }> {
-  const label = `${TEST_PREFIX}${name}`
-  const host = profiles(folder).find((one) => one.label === label)
-  if (host === undefined) return { ok: false, said: `${label} is not open.` }
-  const status = await ask({ cmd: 'ping' }, folder, host.pid)
-  if (status.ok && !(status.result as { version?: string } | undefined)?.version?.startsWith('Camoufox')) return { ok: false, said: `Close ${label}'s old test browser window before opening it in Camoufox. Its saved data will be preserved.` }
-  if (conversation !== undefined) {
-    const reply = await ask({ cmd: 'acquire', conversation }, folder, host.pid)
-    if (!reply.ok) return { ok: false, said: reply.error ?? 'The test browser refused ownership.' }
-  }
-  return { ok: true, said: `${label} is open. Use open <url> --profile geckit; GeckIt closes your tabs when this card reaches Done.` }
 }
 
 /** Closes a test browser; its profile stays for next time. */
@@ -286,7 +262,7 @@ export async function stopTest(name: string, folder: string = browserFolder()): 
   const label = `${TEST_PREFIX}${name}`
   const open = profiles(folder).find((one) => one.label === label)
   if (open === undefined) return { ok: true, said: `${label} is not open.` }
-  const reply = await ask({ cmd: 'quit' }, folder, open.pid)
+  const reply = await askTest(name, { cmd: 'quit' }, folder)
   if (!reply.ok) return { ok: false, said: reply.error ?? 'It did not close.' }
   for (let waited = 0; waited < 10_000; waited += 250) {
     if (!profiles(folder).some((one) => one.label === label)) return { ok: true, said: `Closed ${label}. Its profile stays.` }
@@ -354,8 +330,10 @@ async function startProfile(named: string | undefined): Promise<{ readonly ok: b
   return { ok: false, said: `Opened ${profile.name}, but GeckIt Browser did not connect from it within 40 seconds.` }
 }
 
-/** Opens a test browser from Settings, the way a conversation's start does. */
-export function openTest(name: string): Promise<{ readonly ok: boolean; readonly said: string }> { return startTest(name) }
+export async function openTest(name: string, conversation?: TestBrowserRequest['conversation']): Promise<{ readonly ok: boolean; readonly said: string }> {
+  const reply = await askTest(name, { cmd: 'start', ...(conversation === undefined ? {} : { conversation }) })
+  return reply.ok ? { ok: true, said: `${TEST_PREFIX}${name} is open.` } : { ok: false, said: reply.error ?? 'The test browser refused.' }
+}
 
 function listProfiles(): string {
   const known = profiles()
@@ -398,11 +376,24 @@ export function pickProfile(known: readonly Profile[], request: { readonly tab?:
   return [...(own.length > 0 ? own : known)].sort((a, b) => b.focused - a.focused)[0] ?? 'No Chrome profile is connected.'
 }
 
-/** Asks the open test browser of one profile. */
-export async function askTest(name: string, request: object, folder: string = browserFolder()): Promise<Reply> {
-  const open = profiles(folder).find((one) => one.label === `${TEST_PREFIX}${name}`)
-  if (open === undefined) return { ok: false, error: `${TEST_PREFIX}${name} is not open.` }
-  return ask(request, folder, open.pid)
+export async function askTest(name: string, request: TestBrowserRequest, folder: string = browserFolder()): Promise<Reply> {
+  if (!existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
+  if (!validTestName(name)) return { ok: false, error: 'Name the test profile geckit:<name>, with lowercase letters, digits and hyphens, such as geckit:store.' }
+  const label = `${TEST_PREFIX}${name}`
+  const opensTab = ['start', 'open', 'view-open'].includes(request.cmd)
+  try {
+    let open = profiles(folder).find((one) => one.label === label)
+    if (opensTab) {
+      if (request.conversation !== undefined && conversationTestName(request.conversation, folder, name) !== name) return { ok: false, error: 'This test browser belongs to another project or account profile.' }
+      open ??= await launchTest(name, folder, request.conversation)
+      if (open.engine !== 'camoufox') return { ok: false, error: `Close the older ${label} browser window and try again.` }
+    }
+    if (open === undefined) return { ok: false, error: `${label} is not open.` }
+    const reply = await ask(request, folder, open.pid, true)
+    if (!opensTab || reply.error !== TEST_BROWSER_CLOSING) return reply
+    const next = await launchTest(name, folder, request.conversation, open.pid)
+    return ask(request, folder, next.pid, true)
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
 }
 
 /** Leaves a request the GeckIt service answers, outside any sandbox: making an account profile, or a sign-in link. */
@@ -466,23 +457,20 @@ Give this link only to the person in a private conversation. It opens the existi
   if (!told.ok || told.link === undefined) return { ok: false, said: told.error ?? 'No link was made.' }
   const minutes = Math.round(((told.expires ?? Date.now()) - Date.now()) / 60_000)
   return { ok: true, said: `${told.link}
-Give the person this link. It opens in GeckIt paired with this computer, once, within ${minutes} minutes, and shows ${TEST_PREFIX}${name} live so they sign in themselves. When they say they are done, run geckit browser signin ${name} --done.` }
+Give the person this link. It opens in GeckIt paired with this computer, once, within ${minutes} minutes, and shows ${TEST_PREFIX}${name} live so they sign in themselves. Ask them to close that view with Done when they finish.` }
 }
 
 async function signInDone(named: string | undefined): Promise<{ readonly ok: boolean; readonly said: string }> {
   const name = testName(named ?? '') ?? named ?? ''
-  const open = profiles().some((one) => one.label === `${TEST_PREFIX}${name}`)
-  if (open) {
-    await askTest(name, { cmd: 'view-close' })
-    const stopped = await stopTest(name)
-    if (!stopped.ok) return { ok: true, said: `${TEST_PREFIX}${name} keeps its sign-in; it stays open because a conversation still uses it.` }
-  }
+  if (requestingSession() !== undefined) return { ok: false, said: 'Ask the person to close the sign-in view in GeckIt. Their sign-in stays saved.' }
+  const reply = await askTest(name, { cmd: 'view-close' })
+  if (!reply.ok && reply.error !== `${TEST_PREFIX}${name} is not open.`) return { ok: false, said: reply.error ?? 'The sign-in view did not close.' }
   return { ok: true, said: `${TEST_PREFIX}${name} is saved with its sign-in on this computer. Use it with --profile ${TEST_PREFIX}${name}.` }
 }
 
-async function ask(request: object, folder: string = browserFolder(), to?: number): Promise<Reply> {
+async function ask(request: object, folder: string = browserFolder(), to?: number, managed = false): Promise<Reply> {
   if (!existsSync(wrapperPath())) return { ok: false, error: 'Chrome through GeckIt is off. Turn it on in GeckIt Settings > Web Browser.' }
-  if (!fresh(folder) && profiles(folder).length === 0) return { ok: false, error: NOT_CONNECTED() }
+  if (!managed && !fresh(folder) && profiles(folder).length === 0) return { ok: false, error: NOT_CONNECTED() }
   const name = to === undefined ? randomUUID() : `${randomUUID()}.${to}`
   const asked = join(folder, `${name}.ask`)
   try {
@@ -493,7 +481,14 @@ async function ask(request: object, folder: string = browserFolder(), to?: numbe
   return new Promise((resolve, reject) => {
     const cleanup = (): void => { watcher?.close(); clearInterval(poll); clearTimeout(deadline) }
     const check = (): void => {
-      if (!existsSync(told)) return
+      if (!existsSync(told)) {
+        if (!managed || existsSync(join(folder, 'hosts', `${to}.json`))) return
+        cleanup()
+        const pending = existsSync(asked)
+        rmSync(asked, { force: true })
+        resolve({ ok: false, error: pending ? TEST_BROWSER_CLOSING : 'The test browser closed before confirming the action.' })
+        return
+      }
       cleanup()
       try {
         const reply = JSON.parse(readFileSync(told, 'utf8')) as Reply
@@ -535,17 +530,17 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
                                 may need to be set up again on another computer
   signin <name>                 a link the person opens in GeckIt to see geckit:<name> live and sign in themselves
   signin <name> --tab <id>      a private HTTPS link the person opens once to take over your existing test tab
-  signin <name> --done          when they say they are done: the sign-in is kept and the browser closes
+  signin <name> --done          outside conversations: close the manual sign-in tab, keeping the sign-in
   start <profile>               open a window of a profile that has GeckIt Browser but is closed
   start geckit                  start or reuse this conversation project test browser; no profile name needed
   start geckit:<name>           outside conversations: explicitly open a separate account profile
                                 conversations may select only accounts configured by the person in
                                 ~/.geckit/browser-state/test-project-profiles.json
   stop geckit:<name>            outside conversations: close a test browser; its profile stays
-                                conversation tabs close on Done; the last owner closes the browser
+                                conversation tabs close on Done; the last tab closes the browser
   pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email;
-                                a tab a page opened, such as a sign-in popup, says which tab opened it
-  open <url> [--profile <name>] open in a new background tab and wait for it to load; the profile used last unless --profile
+                                popups say which tab opened them, and other owners' test tabs show [read-only]
+  open <url> [--profile <name>] open a tab and wait for it to load; starts a closed test profile when named
   go <tab> <url>                load a url in a tab
   close <tab>
   text <tab> [--max <n>]        the page's main text, 6000 characters unless --max
@@ -723,14 +718,14 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
       const test = target === TEST_BROWSER || target.startsWith(TEST_PREFIX)
       if (!test) return what === 'start' ? startProfile(rest[0]) : { ok: false, said: 'Give a test profile to stop.' }
       const name = conversation === undefined ? target.slice(TEST_PREFIX.length) : conversationTestName(conversation, browserFolder(), target.slice(TEST_PREFIX.length))
-      if (what === 'start') return startTest(name, browserFolder(), conversation)
+      if (what === 'start') return openTest(name, conversation)
       if (conversation !== undefined) return { ok: false, said: 'Move this conversation card to Done to release its test tabs; other conversations keep their browser.' }
       return stopTest(name)
     } catch (error) { return { ok: false, said: error instanceof Error ? error.message : String(error) } }
   }
   const words = rest.filter((one, at) => !(one.startsWith('--') || one === '-o') && !VALUED.includes(rest[at - 1] ?? ''))
   try {
-    const request = (): object => {
+    const request = (): TestBrowserRequest => {
       switch (what) {
         case 'status': return { cmd: 'ping' }
         case 'pages': return { cmd: 'pages' }
@@ -743,7 +738,7 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
         case 'click': return { cmd: 'click', tab: tabOf(words[0]), ref: refOf(words[1]), ...(rest.includes('--double') ? { count: 2 } : {}), ...(rest.includes('--right') ? { button: 'right' } : {}) }
         case 'type': {
           const secret = option(rest, '--secret')
-          if (secret !== undefined) { if (words.length < 2) throw new Error('Give the tab and the ref of the password field.'); return { cmd: 'secret-key', tab: tabOf(words[0]), ref: refOf(words[1]), secret } }
+          if (secret !== undefined) { if (words.length < 2) throw new Error('Give the tab and the ref of the password field.'); return { cmd: 'secret-key', tab: tabOf(words[0]), ref: refOf(words[1]) } }
           if (words.length < 3) throw new Error('Give the tab, the ref and the text.')
           return { cmd: 'type', tab: tabOf(words[0]), ref: refOf(words[1]), text: words.slice(2).join(' '), ...(rest.includes('--append') ? { append: true } : {}) }
         }
@@ -786,8 +781,9 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
           return { cmd: 'dialog', tab: tabOf(words[0]), accept: words[1] === 'accept', ...(text === undefined ? {} : { text }) }
         }
         case 'permission': {
-          if (!PERMISSION_KINDS.includes(words[1] ?? '') || !['allow', 'block', 'ask'].includes(words[2] ?? '')) throw new Error(`Give the tab, one of ${PERMISSION_KINDS.join(', ')}, and allow, block or ask.`)
-          return { cmd: 'permission', tab: tabOf(words[0]), kind: words[1], setting: words[2] }
+          const [, kind, setting] = words
+          if (kind === undefined || setting === undefined || !PERMISSION_KINDS.includes(kind) || !['allow', 'block', 'ask'].includes(setting)) throw new Error(`Give the tab, one of ${PERMISSION_KINDS.join(', ')}, and allow, block or ask.`)
+          return { cmd: 'permission', tab: tabOf(words[0]), kind, setting }
         }
         case 'key': if (words[1] === undefined) throw new Error('Give the tab and the key.'); return { cmd: 'key', tab: tabOf(words[0]), key: words[1] }
         case 'scroll': {
@@ -807,7 +803,7 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
           const size = option(rest, '--size')
           const measured = size === undefined ? undefined : /^(\d+)x(\d+)$/.exec(size)
           if (size !== undefined && measured === null) throw new Error('Give the size as <width>x<height>, such as 1280x800.')
-          const set = {
+          const set: NonNullable<TestBrowserRequest['set']> = {
             ...(rest.includes('--phone') ? { width: 390, height: 844, phone: true } : {}),
             ...(measured ? { width: Number(measured[1]), height: Number(measured[2]), phone: false } : {}),
             ...(rest.includes('--dark') ? { scheme: 'dark' } : rest.includes('--light') ? { scheme: 'light' } : {}),
@@ -830,7 +826,7 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
         default: throw new Error(`Unknown command ${what}.\n\n${BROWSER_HELP}`)
       }
     }
-    const asked = { ...request(), ...(conversation === undefined ? {} : { conversation }) } as { readonly cmd: string; readonly tab?: number; readonly conversation?: string }
+    const asked = { ...request(), ...(conversation === undefined ? {} : { conversation }) }
     const known = profiles()
     const given = option(rest, '--profile')
     const selected = given === undefined ? undefined : currentProfile(given)
@@ -839,8 +835,16 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
       if (!one.label.startsWith(TEST_PREFIX) || conversation === undefined) return true
       try { return one.label === `${TEST_PREFIX}${conversationTestName(conversation, browserFolder(), testName(one.label))}` } catch { return false }
     })
+    if (asked.cmd === 'open' && named !== undefined && named.startsWith(TEST_PREFIX)) {
+      const reply = await askTest(named.slice(TEST_PREFIX.length), asked)
+      return reply.ok ? { ok: true, said: shown(what, rest, words, reply.result) } : { ok: false, said: reply.error ?? 'The test browser refused.' }
+    }
+    const send = (request: TestBrowserRequest, target?: Profile): Promise<Reply> => {
+      const name = target === undefined ? undefined : testName(target.label)
+      return name === undefined ? ask(request, browserFolder(), target?.pid) : askTest(name, request)
+    }
     if (asked.cmd === 'pages' && scoped.length > 1 && named === undefined) {
-      const replies = await Promise.all(scoped.map(async (one) => ({ one, reply: await ask(asked, browserFolder(), one.pid) })))
+      const replies = await Promise.all(scoped.map(async (one) => ({ one, reply: await send(asked, one) })))
       const failed = replies.find((one) => !one.reply.ok)
       if (failed !== undefined) return { ok: false, said: `${failed.one.label}: ${failed.reply.error ?? 'Chrome refused.'}` }
       return { ok: true, said: replies.map(({ one, reply }) => `${one.label}\n${shown(what, rest, words, reply.result)}`).join('\n\n') }
@@ -855,11 +859,11 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
       const display = typeof target === 'object' ? target?.display : undefined
       const saved = readClipboard(process.platform, display)
       writeClipboard(text !== undefined ? { text } : { png: pngOf(filesOf([image ?? ''])[0] ?? '') }, process.platform, display)
-      try { reply = await ask(asked, browserFolder(), target?.pid) } finally {
+      try { reply = await send(asked, target) } finally {
         await new Promise((done) => setTimeout(done, 300))
         writeClipboard(saved, process.platform, display)
       }
-    } else reply = await ask(asked, browserFolder(), target?.pid)
+    } else reply = await send(asked, target)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'Chrome refused.' }
     if (asked.cmd === 'download') {
       const got = reply.result as { guid: string; name: string; bytes?: number }
@@ -870,7 +874,7 @@ export async function browser(args: readonly string[]): Promise<{ readonly ok: b
       const field = reply.result as { origin: string; field: string; password: boolean; endpointKey: string; keyId: string }
       const sealed = await askSecrets({ op: 'fill', name: option(rest, '--secret'), origin: field.origin, field: field.field, password: field.password, endpointKey: field.endpointKey })
       if (!sealed.ok) return { ok: false, said: sealed.error ?? 'The secrets broker refused.' }
-      const typed = await ask({ cmd: 'type-secret', tab: asked.tab, ref: (asked as { ref?: string }).ref, keyId: field.keyId, sealed: sealed['sealed'], ...(conversation === undefined ? {} : { conversation }) }, browserFolder(), target?.pid)
+      const typed = await send({ cmd: 'type-secret', ...(asked.tab === undefined ? {} : { tab: asked.tab }), ...(asked.ref === undefined ? {} : { ref: asked.ref }), keyId: field.keyId, ...(sealed.sealed === undefined ? {} : { sealed: sealed.sealed as NonNullable<TestBrowserRequest['sealed']> }), ...(conversation === undefined ? {} : { conversation }) }, target)
       if (!typed.ok) return { ok: false, said: typed.error ?? 'Chrome refused.' }
       return { ok: true, said: `Typed ${option(rest, '--secret') ?? 'the secret'} into the field. Its value is not shown to you.` }
     }
@@ -893,7 +897,7 @@ interface Page { readonly title: string; readonly url: string }
 function shown(what: string, args: readonly string[], words: readonly string[], result: unknown): string {
   switch (what) {
     case 'status': { const known = profiles(); const version = (result as { version: string }).version; return `Connected, ${version.startsWith('Camoufox') ? version : `extension ${version}`}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
-    case 'pages': return (result as (Page & { id: number; active: boolean; opener?: number })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}${one.opener === undefined ? '' : `  (opened by ${one.opener})`}`).join('\n')
+    case 'pages': return (result as (Page & { id: number; active: boolean; opener?: number; readOnly?: boolean })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}${one.readOnly ? '  [read-only]' : ''}${one.opener === undefined ? '' : `  (opened by ${one.opener})`}`).join('\n')
     case 'open': case 'go': { const page = result as Page & { id: number }; return `${page.id}  ${page.title}  ${page.url}` }
     case 'close': return 'Closed.'
     case 'text': {

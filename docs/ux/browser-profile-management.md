@@ -275,7 +275,7 @@ Test browsers run on Camoufox, using its native cursor movement and a persistent
 
 ### 11. Requirements
 
-The user's requested migration covers download and installation without fonts, Open, person-controlled Sign in, rename and retained profiles. Existing tab ownership and conversation release rules remain in force. Real website login is a manual account check, separate from local persistence verification.
+The user's requested migration covers download and installation without fonts, Open, person-controlled Sign in, rename and retained profiles. App and CLI use the same test-browser commands and tab ownership rules. Real website login is a manual account check, separate from local persistence verification.
 
 ## Background browser preparation (2026-11-13)
 
@@ -338,3 +338,19 @@ Covers the request to install and configure in the background without waiting fo
 Open and Sign in did the same thing for the person: open the profile so they sign in. The row's More menu no longer has Sign in; on this computer Open browser opens the Camoufox window, and in a window showing another computer it opens the live view. The live view stays the target of `geckit browser signin` links.
 
 On this computer the More menu has `Show in GeckIt` above Edit: the same profile shown in GeckIt's live view rather than in its own window, for a computer where Camoufox has no window or when the person prefers it there. It is disabled while browser access is off and absent when the window shows another computer, where Open browser already does it.
+
+## Shared test-browser tab lifecycle
+
+The existing **Open browser**, **Show in GeckIt** and CLI `open --profile geckit[:name]` entry points open the profile on demand. A tab is ready when its window or live view appears, or when the CLI returns its ID. A running profile can serve the person and several conversations at once. Profile selection still follows the conversation's project and configured accounts.
+
+| Event | Result |
+|---|---|
+| The person opens a tab from the app | The tab belongs to the person. A conversation opening a page gets its own tab in the same profile. |
+| A page opens a popup | The popup follows the opener's ownership. |
+| A conversation lists or inspects a tab in an accessible profile | `pages` labels foreign tabs `[read-only]`. `text`, `read`, `find`, `style` and `wait` can inspect them. |
+| A conversation tries to change or close a foreign tab | “This tab belongs to another conversation or the person. Open a separate tab in this profile.” Its own tab remains usable. |
+| The person closes the sign-in view or a native tab | Its tab closes. Closing the sign-in view also closes its sign-in popups. If the person closes the view during launch, its tab closes as soon as the launch completes. |
+| A conversation moves to Done | Its tabs and popups close automatically. Other tabs keep the profile running. |
+| The last tab closes | Camoufox shuts down quietly. The next open starts the same profile with its saved sign-ins. |
+
+A private handoff of a conversation tab keeps its exclusive sign-in behavior and returns the existing tab to the chat when the person finishes. Repeated **Open browser** focuses the person's existing native tab. If a new open arrives during shutdown, GeckIt starts the profile again once the closing driver releases it. The browser reports launch failures in the existing error surface. The app uses its existing opening indicator, focus behavior and controls. No extra permissions or lifecycle notifications are needed, and the approved Done and close actions are the causes of tab removal. This lifecycle applies to Camoufox profiles managed by GeckIt. Personal Chrome has its own extension workflow.

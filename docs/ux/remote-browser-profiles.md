@@ -20,8 +20,8 @@ An assistant can work on a site behind a sign-in, on this computer or a paired o
 | `geckit <command> --computer <name>` | Whatever the command says on that computer. |
 | `geckit browser profiles create <name> --note "<account>"` | `Made geckit:<name> for <account>. It is signed in to nothing yet: geckit browser signin <name> gives the person a link to sign in.` |
 | `geckit browser profiles note <name> "<account>"` | `geckit:<name> is now noted as <account>.` |
-| `geckit browser signin <name>` | The link, then: `Give the person this link. It opens in GeckIt paired with this computer, once, within 15 minutes, and shows geckit:<name> live so they sign in themselves. When they say they are done, run geckit browser signin <name> --done.` |
-| `geckit browser signin <name> --done` | `geckit:<name> is saved with its sign-in on this computer. Use it with --profile geckit:<name>.` |
+| `geckit browser signin <name>` | The link, then: `Give the person this link. It opens in GeckIt paired with this computer, once, within 15 minutes, and shows geckit:<name> live so they sign in themselves. Ask them to close that view with Done when they finish.` |
+| `geckit browser signin <name> --done` from the person’s terminal | `geckit:<name> is saved with its sign-in on this computer. Use it with --profile geckit:<name>.` |
 
 Only the person pairs: `geckit computers add <code>` and `geckit computers forget <name>` are refused to assistants, as `geckit pair` is.
 
@@ -44,7 +44,7 @@ States:
 | Opening | `Opening geckit:<name>…` and a spinner. If Camoufox is still downloading on that computer, the view moves to Failed with the computer's own words, such as `Downloading Camoufox, 40%.`, and Try again. |
 | Live | The picture, refreshed about five times a second and right after each click or key. |
 | Failed | A card over the stage: `The browser is not showing`, the computer's own message, Close and Try again. A dropped connection lands here too; the last picture stays behind it, dimmed. |
-| Done | The sheet closes. The browser on the computer closes too, unless a conversation is using it; the sign-in is kept either way. |
+| Done | The sheet and its sign-in tabs close. Camoufox shuts down when the last tab closes and keeps the sign-in. |
 
 What crosses to the viewing device is the picture and the person's clicks and keys. Passwords typed go straight into the page on the computer.
 
