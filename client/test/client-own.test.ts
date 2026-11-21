@@ -54,4 +54,16 @@ describe('what a client keeps for itself', () => {
     one.take({ analytics: false })
     expect(one.client()).not.toBe(first)
   })
+
+  it('asks about counting and errors once per device, whichever server it opens', () => {
+    clientOwn('server:a:own').take({ analytics: false, analyticsAsked: true, sendErrors: true, theme: 'light' })
+    const other = clientOwn('server:b:own').own(server)
+    expect([other.analytics, other.analyticsAsked, other.sendErrors, other.theme]).toEqual([false, true, true, 'dark'])
+  })
+
+  it('moves an answer kept for one server to the device', () => {
+    localStorage.setItem('server:a:own', JSON.stringify({ analytics: true, analyticsAsked: true, theme: 'light' }))
+    clientOwn('server:a:own')
+    expect(clientOwn('server:b:own').own(server)).toMatchObject({ analytics: true, analyticsAsked: true, theme: 'dark' })
+  })
 })

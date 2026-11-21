@@ -9,7 +9,7 @@ import type { RemoteServer } from '../../../shared/remote/protocol'
 import { SIGNAL } from '../../../shared/pairing'
 import { clientOwn } from '../../../shared/client-own'
 import { phoneErrors } from '../phone-errors'
-import { countEvent } from '../../../shared/counting'
+import { countDecline, countEvent } from '../../../shared/counting'
 import type { EventName } from '../../../shared/counting'
 import { LINK_DOWN } from './client'
 import type { PhoneCalls } from '../phone-calls'
@@ -171,7 +171,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
   const errors = phoneErrors(() => owned.mine().sendErrors === true, () => void settings.set({ sendErrors: true }))
   const counting = (name: EventName): void => {
     if (owned.mine().analytics !== true || owned.mine().analyticsAsked !== true) return
-    void countEvent(owned.client(), name, onPhone ? 'phone server' : 'remote desktop')
+    void countEvent(owned.client(), name, 'server', onPhone ? 'phone' : 'remote desktop')
   }
   const settings = {
     ...api.settings,
@@ -184,8 +184,11 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
       return owned.own(kept)
     },
     set: async (change: Partial<Settings>): Promise<Settings> => {
+      const first = owned.mine().analyticsAsked !== true && change.analyticsAsked === true
       const { here, there } = owned.take(change)
       if (change.sendErrors !== undefined) errors.follow(change.sendErrors)
+      if (first && change.analytics !== true) countDecline('server', onPhone ? 'phone' : 'remote desktop')
+      if (first && change.analytics === true) counting('countingAccepted')
       if (change.analytics === true) counting('phoneOpened')
       if (Object.keys(here).length === 0 || Object.keys(there).length > 0) return owned.own(await api.settings.set(there))
       const now = owned.own(owned.last() ?? (await api.settings.get()))

@@ -86,16 +86,18 @@ function CountingCard({ change }: { readonly change: (change: Partial<Settings>)
     <div className="notice consent">
       <span className="state" />
       <span className="lines">
-        <span className="title">May GeckIt count what gets used?</span>
-        <span className="body">
-          The name of what was used, such as correct or chatSent, the version, and a random id for this {ON_PHONE ? 'phone' : 'computer'}, sent to Google Analytics. Never text, paths or keys.
+        <span className="title">Help make GeckIt better?</span>
+        <span className="body">A small favor: let GeckIt count which features get used, so we know what to polish next.</span>
+        <span className="promise">
+          Never your chats, files, keys or any personal or confidential data. Just feature names and a random id for this {ON_PHONE ? 'phone' : 'computer'}.
         </span>
+        <span className="fine">{'Saying no sends one anonymous "no", then nothing at all.'}</span>
         <span className="actions">
           <button type="button" className="quiet" onClick={() => change({ analytics: false, analyticsAsked: true })}>
-            No
+            No thanks
           </button>
           <button type="button" className="primary" onClick={() => change({ analytics: true, analyticsAsked: true })}>
-            Yes
+            Yes, count me in
           </button>
         </span>
       </span>

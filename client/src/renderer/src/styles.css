@@ -2639,6 +2639,18 @@ html.framed .topbar {
   white-space: normal;
 }
 
+.notice.consent .promise {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.notice.consent .fine {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 .notice.consent .actions {
   display: flex;
   gap: 6px;

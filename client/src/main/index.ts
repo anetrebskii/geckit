@@ -26,7 +26,8 @@ import { connectDesktop } from './service-client'
 import { configurationActions } from './configuration-actions'
 import type { DesktopServiceClient } from './service-client'
 import { isVaultEnvelope } from '../core/vault'
-import track from './analytics'
+import type { EventName } from '../shared/counting'
+import track, { countActive, countAnswer } from './analytics'
 import { control } from './control'
 import { copyRichText, correctionText } from './clipboard'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
@@ -280,7 +281,7 @@ function registerScreenshot(): void {
 
 function registerCorrect(): void {
   const took = globalShortcut.register(CORRECT, () => {
-    track('shortcutPressed')
+    track('correctShortcut')
     const window = panelWindow()
     void correctionText().then((text) => {
       const send = (): void => window.webContents.send('panel:text', text)
@@ -544,13 +545,30 @@ function applySnapshot(next: ServiceSnapshot): void {
 
 const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "secrets:prepare", "secrets:save", "secrets:update", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:stop", "manager:setModel", "manager:resume", "manager:retry", "manager:restart", "manager:compact", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "manager:unfollow", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:firstAsked", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:setChecklist", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:postpone", "shortcuts:hold", "shortcuts:run", "shortcuts:destinations", "shortcuts:runs"] as const satisfies readonly (keyof ServiceMethods)[]
 
+const COUNTED: Partial<Record<typeof CORE_CHANNELS[number], EventName>> = {
+  correct: 'correct',
+  transcribe: 'transcribe',
+  'chat:send': 'chatSent',
+  'chat:delegate': 'taskDelegated',
+  'manager:sendApp': 'managerSent',
+  'employees:save': 'employeeSaved',
+  'shortcuts:save': 'shortcutSaved',
+  'shortcuts:run': 'shortcutRun',
+  'channels:install': 'channelInstalled',
+  'hosts:connect': 'hostConnected',
+  'secrets:save': 'secretSaved',
+}
+
 function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void {
+  const counted = COUNTED[channel]
   ipcMain.handle(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
-    if (channel === 'correct' || channel === 'transcribe') track(channel)
-    if (channel === 'chat:send') track('chatSent')
+    if (counted !== undefined) track(counted)
     return invoke(channel, ...args)
   })
-  ipcMain.on(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => send(channel, ...args))
+  ipcMain.on(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
+    if (counted !== undefined) track(counted)
+    send(channel, ...args)
+  })
 }
 function wire(): void {
   const storedConnections = connectionStorage()
@@ -617,8 +635,10 @@ function wire(): void {
 
   ipcMain.handle('settings:set', async (_event, change: Partial<Settings>) => {
     const was = getSettings().sendErrors
+    const asked = getSettings().analyticsAsked
     const settings = await invoke('settings:set', change)
     if (settings.sendErrors !== was) void followErrors(settings.sendErrors)
+    if (!asked && settings.analyticsAsked) countAnswer(settings.analytics)
     return settings
   })
 
@@ -1036,6 +1056,8 @@ else {
     if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon-dev.png'))
     app.on('browser-window-created', (_event, window) => { window.on('show', () => { if (window === shownChat()) { worn = -1; badge() } }) })
     wire()
+    countActive()
+    app.on('browser-window-focus', () => countActive())
     nativeTheme.themeSource = getSettings().theme
     keepPhone(getSettings().phone, getSettings().phoneKey)
     openChat()

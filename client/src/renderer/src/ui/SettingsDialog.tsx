@@ -490,7 +490,7 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
           Count which features are used
         </label>
         <span style={NOTE}>
-          Sends Google Analytics the name of what was used, such as correct or chatSent, the version and a random id for this installation. Never text, paths or keys.
+          Tells us which features get used, so we know what to polish next. Google Analytics gets only feature names such as correct, the version and a random id for this installation. Never your chats, files, keys, personal or confidential data.
         </span>
       </div>
 
