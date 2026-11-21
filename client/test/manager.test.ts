@@ -2760,6 +2760,53 @@ describe('Manager threads', () => {
     expect((await f.manager.view()).state).not.toBe('blocked')
   })
 
+  it('keeps malformed GeckIt fences out of Slack replies and privately retries the command once', async () => {
+    const f = await fixture()
+    const replies: string[] = []
+    f.manager.onResponse((text) => replies.push(text))
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread(slack)
+    const id = await f.manager.send('Use a 24-hour window', 'channel', 'slack:window', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Wait for job search results' }, 'manager', 'job-search', thread, () => true, { managerThread: thread })
+
+    const args = ['shortcuts', 'list']
+    const fence = '```'
+    const body = JSON.stringify({ id: 'shortcut-window-check', args })
+    const malformed = `${fence}geckit>\n${body}\n${fence}`
+    expect(managerMessage(malformed)).toBe('')
+    expect(managerMessage(`${fence}\ngeckit>\n${body}\n${fence}`)).toBe('')
+    expect(managerMessage(`${fence}geckit>\n${body}`)).toBe('')
+
+    f.finish(id, `${malformed}\n\n${f.command('skip-mixed-command', ['capabilities'])}`)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('No commands from the last turn ran'))
+    expect(f.sent.at(-1)?.id).toBe(id)
+    expect(f.cli).toEqual([])
+    expect(replies).toEqual([])
+    expect(f.manager.pendingRequests(thread)).toContain('slack:window')
+
+    f.setCli(async () => '[]')
+    f.finish(id, `${fence}geckit\n${body}\n${fence}`)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('"result":"[]"'))
+    expect(f.cli.map((call) => call.args)).toEqual([args])
+    expect(replies).toEqual([])
+    const example = `${fence}text\nAn ordinary code block\n${fence}`
+    f.finish(id, example)
+    await vi.waitFor(() => expect(replies).toEqual([example]))
+    await vi.waitFor(async () => expect(threadActivity(await f.manager.view(), thread)).toMatchObject({ active: false, workers: [{ id: worker, active: true }] }))
+
+    await f.manager.send('Check again', 'channel', 'slack:check', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toBe('Check again'))
+    f.finish(id, malformed)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('No commands from the last turn ran'))
+    const count = f.sent.length
+    f.finish(id, malformed)
+    await vi.waitFor(async () => expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.state).toBe('failed'))
+    expect(f.sent).toHaveLength(count)
+    expect(f.cli.map((call) => call.args)).toEqual([args])
+    expect(replies).toEqual([example])
+  })
+
   it('lets only one thread track a worker, and another follow it only after that one lets go', async () => {
     const f = await fixture()
     const configured = await f.manager.configure({ enabled: true })

@@ -7,17 +7,26 @@ export interface ManagerCommand {
   readonly args: readonly string[]
 }
 
+export const INVALID_MANAGER_COMMAND = 'Manager returned an invalid GeckIt command. Retry the turn.'
+
 function splitManagerOutput(text: string) {
   const visible: string[] = []
   const actions: string[] = []
   let note: string | undefined
-  let fence: { marker: string; kind: 'geckit' | 'status' | 'markdown'; lines: string[] } | undefined
+  let malformed = false
+  let fence: { marker: string; kind: 'geckit' | 'geckit>' | 'status' | 'markdown'; lines: string[] } | undefined
 
   for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
     const match = /^[ \t]{0,3}(`{3,}|~{3,})(.*)$/.exec(line)
     const marker = match?.[1]
     const label = match?.[2]?.trim()
-    const control = marker?.startsWith('`') === true && (label === 'geckit' || label === 'status') ? label : undefined
+    const control = marker?.startsWith('`') === true && (label === 'geckit' || label === 'status' || label === 'geckit>') ? label : undefined
+    if (fence?.kind === 'markdown' && fence.marker.startsWith('`') && line.trim() === 'geckit>' && visible.at(-1)?.trim() === fence.marker) {
+      visible.pop()
+      fence.kind = 'geckit>'
+      malformed = true
+      continue
+    }
     if (fence !== undefined && marker !== undefined && label === '' && marker[0] === fence.marker[0] && marker.length >= fence.marker.length) {
       if (fence.kind === 'geckit') actions.push(fence.lines.join('\n'))
       if (fence.kind === 'status') note = fence.lines.join(' ').replace(/\s+/g, ' ').trim()
@@ -27,6 +36,7 @@ function splitManagerOutput(text: string) {
     }
     if (marker !== undefined && (fence === undefined || fence.kind === 'status' && control !== undefined)) {
       fence = { marker, kind: control ?? 'markdown', lines: [] }
+      if (control === 'geckit>') malformed = true
       if (fence.kind === 'markdown') visible.push(line)
     } else if (fence === undefined || fence.kind === 'markdown') {
       visible.push(line)
@@ -34,17 +44,17 @@ function splitManagerOutput(text: string) {
       fence.lines.push(line)
     }
   }
-  return { visible: visible.join('\n'), actions, note: note || undefined }
+  return { visible: visible.join('\n'), actions, note: note || undefined, malformed }
 }
 
 export function managerOutput(text: string) {
-  const { visible, actions } = splitManagerOutput(text)
+  const { visible, actions, malformed } = splitManagerOutput(text)
+  if (malformed) return { commands: [], visible: '', malformed: true }
   if (actions.length > 10) throw new Error('Manager requested too many operations in one turn.')
-  const invalid = 'Manager returned an invalid GeckIt command. Retry the turn.'
   const commands = actions.map((action): ManagerCommand => {
     let parsed: Partial<ManagerCommand> | null
-    try { parsed = JSON.parse(action) as typeof parsed } catch { throw new Error(invalid) }
-    if (typeof parsed?.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(parsed.id) || !Array.isArray(parsed.args) || parsed.args.length === 0 || parsed.args.length > 40 || !parsed.args.every((arg) => typeof arg === 'string' && arg.length <= 100_000)) throw new Error(invalid)
+    try { parsed = JSON.parse(action) as typeof parsed } catch { throw new Error(INVALID_MANAGER_COMMAND) }
+    if (typeof parsed?.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(parsed.id) || !Array.isArray(parsed.args) || parsed.args.length === 0 || parsed.args.length > 40 || !parsed.args.every((arg) => typeof arg === 'string' && arg.length <= 100_000)) throw new Error(INVALID_MANAGER_COMMAND)
     return { id: parsed.id, args: parsed.args }
   })
   return { commands, visible: plainText(visible) }

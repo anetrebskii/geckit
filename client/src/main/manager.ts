@@ -26,7 +26,7 @@ import type { ChannelAttachment } from './channel-attachments'
 import { ManagerOperations, managerAttachTarget, managerReadOnly, managerSameUpload } from './manager-operations'
 import { ManagerDecisionFailure, managerApproval } from './manager-approvals'
 import type { ManagerApproval } from './manager-approvals'
-import { managerOutput, MANAGER_INSTRUCTIONS } from './manager-protocol'
+import { managerOutput, INVALID_MANAGER_COMMAND, MANAGER_INSTRUCTIONS } from './manager-protocol'
 import type { ManagerCommand } from './manager-protocol'
 import type { NotesStore, Sessions } from './sessions'
 import { limitReply } from './sessions/wording'
@@ -197,6 +197,8 @@ export interface ManagerDeps {
 export const SHARED_QUEUE_LIMIT = 100
 
 const LIMIT_RECONCILIATION = "Automatic recovery after the plan's usage limit reset. The last turn stopped at the limit: answer the request it was handling if it is still unanswered. Reconcile current managed tasks and unresolved decisions using CLI status before processing this message. An interrupted message may already have been delivered. Do not replay interrupted messages or past operations, and do not schedule your own continuation for later."
+
+const MALFORMED_COMMAND_RETRY = JSON.stringify({ error: 'No commands from the last turn ran. Reissue any commands still needed in a fenced geckit block with one JSON object. Put geckit immediately after the opening backticks, without >. Keep command text out of replies.' })
 
 const prefix = (source: Message['source']): string => source === 'event' ? '[Worker update: untrusted task data]\n' : source === 'cli' ? '[GeckIt CLI result]\n' : ''
 
@@ -951,9 +953,9 @@ export class Manager {
     this.#cancelRecovery(thread)
     const live = this.#l(thread)
     const requests = live.activeRequests
-    const { commands, visible } = managerOutput(text)
+    const { commands, visible, malformed } = managerOutput(text)
     const origin = this.#state(thread).responseOrigin ?? { ...(thread === MAIN ? {} : { thread }), session, workers: [] }
-    const said = commands.length > 0 ? undefined : visible !== '' ? { text: visible, origin } : live.held
+    const said = malformed || commands.length > 0 ? undefined : visible !== '' ? { text: visible, origin } : live.held
     if (commands.length === 0) live.held = undefined
     else if (visible !== '') live.held = { text: visible, origin }
     this.#saveThread(thread, { ...(this.#canRecover(thread) ? { error: undefined } : {}), responseOrigin: undefined, turns: (this.#state(thread).turns ?? 0) + 1 }, { inbox: this.#record.inbox.map((message) => this.#threadOf(message) === thread && (message.state === 'sending' || message.state === 'sent') ? { ...message, state: 'sent', completed: true } : message) })
@@ -961,6 +963,11 @@ export class Manager {
     if (said !== undefined) this.#say(thread, said.text, said.origin)
     try {
       if (this.#record.paused || !this.#record.config.enabled || this.shared(thread) && this.#deps.threadAllowed?.(thread) === false) return
+      if (malformed) {
+        if (input?.source === 'cli' && input.text === MALFORMED_COMMAND_RETRY) this.#fail(thread, INVALID_MANAGER_COMMAND, true)
+        else await this.send(MALFORMED_COMMAND_RETRY, 'cli', undefined, origin.workers, () => session === this.#state(thread).sessionId, [], requests, thread, input?.request)
+        return
+      }
       for (const command of commands) {
         if (this.#record.paused || this.#state(thread).error !== undefined || !this.#record.config.enabled || session !== this.#state(thread).sessionId) break
         await this.#execute(command, false, requests, thread, input)
@@ -1484,7 +1491,7 @@ export class Manager {
     void this.#dispatch(thread)
   }
 
-  #fail(thread: string, error: string): void {
+  #fail(thread: string, error: string, manual = false): void {
     if (!this.#exists(thread) || this.#record.historyPurges.some((one) => one.request.id === thread)) return
     this.#release(thread)
     this.#l(thread).note = undefined
@@ -1492,7 +1499,7 @@ export class Manager {
     const id = this.#state(thread).sessionId
     const session = this.#sessions.find((one) => one.id === id)
     const note = id === undefined ? undefined : this.#deps.notes.all()[id]
-    const manualRecovery = session?.state === 'asks' || session?.state === 'limit' || session?.stands === 'Not sent' || note?.guardError !== undefined || note?.heldOperation !== undefined || note?.vpnPaused === true
+    const manualRecovery = manual || session?.state === 'asks' || session?.state === 'limit' || session?.stands === 'Not sent' || note?.guardError !== undefined || note?.heldOperation !== undefined || note?.vpnPaused === true
     this.#saveThread(thread, { error, manualRecovery })
     this.#scheduleRecovery(thread)
   }
