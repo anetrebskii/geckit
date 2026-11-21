@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { createRendererApi } from '../shared/renderer-api'
-import type { RendererArgument, RendererTransport } from '../shared/renderer-api'
+import type { BrowserViewFrameReply, RendererArgument, RendererTransport } from '../shared/renderer-api'
 import type { Pairing } from '../shared/pairing'
 import type { ConnectionStorage } from '../shared/remote/storage'
 import type { SessionImage } from '../shared/api'
@@ -25,13 +25,23 @@ const transport: RendererTransport = {
   },
 }
 
+const rendererApi = createRendererApi(transport, {
+  platform: process.platform,
+  home: process.env['HOME'] ?? '',
+  pathFor: (file) => webUtils.getPathForFile(file),
+})
+
 const geckit = {
   connectionStorage,
-  ...createRendererApi(transport, {
-    platform: process.platform,
-    home: process.env['HOME'] ?? '',
-    pathFor: (file) => webUtils.getPathForFile(file),
-  }),
+  ...rendererApi,
+  browser: {
+    ...rendererApi.browser,
+    viewFrame: async (name: string) => {
+      const reply = await transport.invoke<BrowserViewFrameReply>('browser:viewFrame', name)
+      if ('message' in reply) throw new Error(reply.message)
+      return reply
+    },
+  },
   /** The hidden window the phone is answered in, and nothing else, uses these. */
   peer: {
     pairing: (): Promise<Pairing | undefined> => ipcRenderer.invoke('peer:pairing'),

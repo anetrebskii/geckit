@@ -71,6 +71,8 @@ import type { SessionListStatus } from './session-list'
 
 export type RendererArgument = object | string | number | boolean | null | undefined
 
+export type BrowserViewFrameReply = ViewFrame | Pick<Error, 'message'>
+
 export interface RendererTransport {
   invoke<Result>(channel: string, ...args: readonly RendererArgument[]): Promise<Result>
   send(channel: string, ...args: readonly RendererArgument[]): void
