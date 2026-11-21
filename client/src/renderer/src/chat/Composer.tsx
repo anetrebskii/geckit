@@ -19,7 +19,7 @@ import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
 import { HostDot } from './HostParts'
 import { Mcp } from './Mcp'
-import { DictatingStrip, fitField, KeptRecording, SendControls, useDictation } from './MessageControls'
+import { DictatingStrip, fitField, KeptRecording, PhoneDictationStatus, SendControls, useDictation } from './MessageControls'
 import { computerName, needsComputer } from './PhoneHosts'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
@@ -1051,6 +1051,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
             stopTitle={chat.settings.chatView === 'board' ? `Stop (${MOD}+.)` : `Stop (Esc, ${MOD}+.)`}
           />
         </div>
+        <PhoneDictationStatus dictation={dictation} />
         {/* The chip row has no room for the hint, so on the phone it has a line of its own over the field. */}
         {held && host !== undefined ? (
           <div className="phone-hint away">

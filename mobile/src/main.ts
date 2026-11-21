@@ -22,7 +22,7 @@ import type { Macs } from '../../client/src/renderer/src/macs'
 import type { Tap } from '../../client/src/renderer/src/tap'
 import type { ScreenLink } from '../../client/src/renderer/src/screen-link'
 import type { ScreenControlled } from '../../client/src/shared/api'
-import type { Dictate, Level, Voice } from '../../client/src/renderer/src/dictate'
+import type {} from '../../client/src/renderer/src/dictate'
 import type { PickedVideo, Picking } from '../../client/src/renderer/src/picked'
 import { readPairing, roomOf, SIGNAL } from '../../client/src/shared/pairing'
 import type { Pairing } from '../../client/src/shared/pairing'
@@ -120,7 +120,7 @@ let hearing: PluginListenerHandle[] = []
 const has = (plugin: string): boolean => Capacitor.getPlatform() !== 'android' || Capacitor.isPluginAvailable(plugin)
 
 // iOS's own speech recognition for the composer, which hears what is said while the button is held on.
-if (has('Dictation')) (window as { geckitDictate?: Dictate }).geckitDictate = {
+if (has('Dictation')) window.geckitDictate = {
   start: async (language, heard, ended) => {
     for (const one of hearing.splice(0)) void one.remove()
     hearing = await Promise.all([
@@ -135,19 +135,19 @@ if (has('Dictation')) (window as { geckitDictate?: Dictate }).geckitDictate = {
       throw error
     })
   },
-  stop: () => dictation.stop().catch(() => undefined),
+  stop: () => dictation.stop(),
   cancel: () => void dictation.stop().catch(() => undefined),
   live: true,
 }
 
 // How loud the microphone is while either of the two listens.
-if (has('Dictation')) (window as { geckitLevel?: Level }).geckitLevel = (said) => {
+if (has('Dictation')) window.geckitLevel = (said) => {
   const handle = dictation.addListener('level', (heard) => said(heard.level))
   return () => void handle.then((one) => one.remove())
 }
 
 // The microphone alone, for the host to hear what was said with its own model.
-if (has('Dictation')) (window as { geckitVoice?: Voice }).geckitVoice = {
+if (has('Dictation')) window.geckitVoice = {
   start: () => dictation.record(),
   stop: async () => (await dictation.recorded({ keep: true })).audio ?? '',
   drop: () => void dictation.recorded({ keep: false }).catch(() => undefined),

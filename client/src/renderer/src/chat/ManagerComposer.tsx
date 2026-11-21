@@ -7,7 +7,7 @@ import { llmProviderInfo } from '../../../shared/providers'
 import { Picker } from '../ui/Menu'
 import { keep, readKept } from '../kept'
 import { ON_PHONE } from '../on-phone'
-import { DictatingStrip, fitField, KeptRecording, SendControls, useDictation } from './MessageControls'
+import { DictatingStrip, fitField, KeptRecording, PhoneDictationStatus, SendControls, useDictation } from './MessageControls'
 
 interface PendingSend {
   readonly request: ManagerSendRequest
@@ -127,6 +127,7 @@ export function ManagerComposer({ view, settings, connected, historyReady, close
         <SendControls dictation={dictation} typed={held.text.trim() !== ''} working={view.state === 'working'} cannot={cannot} micDisabled={cannot} onSend={() => { void send() }} onStop={session === undefined ? undefined : () => { void window.geckit.manager.stop(session) }} />
       </div>
     </div>
+    <PhoneDictationStatus dictation={dictation} />
     {ON_PHONE && hint !== '' ? <p className="manager-composer-hint" role="status">{hint}</p> : null}
   </div>
 }

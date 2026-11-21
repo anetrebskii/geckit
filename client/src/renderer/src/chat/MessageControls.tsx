@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { Settings } from '../../../shared/api'
 import { dictate, dropUnheard, hearAgain, languageCode, readUnheard, useDictationLanguage, useLevel } from '../dictate'
-import type { Unheard } from '../dictate'
+import type { Dictate, Unheard } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { BARS, time, toHear, useRecorder } from '../recorder'
 import { downloading, useSpeechModel } from '../speech'
@@ -11,6 +11,10 @@ import { Icon } from '../ui/Icon'
 import { Picker } from '../ui/Menu'
 
 export type Dictation = ReturnType<typeof useDictation>
+
+function micProblem(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string' ? error.message : String(error)
+}
 
 /** Grows the field with what is in it, up to a limit, and back to one line when it is empty. */
 export function fitField(area: HTMLTextAreaElement, text: string): void {
@@ -37,6 +41,8 @@ export function useDictation({ settings, draft, setDraft, field, place, session,
   readonly onHeard?: (text: string) => void
 }) {
   const [listening, setListening] = useState<string | undefined>()
+  const [opening, setOpening] = useState(false)
+  const active = useRef<{ ears: Dictate; opening: boolean; stopping: boolean; abandoned: boolean }>(undefined)
   const [spoken, flipSpoken] = useDictationLanguage(settings.nativeLanguage, settings.secondLanguage)
   const [unheard, setUnheard] = useState<string | undefined>()
   // The host writes down what was said once the mic stops, which takes a few seconds.
@@ -94,34 +100,68 @@ export function useDictation({ settings, draft, setDraft, field, place, session,
   const lookKept = (): void => void readUnheard().then((one) => setKept(one?.place === place ? one : undefined))
   useEffect(lookKept, [place])
   const failed = (error: unknown): void => {
-    setUnheard(error instanceof Error ? error.message : String(error))
+    setUnheard(micProblem(error))
     lookKept()
   }
   const listen = (goOn = false): void => {
-    const ears = dictate()
-    if (ears === undefined) return
-    if (listening !== undefined) {
+    const current = active.current
+    const finish = (capture: NonNullable<typeof current>): void => {
+      if (active.current !== capture) return
+      active.current = undefined
+      setOpening(false)
       setListening(undefined)
-      setWriting(!ears.live)
-      ears
-        .stop()
-        .then(() => setKept(undefined))
-        .catch(failed)
-        .finally(() => setWriting(false))
+      setWriting(false)
+    }
+    if (current !== undefined) {
+      if (current.opening || current.stopping) return
+      current.stopping = true
+      setListening(undefined)
+      setWriting(true)
+      void current.ears.stop().then(() => {
+        if (active.current !== current || current.ears.live) return
+        setKept(undefined)
+        finish(current)
+      }, (error: unknown) => {
+        if (active.current !== current) return
+        failed(error)
+        finish(current)
+      })
       return
     }
+    const ears = dictate()
+    if (ears === undefined || writing) return
+    const capture = { ears, opening: true, stopping: false, abandoned: false }
+    active.current = capture
     const typed = draft.trimEnd()
     setUnheard(undefined)
-    setListening(spoken)
+    setOpening(true)
     tap('light')
-    ears
-      .start(spoken, (text) => setDraft(typed === '' ? text : `${typed} ${text}`), () => setListening(undefined), place, goOn)
-      .catch((error: unknown) => {
-        setListening(undefined)
-        setUnheard(error instanceof Error ? error.message : String(error))
-      })
+    void ears.start(spoken, (text) => {
+      if (active.current === capture && text !== '') setDraft(typed === '' ? text : `${typed} ${text}`)
+    }, () => {
+      if (ears.live) finish(capture)
+    }, place, goOn).then(() => {
+      capture.opening = false
+      if (capture.abandoned) ears.cancel()
+      if (active.current !== capture) return
+      setOpening(false)
+      setListening(ears.live ? `Listening in ${spoken}` : 'Recording')
+    }, (error: unknown) => {
+      if (active.current !== capture) return
+      setUnheard(micProblem(error))
+      finish(capture)
+    })
   }
-  useEffect(() => () => dictate()?.cancel(), [session])
+  useEffect(() => () => {
+    const capture = active.current
+    if (capture === undefined) return
+    active.current = undefined
+    capture.abandoned = true
+    if (!capture.opening && !capture.stopping) capture.ears.cancel()
+    setOpening(false)
+    setListening(undefined)
+    setWriting(false)
+  }, [session])
   const tryAgain = (): void => {
     const typed = draft.trimEnd()
     setUnheard(undefined)
@@ -148,21 +188,24 @@ export function useDictation({ settings, draft, setDraft, field, place, session,
     else recorder.cancel()
     return true
   }
+  const phoneStatus = opening ? 'Opening the microphone' : listening ?? (writing ? 'Writing down what you said' : unheard)
   /** What the field says while words are being heard, or the given words. */
   const placeholder = (idle: string): string =>
     ON_PHONE
-      ? listening !== undefined
-        ? `Listening in ${listening}`
-        : writing
-          ? 'Writing down what you said'
-          : (unheard ?? idle)
+      ? idle
       : recorder.recording
         ? 'Listening'
         : hearing
           ? 'Writing down what you said'
           : idle
-  const capturing = listening !== undefined || writing || recorder.recording || hearing
-  return { recorder, hearing, problem, model, record, close, listening, spoken, flipSpoken, writing, level, kept, listen, tryAgain, drop, keyDown, placeholder, capturing }
+  const capturing = listening !== undefined || opening || writing || recorder.recording || hearing
+  return { recorder, hearing, problem, model, record, close, listening, spoken, flipSpoken, opening, writing, phoneStatus, unheard, level, kept, listen, tryAgain, drop, keyDown, placeholder, capturing }
+}
+
+export function PhoneDictationStatus({ dictation, className = 'phone-hint' }: { readonly dictation: Dictation; readonly className?: string }): React.JSX.Element | null {
+  const { phoneStatus, unheard } = dictation
+  if (!ON_PHONE || phoneStatus === undefined) return null
+  return <div className={unheard === undefined ? className : `${className} trouble`} role={unheard === undefined ? 'status' : 'alert'}>{phoneStatus}</div>
 }
 
 /** On the computer, the recording under the field, or what went wrong with it. */
@@ -209,7 +252,7 @@ export function DictatingStrip({ dictation }: { readonly dictation: Dictation })
 /** On the phone, a recording the host failed to write down, with what can be done with it. */
 export function KeptRecording({ dictation }: { readonly dictation: Dictation }): React.JSX.Element | null {
   const { kept, listening, writing } = dictation
-  if (!ON_PHONE || kept === undefined || listening !== undefined || writing) return null
+  if (!ON_PHONE || kept === undefined || listening !== undefined || writing || dictation.opening) return null
   return (
     <Picker
       label="Not written down"
@@ -252,7 +295,10 @@ export function SendControls({ dictation, typed, pictures = 0, working, cannot, 
   readonly onStop?: (() => void) | undefined
   readonly stopTitle?: string
 }): React.JSX.Element {
-  const { recorder, hearing, listening, writing, spoken, level } = dictation
+  const { recorder, hearing, listening, opening, writing, spoken, level } = dictation
+  const ears = ON_PHONE ? dictate() : undefined
+  const micBusy = opening || listening !== undefined || writing
+  const beside = !micBusy && (typed || pictures > 0 || working)
   const label = queues ? 'Queue' : 'Send'
   return (
     <>
@@ -268,7 +314,7 @@ export function SendControls({ dictation, typed, pictures = 0, working, cannot, 
           <Icon name={recorder.recording ? 'check' : 'mic'} size={15} />
         </button>
       )}
-      {checkingIp || hidden ? null : working && listening === undefined && (typed || pictures > 0) ? (
+      {checkingIp || hidden ? null : working && !micBusy && (typed || pictures > 0) ? (
         <button
           type="button"
           className="send"
@@ -280,18 +326,21 @@ export function SendControls({ dictation, typed, pictures = 0, working, cannot, 
           <Icon name="send" size={14} />
         </button>
       ) : null}
-      {/* The phone has room for one round button in the field: typed text makes it Queue, and while Claude works an empty field makes it Stop. */}
-      {/* Otherwise an empty field offers dictation in the send button's place, as Messages does. */}
-      {/* Beside the mic, the language it listens in: a press switches to the other of the two in Settings, and it stays so. */}
-      {/* With a picture attached, or Stop in the round button, the mic and language sit to its left, so words can still be said. */}
-      {checkingIp || hidden ? null : ON_PHONE && dictate()?.live === true && listening === undefined && !typed ? (
-        <button type="button" className={pictures > 0 || working ? 'spoken beside' : 'spoken'} onClick={dictation.flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
+      {checkingIp || hidden ? null : ears?.live === true && !micBusy ? (
+        <button type="button" className={beside ? 'spoken beside' : 'spoken'} onClick={dictation.flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
           {languageCode(spoken)}
         </button>
       ) : null}
-      {checkingIp || hidden ? null : ON_PHONE && dictate() !== undefined && listening === undefined && !typed && (pictures > 0 || working) ? (
-        <button type="button" className="send mic beside" disabled={cannot || writing} onClick={() => dictation.listen()} aria-label={`Dictate in ${spoken}`}>
-          <Icon name="mic" size={16} />
+      {!checkingIp && !hidden && ears !== undefined ? (
+        <button
+          type="button"
+          className={listening !== undefined ? 'send listening' : beside ? 'send mic beside' : 'send'}
+          style={{ '--level': level } as React.CSSProperties}
+          disabled={opening || writing || (cannot && listening === undefined)}
+          onClick={() => dictation.listen()}
+          aria-label={listening !== undefined ? 'Stop dictating' : `Dictate in ${spoken}`}
+        >
+          <Icon name={opening || writing ? 'spinner' : listening !== undefined ? 'stop' : 'mic'} size={listening !== undefined ? 12 : 16} className={opening || writing ? 'spinning' : ''} />
         </button>
       ) : null}
       {checkingIp ? (
@@ -300,18 +349,7 @@ export function SendControls({ dictation, typed, pictures = 0, working, cannot, 
           <span>Sending...</span>
           <Icon name="close" size={12} />
         </button>
-      ) : hidden ? null : ON_PHONE && dictate() !== undefined && (listening !== undefined || (!typed && pictures === 0 && !working)) ? (
-        <button
-          type="button"
-          className={listening !== undefined ? 'send listening' : 'send'}
-          style={{ '--level': level } as React.CSSProperties}
-          disabled={cannot || writing}
-          onClick={() => dictation.listen()}
-          aria-label={listening !== undefined ? 'Stop dictating' : `Dictate in ${spoken}`}
-        >
-          <Icon name={writing ? 'spinner' : listening !== undefined ? 'stop' : 'mic'} size={listening !== undefined ? 12 : 16} />
-        </button>
-      ) : working && ON_PHONE && (typed || pictures > 0) ? null : working ? (onStop === undefined ? null : (
+      ) : hidden || (ears !== undefined && !beside) ? null : working && ON_PHONE && (typed || pictures > 0) ? null : working ? (onStop === undefined ? null : (
         <button type="button" className="send stop" onClick={onStop} title={stopTitle} aria-label="Stop">
           <Icon name="stop" size={12} />
         </button>

@@ -60,8 +60,8 @@ public class DictationPlugin: CAPPlugin, CAPBridgedPlugin {
                     self.finish()
                     self.recorder?.stop()
                     let session = AVAudioSession.sharedInstance()
-                    try session.setCategory(.record, mode: .default, options: .duckOthers)
-                    try session.setActive(true, options: .notifyOthersOnDeactivation)
+                    try session.setCategory(.record, mode: .default)
+                    try session.setActive(true)
                     let url = FileManager.default.temporaryDirectory.appendingPathComponent("dictation.wav")
                     let recorder = try AVAudioRecorder(url: url, settings: [
                         AVFormatIDKey: kAudioFormatLinearPCM,
@@ -155,8 +155,8 @@ public class DictationPlugin: CAPPlugin, CAPBridgedPlugin {
             throw NSError(domain: "Dictation", code: 1, userInfo: [NSLocalizedDescriptionKey: "Dictation is not available right now."])
         }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        try session.setCategory(.record, mode: .measurement)
+        try session.setActive(true)
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         if #available(iOS 16, *) { request.addsPunctuation = true }
@@ -173,11 +173,12 @@ public class DictationPlugin: CAPPlugin, CAPBridgedPlugin {
         engine.prepare()
         try engine.start()
         task = recognizer.recognitionTask(with: request) { result, error in
-            if let result = result {
-                self.notifyListeners("heard", data: ["text": result.bestTranscription.formattedString, "final": result.isFinal])
-            }
-            if error != nil || result?.isFinal == true {
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                guard self.request === request else { return }
+                if let result = result {
+                    self.notifyListeners("heard", data: ["text": result.bestTranscription.formattedString, "final": result.isFinal])
+                }
+                if error != nil || result?.isFinal == true {
                     self.finish()
                     self.notifyListeners("ended", data: [:])
                 }
