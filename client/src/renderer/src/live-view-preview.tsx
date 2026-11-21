@@ -28,7 +28,7 @@ const draw = (): string => {
 }
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
 const api: LiveViewApi = {
-  start: async () => { await wait(600); if (query.has('fail')) throw new Error('Chrome for Testing did not download: the computer has no network.'); return { width: 1280, height: 800 } },
+  start: async () => { await wait(600); if (query.has('fail')) throw new Error('Camoufox did not download: the computer has no network.'); return { width: 1280, height: 800 } },
   frame: async (): Promise<ViewFrame> => {
     const jpeg = draw()
     const ink = canvas.getContext('2d') as CanvasRenderingContext2D

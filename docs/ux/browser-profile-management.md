@@ -15,8 +15,8 @@ The existing Settings list mixes profile identifiers, account notes and status i
 
 ### Path to a result
 
-- **Entry and result:** Settings > Web Browser > Browser profiles. Press "New profile", enter a name and, if useful, a description, press "Create profile", then "Open browser" for that saved profile. Sign in manually in its Chrome for Testing window. Later tasks can use `geckit:<name>`.
-- **Readiness:** A saved profile is available to open. "Open" reports a running browser, not successful authentication. GeckIt does not inspect or invent account sign-in status. Profile management remains visible when Chrome through GeckIt is off. Creation/deletion remain available; opening and live sign-in require enabling the connection below. The first browser launch may download Chrome for Testing, as today.
+- **Entry and result:** Settings > Web Browser > Browser profiles. Press "New profile", enter a name and, if useful, a description, press "Create profile", then "Open browser" for that saved profile. Sign in manually in its Camoufox window. Later tasks can use `geckit:<name>`.
+- **Readiness:** A saved profile is available to open. "Open" reports a running browser, not successful authentication. GeckIt does not inspect or invent account sign-in status. Profile management remains visible when Chrome through GeckIt is off. Creation/deletion remain available; opening and live sign-in require enabling the connection below. The first browser launch may download Camoufox.
 - **Decisions and order:** Choose a stable short name and identify the intended account. Open the saved profile, then sign in. On this computer Open browser is the only way in; when viewing another computer, Open browser shows the live view.
 - **Shape:** Profile management leads the section; Chrome extension/connection setup follows below as secondary content. New profile is the prominent section action. One list and a disclosed creation form directly below the heading, because the name and the optional description are independent fields. Separate setup pages would make a small repeated operation longer. Profiles sit in one grouped list, macOS Settings style: each row has a letter badge, `geckit:<name>` with its open/closed dot, and its description, when there is one, on one line under it. Open browser is the row's only visible action; Edit and Delete live in the row's More menu (the ellipsis button). Edit turns the row into the same two-field form, filled in, with Cancel and Save. The creation form opens as the first block inside the same group, with labels beside the fields.
 - **First use and return:** The empty list leads to New profile. Cancelling the form saves nothing. Leaving Settings keeps saved profiles and sign-ins; unsaved form input is not promised across closing Settings. A closed profile can be opened again. If startup fails, show its reason and allow another attempt.
@@ -135,7 +135,7 @@ No new time threshold is introduced by this change.
 | Settings section | "Web Browser" |
 | Connection off | "Turn on Chrome through GeckIt below to open a browser or sign in." |
 | Heading | "Browser profiles" |
-| Explanation | "Separate Chrome for Testing profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer." |
+| Explanation | "Separate browser profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer." |
 | Create entry | "New profile" |
 | Name label and hint | "Profile name"; "Lowercase letters, numbers and hyphens. Used as geckit:<name> in conversations." |
 | Description label, placeholder and hint | "Description"; "GitHub as alex@example.com"; "Optional. Assistants read it to pick the right profile for a task." Alex asked on 2026-11-12 for it not to be mandatory, and noted that assistants use it to choose a profile. |
@@ -167,7 +167,7 @@ Existing download and live-view wording is retained. Backend errors preserve the
 
 | Not added | Reason |
 | --- | --- |
-| Ordinary Chrome profile migration | The screenshot and managed lifecycle concern Chrome for Testing; personal Chrome keeps its own storage and windows |
+| Ordinary Chrome profile migration | The screenshot and managed lifecycle concern Camoufox test browsers; personal Chrome keeps its own storage and windows |
 | Automatic cookie extraction, decryption or operating-system key-store transfer | File backup must respect Chrome's credential protection |
 | Guaranteed portable sign-in | OS encryption and site/device binding prevent that promise |
 | Automatic archive delivery to paired computers | File transfer is separate from profile backup/restore and its path semantics |
@@ -206,7 +206,7 @@ Feature 025 excluded all profile copying. This proposal changes that scope for e
 
 ## Camoufox migration (2026-11-13)
 
-This section supersedes the Chrome for Testing backend and download wording in the original profile-management specification above.
+This section supersedes the earlier backend and download wording in the original profile-management specification above.
 
 ### 1. Result and journey
 
@@ -271,7 +271,7 @@ No automatic conversion of Chrome cookies or passwords to Firefox. No promise th
 
 ### 10. Decision
 
-Replace the former Chrome for Testing backend with Camoufox using its native cursor movement and a persistent Firefox context. Use the existing settings workflow rather than adding a second browser chooser. Keep the Node runtime self-contained, without requiring a Python installation.
+Test browsers run on Camoufox, using its native cursor movement and a persistent Firefox context. Use the existing settings workflow rather than adding a second browser chooser. Keep the Node runtime self-contained, without requiring a Python installation.
 
 ### 11. Requirements
 

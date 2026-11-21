@@ -2,22 +2,22 @@
 type: spec
 ---
 
-# Test browsers: Chrome for Testing under geckit browser
+# Test browsers: Camoufox under geckit browser
 
 ## Why
 
-Through the extension a conversation works only where Chrome lets an extension work. The Chrome Web Store, `chrome://` pages and other extensions' pages are closed to every extension, the debugging bar shows over the person's own window while a click is real, and every tab a conversation opens lands among the person's own. On 2026-11-04 filling the Web Store listing could not be done through GeckIt at all and needed a hand-driven Chrome for Testing.
+Through the extension a conversation works only where Chrome lets an extension work. The Chrome Web Store, `chrome://` pages and other extensions' pages are closed to every extension, the debugging bar shows over the person's own window while a click is real, and every tab a conversation opens lands among the person's own. On 2026-11-04 filling the Web Store listing could not be done through GeckIt at all and needed a hand-driven separate browser.
 
-A test browser is Chrome for Testing that GeckIt starts and drives itself. The normal test-page command uses one persistent profile derived from the conversation's registered project folder. Conversations in that project share one browser and own separate tabs. Moving a conversation card to Done releases and closes its tabs; the last owner closes the browser, keeping cookies and sign-ins for the next task. Alex approved this lifecycle on 2026-11-05.
+A test browser is Camoufox, a Firefox build that GeckIt starts and drives itself. The normal test-page command uses one persistent profile derived from the conversation's registered project folder. Conversations in that project share one browser and own separate tabs. Moving a conversation card to Done releases and closes its tabs; the last owner closes the browser, keeping cookies and sign-ins for the next task. Alex approved this lifecycle on 2026-11-05.
 
 ### Path to a result
 
 - **Entry and result:** ask a conversation to check a page; it runs `geckit browser start geckit`, then `open <url> --profile geckit`. GeckIt chooses the registered project profile. The command returns a tab owned by that conversation.
-- **No ordinary profile:** when `browser profiles` reports no ordinary Chrome profiles or none has GeckIt Browser, the assistant runs `start geckit` and then `open <url> --profile geckit`, without asking for manual Chrome or extension installation. On macOS and Linux, GeckIt downloads Chrome for Testing on first use if needed and reuses the cached copy. A closed ordinary profile with the extension can be opened with `start <profile>`. An unavailable integration, pause or permission denial still stops the affected action; missing profiles alone do not. A fresh test profile has no account sign-ins; account work follows the named-profile sign-in flow in [remote-browser-profiles.md](remote-browser-profiles.md).
-- **Readiness:** Chrome through GeckIt is enabled and Chrome for Testing is available or downloads successfully. A launch request alone is not a ready browser: readiness is a responding driver and a returned owned tab.
+- **No ordinary profile:** when `browser profiles` reports no ordinary Chrome profiles or none has GeckIt Browser, the assistant runs `start geckit` and then `open <url> --profile geckit`, without asking for manual Chrome or extension installation. On macOS and Linux, GeckIt downloads Camoufox on first use if needed and reuses the installed copy. A closed ordinary profile with the extension can be opened with `start <profile>`. An unavailable integration, pause or permission denial still stops the affected action; missing profiles alone do not. A fresh test profile has no account sign-ins; account work follows the named-profile sign-in flow in [remote-browser-profiles.md](remote-browser-profiles.md).
+- **Readiness:** Chrome through GeckIt is enabled and Camoufox is available or downloads successfully. A launch request alone is not a ready browser: readiness is a responding driver and a returned owned tab.
 - **Choices:** ordinary project tests need no name. A person can explicitly configure named profiles for separate accounts in `~/.geckit/browser-state/test-project-profiles.json`, mapping a registered project folder to an array of allowed profile names (a single string also overrides that project's default); this remains an exception, not a naming decision delegated to the assistant.
 - **Shape:** existing conversation commands and the existing Done action form the whole path. No new screen or setup wizard is needed because project registration already supplies the default.
-- **First use and return:** first use opens the project window; another conversation reuses it with its own tabs. Moving one card to Done leaves other owners working. Returning a card from Done does not reopen anything by itself; a new test request acquires ownership again and reuses the saved sign-ins. If Chrome closes or fails to start, retry the test request. Existing windows with unknown ownership remain untouched.
+- **First use and return:** first use opens the project window; another conversation reuses it with its own tabs. Moving one card to Done leaves other owners working. Returning a card from Done does not reopen anything by itself; a new test request acquires ownership again and reuses the saved sign-ins. If the test browser closes or fails to start, retry the test request. Existing windows with unknown ownership remain untouched.
 
 ## Who does what
 
@@ -27,44 +27,44 @@ sequenceDiagram
   participant F as ~/.geckit/browser
   participant S as GeckIt service
   participant D as Test browser driver
-  participant B as Chrome for Testing
+  participant B as Camoufox
   C->>F: start geckit (registered project, .launch file)
   S->>D: starts it, outside any sandbox
-  D->>B: downloads it once, starts it on a pipe
+  D->>B: downloads it once, starts it through Playwright
   D->>F: hosts/<pid>.json, persistent project label
   C->>F: open <url> --profile geckit (owned .ask file)
-  D->>B: the command over the debugging protocol
+  D->>B: the command through Playwright
   D->>F: the answer (.told)
 ```
 
-The conversation never starts Chrome itself: Codex runs with the network off, and a Chrome started from inside its sandbox would have none either. The service starts the driver; the driver owns Chrome through a pipe, so no port is open for any other program on the computer.
+The conversation never starts the test browser itself: Codex runs with the network off, and a browser started from inside its sandbox would have none either. The service starts the driver; the driver owns Camoufox through Playwright, so no port is open for any other program on the computer.
 
 ## What is added
 
 | Surface | What appears |
 | --- | --- |
-| `geckit browser profiles` | test profiles under the Chrome ones: `geckit:<name>   Chrome for Testing   open, 2 tabs` or `closed: start opens it` |
+| `geckit browser profiles` | test profiles under the Chrome ones: `geckit:<name>   Camoufox   open, 2 tabs` or `closed: start opens it` |
 | `geckit browser start geckit` | atomically starts or reuses this registered project's browser; simultaneous requests share one launch |
 | `geckit browser stop test` in a conversation | explains that moving its card to Done releases its tabs; it cannot close another owner's browser |
 | Conversation card moves to Done | automatically releases its owned test tabs, without another assistant decision |
 | Explicit named profile configuration | keeps separate account profiles possible; ordinary project commands need no name |
 | `pages` | only this conversation's managed test tabs; ordinary Chrome routing stays as before |
 | every tab command | rejects access to another conversation's managed test tab, including across projects |
-| Settings > Integrations, under Chrome through GeckIt | Test browsers: Chrome for Testing's version or download, each profile with Open or not, and Delete |
+| Settings > Integrations, under Chrome through GeckIt | Test browsers: Camoufox's version or download, each profile with Open or not, and Delete |
 | the browser skill | when to use a test browser and when the person's Chrome |
 
 ## States of a test profile
 
 | State | When | What the person sees | What to do |
 | --- | --- | --- | --- |
-| No Chrome for Testing | nothing downloaded and none found | Settings: "Chrome for Testing downloads the first time a test browser starts, about 200 MB." | nothing |
-| Downloading | the first start | CLI: "Downloading Chrome for Testing, 40%. Run start again in a minute." Settings: the same with a bar | wait |
+| No Camoufox | nothing downloaded and none found | Settings: "Camoufox downloads the first time a test browser starts." | nothing |
+| Downloading | the first start | CLI: "Downloading Camoufox, 40%. Run start again in a minute." Settings: the same with a bar | wait |
 | Closed | profile folder exists, no driver | `closed: start opens it`; Settings: the name and Delete | start it, or delete it |
-| Open | its driver says who it is within 15 s | one project Chrome for Testing window; each conversation sees its own tabs | work in the conversation |
+| Open | its driver says who it is within 15 s | one project Camoufox window; each conversation sees its own tabs | work in the conversation |
 | Shared | another conversation in the same project acquires it | the existing window, with separate tabs | nothing, sharing is automatic |
 | Released | a card moves to Done | that conversation's tabs close; other owners' tabs stay | nothing |
 | Ownership unavailable | an old browser or request lacks registered ownership | no automatic takeover or cleanup | use a registered conversation; preserve the existing browser |
-| Failed to start | Chrome exited at once or the download failed | CLI: the reason, as Chrome or the download gave it | start again |
+| Failed to start | the browser exited at once or the download failed | CLI: the reason, as the browser or the download gave it | start again |
 
 ## Transitions
 
@@ -128,7 +128,7 @@ stateDiagram-v2
 ## Words
 
 - Settings heading: "Test browsers"
-- Settings line: "Chrome for Testing, started and driven by GeckIt, for pages Chrome closes to extensions and for work away from your own tabs. Each profile keeps its sign-ins."
+- Settings line: "Camoufox, started and driven by GeckIt, for pages Chrome closes to extensions and for work away from your own tabs. Each profile keeps its sign-ins."
 - Normal command: "geckit browser start geckit".
 - Normal page command: "geckit browser open <url> --profile geckit".
 - Ready: "geckit:<project-profile> is open. Use open <url> --profile geckit; GeckIt closes your tabs when this card reaches Done."
@@ -169,7 +169,7 @@ stateDiagram-v2
 - Shared project browser over one browser per conversation: fewer windows while per-conversation tab ownership prevents cross-task control.
 - Done triggers cleanup over asking the assistant to stop: the board is the lifecycle authority.
 - Keep existing unknown windows over inferred migration: preserves running sessions and sign-ins.
-- Chrome for Testing from Google's own "last known good" list, or a copy already in Puppeteer's cache: chosen over bundling 200 MB into GeckIt.
+- Camoufox downloaded once as a checksum-pinned release: chosen over bundling the browser into GeckIt.
 
 
 ## Requirements and verification
@@ -186,7 +186,7 @@ stateDiagram-v2
 
 This updates the existing test-browser feature rather than adding a new screen. Real lifecycle checks must use newly owned verification browsers and separate temporary profile data; no current unknown browser is a cleanup fixture. Verification uses the changed source bundled separately in `/tmp/geckit-browser-real/`; it does not load changes into the installed app or restart any conversation.
 
-- **Real Chrome for Testing:** four simultaneous CLI starts in two fixture conversations produce one host; separate projects with the same basename produce separate hosts. Each conversation sees only its own tabs. CLI and direct driver requests reject foreign tabs, missing identities and other-project identities. Popup ownership follows the opener.
+- **Real test browser:** four simultaneous CLI starts in two fixture conversations produce one host; separate projects with the same basename produce separate hosts. Each conversation sees only its own tabs. CLI and direct driver requests reject foreign tabs, missing identities and other-project identities. Popup ownership follows the opener.
 - **Real Done lifecycle:** the same `notesStore().set(id, { status: 'done' })` transition used by the board closes that conversation's tabs while another owner remains usable. Final-owner Done closes its browser while the other project's browser remains open. A synthetic persistent cookie survives graceful shutdown and reopening the same profile. The fixture uses a mock macOS keychain because its temporary HOME has no login keychain; this verifies actual Chrome cookie storage, not a real account sign-in.
 - **Additional real scenarios:** Done during simultaneous startup cancels the completed owner while the surviving owner opens a page; an explicit allowlist permits two separate account profiles in the same project at the same time. All owned fixture browsers are released afterward; profile folders remain.
 - **Ordinary Chrome:** the changed CLI reads the existing ENTech profile's 17 tabs without opening, switching or modifying them. Existing Gmail and legacy named test windows are preserved.
@@ -202,7 +202,7 @@ The current working-tree Settings section is renamed "Web Browser". Profile mana
 
 ## Test-browser launch update - 2026-11-12
 
-Alex chose to keep Chrome for Testing and enable `--disable-blink-features=AutomationControlled` for every new test-browser process, with `navigator.webdriver` expected to be `false`. Reusing an already running browser does not change its launch arguments; the flag takes effect on its next launch. Persistent profiles continue to be reused. This does not establish that websites cannot detect automation. The decision, Camoufox alternative and verification evidence are recorded in [the browser automation note](../reports/browser-automation.md).
+Superseded by the 2026-11-19 move to Camoufox below. The earlier launch-flag decision and its evidence are recorded in [the browser automation note](../reports/browser-automation.md).
 
 ## Looking like a person - 2026-11-19
 

@@ -41,7 +41,7 @@ States:
 
 | State | Shows |
 | --- | --- |
-| Opening | `Opening geckit:<name>…` and a spinner. If Chrome for Testing is still downloading on that computer, the view moves to Failed with the computer's own words, such as `Downloading Chrome for Testing, 40%.`, and Try again. |
+| Opening | `Opening geckit:<name>…` and a spinner. If Camoufox is still downloading on that computer, the view moves to Failed with the computer's own words, such as `Downloading Camoufox, 40%.`, and Try again. |
 | Live | The picture, refreshed about five times a second and right after each click or key. |
 | Failed | A card over the stage: `The browser is not showing`, the computer's own message, Close and Try again. A dropped connection lands here too; the last picture stays behind it, dimmed. |
 | Done | The sheet closes. The browser on the computer closes too, unless a conversation is using it; the sign-in is kept either way. |

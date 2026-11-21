@@ -18,7 +18,7 @@ Both retain the service home, provider login, private data and stable vault key 
 Past incidents distinguish setup layers:
 
 - A missing Codex executable caused list-status errors on a Claude-only VM. Check enabled providers and installed release support before adding another provider.
-- Ubuntu browser setup needed display/system dependencies and hit a sandbox policy refusal. This did not prevent the core service or Slack from starting. Use the installed browser's own instructions; old Chrome-for-Testing workarounds do not establish Camoufox requirements.
+- Ubuntu browser setup needed display/system dependencies and hit a sandbox policy refusal. This did not prevent the core service or Slack from starting. Use the installed Camoufox's own instructions; workarounds from the earlier test browser do not apply to it.
 - A successful systemd restart preserved an enrolled client, while replacing the service invalidated an unused pairing code.
 
 Source records: GeckIt conversation `codex:01a1c71d-e2e3-7c71-9cc6-788ee155c09b` (TwinsAIbot deployment and remote diagnosis); `codex:01a1ceb5-5556-7090-a86c-1c8a4cbcb3c8` (EntechBot version plan). Source repositories: `twins-ai/TwinsAIbot` README, host/bootstrap.sh, host/geckit.service and host/geckitctl; `entech-code/EntechBot` README, deployment/geckit.service, deployment/entechbotctl and infra/azure/provision.sh.tftpl. Retrieve history through GeckIt's conversation commands when accessible; unavailable sources remain unverified.

@@ -48,7 +48,7 @@ interface Profile { readonly pid: number; readonly label: string; readonly tabs:
 /** Chrome's own folders for native messaging hosts of the current user, for the browsers present here. */
 function hostFolders(platform: NodeJS.Platform, root: string): string[] {
   const where = platform === 'darwin'
-    ? ['Google/Chrome', 'Google/Chrome Beta', 'Google/Chrome Canary', 'Google/Chrome for Testing', 'Chromium'].map((one) => join(root, 'Library', 'Application Support', one))
+    ? ['Google/Chrome', 'Google/Chrome Beta', 'Google/Chrome Canary', 'Chromium'].map((one) => join(root, 'Library', 'Application Support', one))
     : platform === 'linux' ? ['google-chrome', 'google-chrome-beta', 'chromium'].map((one) => join(root, '.config', one)) : []
   return where.filter((one) => existsSync(one)).map((one) => join(one, 'NativeMessagingHosts'))
 }
@@ -273,7 +273,7 @@ async function claimTest(name: string, folder: string, conversation?: string): P
   const host = profiles(folder).find((one) => one.label === label)
   if (host === undefined) return { ok: false, said: `${label} is not open.` }
   const status = await ask({ cmd: 'ping' }, folder, host.pid)
-  if (status.ok && !(status.result as { version?: string } | undefined)?.version?.startsWith('Camoufox')) return { ok: false, said: `Close ${label}'s old Chrome for Testing window before opening its new Camoufox profile. Its Chrome data will be preserved.` }
+  if (status.ok && !(status.result as { version?: string } | undefined)?.version?.startsWith('Camoufox')) return { ok: false, said: `Close ${label}'s old test browser window before opening it in Camoufox. Its saved data will be preserved.` }
   if (conversation !== undefined) {
     const reply = await ask({ cmd: 'acquire', conversation }, folder, host.pid)
     if (!reply.ok) return { ok: false, said: reply.error ?? 'The test browser refused ownership.' }
