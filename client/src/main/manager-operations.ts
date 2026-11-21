@@ -8,6 +8,7 @@ import { CHECKLIST_COMMANDS, checklistsCommand } from './checklists-cli'
 import type { TaskChecklist } from '../shared/checklists'
 import { checklistDone, checklistItems, checklistProgress, currentItem, itemCondition, newItem, taskPlan } from '../shared/checklists'
 import { AGENT_SETTINGS_SCHEMA } from '../shared/agent-settings'
+import { MANAGER_TEAM_EDITS } from './employees'
 import type { Employees } from './employees'
 import type { Json } from '../shared/elicitation'
 import { constants } from 'node:fs'
@@ -18,7 +19,7 @@ import { providerOf } from '../shared/api'
 import type { ChatSession, StatusAttribution, ManagerLabels, SessionMessage, SessionProvider, Settings } from '../shared/api'
 import { isRemote } from '../shared/hosts'
 import { isCodexProvider, llmProviderInfo, providerModel } from '../shared/providers'
-import { managerProjects } from '../shared/manager'
+import { MANAGER_MAIN_THREAD, managerProjects } from '../shared/manager'
 import type { ManagerConfig, ManagerInstructionsResult, ManagerRequestSource } from '../shared/manager'
 import type { ManagerThreadName } from '../shared/api'
 import { withColors } from '../shared/project-color'
@@ -38,7 +39,7 @@ interface OperationDeps {
     readonly read: () => ManagerConfig['instructions']
     readonly write: (instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']) => Promise<ManagerInstructionsResult>
   }
-  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get'>
+  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam'>
   readonly attachments?: ChannelAttachments
   readonly channelFile?: (thread: string) => ChannelFileSender
   /** The largest document a thread's channel takes, in MiB; 10 when it does not say. */
@@ -95,7 +96,10 @@ export const MANAGER_CAPABILITIES = {
     'files mkdir --project <project> --path <relative-path>',
     'files move --project <project> --path <relative-path> --to <relative-path>',
     'files remove --project <project> --path <relative-path> (user confirmation; files or empty directories)',
-    'employees rename --id <employee-id> --name <name> --expected-name <last-read-name> (user confirmation)',
+    'employees rename --id <employee-id> --name <name> --expected-name <last-read-name>',
+    'employees create --name <name> [--role <role>] [--description <text>] [--avatar <1-12>]',
+    'employees edit <employee-id> [--name <name>] [--role <role>] [--description <text>] [--avatar <1-12>]',
+    'employees archive|restore <employee-id>',
     'employees list',
     'employees show <employee-id>',
     'employees memory <employee-id> [--cursor <next>]',
@@ -115,8 +119,8 @@ export const MANAGER_CAPABILITIES = {
     'sessions unfollow --id <managed-worker-id> (no product confirmation; this thread stops tracking it, and then no thread receives its updates until one follows it)',
     'sessions answer --id <managed-worker-id> --card <current-question-id> --text <answer> (user confirmation; questions only)',
     'employees shortcuts [<employee-id>|none] [--json]',
-    'employees shortcut add <employee-id|none> --name <name> --project <registered-project-name> --prompt <text> [--target task|manager] [--goal <text>|--checklist <id-or-name>|--items <JSON array>] [--every <hour|hour 15|day 9:00|weekdays 9:00|week monday 9:00>|--cron <expression>] [--start-window-minutes <1-1440|none>] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
-    'employees shortcut edit <shortcut-id> [same optional fields as add; --every none removes timetable, --goal empty clears goal] (no product confirmation)',
+    'employees shortcut add <employee-id|none> --name <name> --project <registered-project-root> --prompt <text> [--target task|manager] [--goal <text>|--checklist <id-or-name>|--items <JSON array>] [--every <timetable>|--cron <five-field expression>|--at <local date-time>] [--vary on|off] [--provider <enabled-provider-id>] [--model <id>] [--reasoning <effort|default>] [--mode manual|auto|plan] (no product confirmation; Manager target uses none and its configured assistant/approvals)',
+    'employees shortcut edit <shortcut-id> [same optional fields as add; --postpone <local date-time> for a one-time schedule, --goal empty clears goal] (no product confirmation)',
     'employees shortcut pause|resume|remove|run <shortcut-id> (no product confirmation)',
     'employees shortcut give <shortcut-id> <employee-id|none> (no product confirmation)',
     ...CHECKLIST_COMMANDS.map((one) => `${one}${/^checklists (list|show)/.test(one) ? '' : ' (no product confirmation)'}`),
@@ -128,6 +132,7 @@ export const MANAGER_CAPABILITIES = {
     'attachments send --attachment <retained-attachment-id> --id <managed-local-worker-id> --text <instruction> (explicit permanent project input copy; retained until user/project cleanup)',
     'channels send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact only; default document; to the channel thread this conversation is in; native receipt IDs; no automatic retry)',
   ],
+  teamChanges: 'Local employee creation, editing, renaming, archiving and restoration apply directly in GeckIt Manager chat and paired owner chats. Other authorized channel threads require a bound confirmation. Shared team topics cannot edit the team.',
   settings: AGENT_SETTINGS_SCHEMA,
   unavailable: [
     { aspects: 'SSH project creation and remote file management', reason: 'Use a worker on the registered host; local file commands never fall back to this computer.' },
@@ -261,14 +266,14 @@ export class ManagerOperations {
   readonly #deps: OperationDeps
   constructor(deps: OperationDeps) { this.#deps = deps }
 
-  confirmation(args: readonly string[], policy: 'automatic' | 'approve'): string | undefined {
+  confirmation(args: readonly string[], policy: 'automatic' | 'approve', thread = MANAGER_MAIN_THREAD): string | undefined {
     const selected = computerArg(args)
     if (typeof selected === 'string') return undefined
     if (selected.computer !== undefined && !managerReadOnly(selected.args) && this.#deps.computers?.().some((one) => one.id === selected.computer)) return `Change ${selected.computer}? Native permissions remain user-controlled. ${JSON.stringify(selected.args)}`
     const [domain, command] = selected.args
-    if (['hosts', 'channels', 'manager', 'shortcuts', 'computers', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') && !(domain === 'channels' && command === 'send-file') && !managerReadOnly(selected.args) || domain === 'providers' && !['list', 'models', 'account'].includes(command ?? '')) return `Change target configuration? Native permissions remain user-controlled. ${JSON.stringify(args)}`
+    if (['hosts', 'channels', 'manager', 'computers', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') && !(domain === 'channels' && command === 'send-file') && !managerReadOnly(selected.args) || domain === 'providers' && !['list', 'models', 'account'].includes(command ?? '')) return `Change target configuration? Native permissions remain user-controlled. ${JSON.stringify(args)}`
     if (domain === 'providers' && (command === 'enable' || command === 'disable')) return `Change enabled assistants? Native provider permissions remain user-controlled. ${JSON.stringify(args)}`
-    if (domain === 'employees' && command === 'rename') return `Change these user preferences? ${JSON.stringify(args)}`
+    if (domain === 'employees' && (command === 'rename' || MANAGER_TEAM_EDITS.includes(command ?? '')) && thread !== MANAGER_MAIN_THREAD && this.#deps.ownerThread?.(thread) !== true && this.#deps.sharedThread?.(thread) !== true) return `Change the GeckIt team? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'start' && policy === 'approve') return `Start this worker? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'answer') return `Send this answer to the worker's question? ${JSON.stringify(args)}`
     if (domain === 'sessions' && command === 'delete') return `Delete this worker conversation permanently? Its running work will stop and queued messages will be canceled. Project files are kept. ${JSON.stringify(args)}`
@@ -329,13 +334,17 @@ export class ManagerOperations {
     if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
     if (domain === 'employees' && command !== 'rename') {
       if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.')
+      if (MANAGER_TEAM_EDITS.includes(command ?? '')) {
+        const session = this.#deps.managerSession()
+        return this.#deps.employees.editTeam(args.slice(1), () => session !== undefined && session === this.#deps.managerSession() && this.#deps.authorized?.() !== false)
+      }
       return this.#deps.employees.command(args.slice(1), this.#deps.managerSession(), true)
     }
     if (domain === 'computers' && command === 'list' && args.length === 2) return JSON.stringify(this.#deps.computers?.() ?? [])
     if (domain === 'capabilities') {
       if (args.length !== 1) throw new Error('capabilities takes no arguments.')
       if (team) return JSON.stringify({ interface: MANAGER_CAPABILITIES.interface, commands: MANAGER_CAPABILITIES.commands.filter((one) => one.startsWith('sessions ') && !/^sessions (attach|assign|follow|unfollow|delete)/.test(one) || one.startsWith('attachments ') || one.startsWith('channels ')), limitations: 'Team-owned workers and attachments only. Global controls, history, settings, employee memory and other channels require the installation owner in GeckIt.' })
-      return JSON.stringify({ ...MANAGER_CAPABILITIES, configurationCommands: PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), configuration: this.#deps.product === undefined ? undefined : JSON.parse(await this.#deps.product(['capabilities'])) as Json, target: 'local', computers: this.#deps.computers?.() ?? [] })
+      return JSON.stringify({ schedulerTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, ...MANAGER_CAPABILITIES, configurationCommands: PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), configuration: this.#deps.product === undefined ? undefined : JSON.parse(await this.#deps.product(['capabilities'])) as Json, target: 'local', computers: this.#deps.computers?.() ?? [] })
     }
     if (!(domain === 'channels' && command === 'send-file') && (['hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') || domain === 'computers') && this.#deps.product !== undefined) return this.#deps.product(args)
     if (domain === 'sessions' && !SHAPES.some((one) => one.domain === domain && one.command === command) && this.#deps.product !== undefined) return this.#deps.product(args)

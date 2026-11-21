@@ -36,6 +36,7 @@ interface Change {
 }
 
 const WRITES = new Set(['create', 'edit', 'archive', 'restore', 'assign', 'shortcut', 'manager'])
+export const MANAGER_TEAM_EDITS: readonly string[] = ['create', 'edit', 'archive', 'restore']
 const USAGE = 'Use employees list, current, show <id>, memory <id> [--cursor <next>], tasks <id>, shortcuts [<id>|none], create, edit <id>, archive <id>, restore <id>, assign <session-id> <id|none>, manager [edit] or shortcut add|edit|pause|resume|remove|give|run. Run geckit help for the options.'
 const EVERY = 'Use --every "hour", "hour 15", "day 9:00", "weekdays 9:00" or "week monday 9:00".'
 const MODES: readonly SessionMode[] = ['manual', 'auto', 'plan']
@@ -167,8 +168,9 @@ export class Employees {
     return view
   }
 
-  save(draft: EmployeeDraft): Promise<EmployeesView> {
+  save(draft: EmployeeDraft, authorized: () => boolean = () => true): Promise<EmployeesView> {
     return this.#serial(async () => {
+      if (!authorized()) throw new Error('The originating Manager session is no longer authorized.')
       if (typeof draft.name !== 'string' || draft.name.trim() === '') throw new Error('Enter a name')
       if (typeof draft.role !== 'string' || typeof draft.description !== 'string' || typeof draft.avatar !== 'string' || !avatarValid(draft.avatar)) throw new Error('Choose an available employee portrait.')
       const before = draft.id === undefined ? undefined : this.get(draft.id)
@@ -190,8 +192,9 @@ export class Employees {
     })
   }
 
-  archive(id: Employee['id'], revision: Employee['revision'], archived = true): Promise<EmployeesView> {
+  archive(id: Employee['id'], revision: Employee['revision'], archived = true, authorized: () => boolean = () => true): Promise<EmployeesView> {
     return this.#serial(async () => {
+      if (!authorized()) throw new Error('The originating Manager session is no longer authorized.')
       const before = this.get(id)
       if (before.revision !== revision) throw new Error('This employee changed in another window. Reopen it before saving.')
       if (before.archived !== archived) this.#write(this.#employees.map((one) => one.id === id ? { ...one, archived, revision: one.revision + 1 } : one))
@@ -201,6 +204,14 @@ export class Employees {
   }
 
   retryInstructions(): Promise<EmployeesView> { return this.#serial(() => this.#sync()) }
+
+  async editTeam(args: readonly string[], authorized: () => boolean): Promise<string> {
+    const [command, ...rest] = args
+    const team = this.#deps.team
+    if (team === undefined || command === undefined || !MANAGER_TEAM_EDITS.includes(command)) throw new Error('This Manager team command is unavailable.')
+    if (command !== 'create') this.get(rest[0] ?? '')
+    return this.#change(team, command, rest, authorized).apply()
+  }
 
   async command(args: readonly string[], session?: ChatSession['id'], compactMemory = false, gone?: AbortSignal): Promise<string> {
     const [command, id, ...rest] = args
@@ -282,7 +293,7 @@ export class Employees {
     return list.map((one) => `${one.name}  ·  ${this.#shortcutWhen(one)}  ·  ${team.projectName(one.root)}  ·  ${one.target === 'manager' ? 'Manager' : this.#owner(one.employeeId)}  ·  ${one.id}`).join('\n')
   }
 
-  #change(team: TeamDeps, command: string, args: readonly string[]): Change {
+  #change(team: TeamDeps, command: string, args: readonly string[], authorized?: () => boolean): Change {
     if (command === 'create' || command === 'edit') {
       const { words, flags } = options(args, ['--name', '--role', '--description', '--avatar'])
       const avatar = portrait(flags.get('--avatar'))
@@ -295,7 +306,7 @@ export class Employees {
         return {
           lines: [`Add employee ${quoted(name)}${role === undefined || role.trim() === '' ? '' : ` (${role.trim()})`}`, ...(description === undefined || description.trim() === '' ? [] : [`Description: ${brief(description)}`])],
           apply: async () => {
-            const view = await this.save({ name, role: role?.trim() ?? '', description: description ?? '', avatar: avatar ?? `employee-${String((this.#employees.length % 12) + 1).padStart(2, '0')}` })
+            const view = await this.save({ name, role: role?.trim() ?? '', description: description ?? '', avatar: avatar ?? `employee-${String((this.#employees.length % 12) + 1).padStart(2, '0')}` }, authorized)
             const made = view.employees.at(-1)
             return `Created employee ${name}${made === undefined ? '' : ` (${made.id})`}.`
           },
@@ -309,7 +320,7 @@ export class Employees {
         lines: [`Change employee ${before.name}: ${what.join(', ')}`, ...(description === undefined ? [] : [`Description: ${brief(description)}`])],
         apply: async () => {
           const now = this.get(before.id)
-          await this.save({ ...now, ...(name === undefined ? {} : { name }), ...(role === undefined ? {} : { role: role.trim() }), ...(description === undefined ? {} : { description }), ...(avatar === undefined ? {} : { avatar }) })
+          await this.save({ ...now, ...(name === undefined ? {} : { name }), ...(role === undefined ? {} : { role: role.trim() }), ...(description === undefined ? {} : { description }), ...(avatar === undefined ? {} : { avatar }) }, authorized)
           return `Saved employee ${name ?? now.name}.`
         },
       }
@@ -324,7 +335,7 @@ export class Employees {
         return {
           lines: [`Archive ${employee.name}${pausing === 0 ? '' : ` and pause ${counted}`}`],
           apply: async () => {
-            await this.archive(employee.id, this.get(employee.id).revision)
+            await this.archive(employee.id, this.get(employee.id).revision, true, authorized)
             return `Archived ${employee.name}.${pausing === 0 ? '' : ` ${counted} paused.`}`
           },
         }
@@ -332,7 +343,7 @@ export class Employees {
       return {
         lines: [`Restore ${employee.name}${pausing === 0 ? '' : ` and resume ${counted}`}`],
         apply: async () => {
-          await this.archive(employee.id, this.get(employee.id).revision, false)
+          await this.archive(employee.id, this.get(employee.id).revision, false, authorized)
           return `Restored ${employee.name}.`
         },
       }
@@ -453,7 +464,7 @@ export class Employees {
           const current = was === undefined ? undefined : this.#shortcut(team, was.id)
           const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, ...kept } = current ?? { id: '', since: 0, name: title, root: root ?? '', prompt: prompt ?? '', mode: settings.chatMode, on: false, provider: assistantFor(settings, root) }
           const { cron: _cron, recurrence: _recurrence, outcome: _outcome, postponedFrom: _postponedFrom, ...untimed } = kept as typeof kept & Pick<Shortcut, 'outcome' | 'postponedFrom'>
-          const timedBase = atSaid !== undefined ? { ...untimed, at: atSaid, on: true, ...(current === undefined && varySaid === undefined ? { vary: true } : {}) } : timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: true, ...(current === undefined && varySaid === undefined ? { vary: true } : {}) }
+          const timedBase = atSaid !== undefined ? { ...untimed, at: atSaid, on: true, ...(current === undefined && varySaid === undefined ? { vary: true } : {}) } : timed === undefined ? kept : timed === '' ? { ...untimed, on: false } : { ...untimed, cron: timed, on: current?.on ?? true, ...(current === undefined && varySaid === undefined ? { vary: true } : {}) }
           const { vary: _vary, ...exactBase } = timedBase
           const windowBase = varySaid === undefined ? timedBase : varySaid === 'off' ? exactBase : { ...exactBase, vary: true }
           const { goal: _goal, checklist: _checklist, ...ungoaled } = windowBase

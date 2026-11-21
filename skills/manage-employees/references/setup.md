@@ -24,9 +24,9 @@ Read `{{said}} help` or Manager capabilities for this target's supported forms. 
 
 Create the file from the agreed responsibilities before running the example. Omit `--avatar` when no portrait was chosen. Pass only requested changes to Edit; its description replaces the saved description.
 
-Authenticated Manager uses its advertised `geckit` JSON action interface, without a shell. Pass multiline text as one `--description` argument; a local `--description-file` is a shell CLI convenience. Preserve newlines through the JSON serializer. Never unset session identity to bypass an Allow card.
+Authenticated Manager uses its advertised `geckit` JSON actions directly for local employee creation, editing, archiving and restoration. Use the employee ID from `employees show` for changes. Pass multiline text as one `--description` argument and preserve newlines through the JSON serializer. For an existing managed worker use `sessions assign --id <worker-id> --employee <employee-id|none>`.
 
-Creation, editing, archiving, restoration and assignment from a conversation wait for the person's bound Allow decision. A pending card is not a saved employee. On refusal, stop that action. On an uncertain result, inspect the catalog before retrying so a successful creation is not duplicated.
+In GeckIt Manager chat and paired owner chats, directly apply requested local team changes. Other authorized Manager channels and worker conversations wait for the person's bound Allow decision. Worker CLI assignments also wait for Allow. On refusal, stop that action. On an uncertain result, inspect the catalog before retrying so a successful creation is not duplicated.
 
 ## Configure work only when requested
 

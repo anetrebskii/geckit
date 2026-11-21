@@ -26,7 +26,7 @@ export async function dispatchProduct(runtime: CoreRuntime, args: readonly strin
   if (!Array.isArray(args) || args.length === 0 || args.length > 100 || !args.every((one) => typeof one === 'string' && one.length <= 100_000)) throw new Error('Product CLI arguments must be literal strings.')
   const [domain, command, ...rest] = args
   const json = <T>(value: T): string => JSON.stringify(value ?? null)
-  const target = { name: hostname(), platform: process.platform, calendarTimeZone: getSettings().calendarTimeZone }
+  const target = { name: hostname(), platform: process.platform, calendarTimeZone: getSettings().calendarTimeZone, schedulerTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }
   if (domain === 'capabilities' && args.length === 1 || command === 'schema' && rest.length === 0 && ['providers', 'projects', 'hosts', 'channels', 'manager', 'shortcuts', 'sessions', 'speech', 'browser-config'].includes(domain ?? '')) return json({
     target, authority,
     commands: authority === 'manager' ? [...PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), 'sessions list|show|search|hidden|status|plans|links|waiting|task-output|draft', 'employees list|show|memory|shortcuts|shortcut|rename'] : PRODUCT_COMMANDS,

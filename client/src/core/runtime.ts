@@ -109,8 +109,12 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     team: {
       settings: getSettings,
       project: (name) => {
-        const root = getSettings().projects.find((one) => projectSaid(one, hostNamed) === name)
-        if (root === undefined) throw new Error(`No folder called ${name}.`)
+        const projects = managerProjects(getSettings())
+        if (projects.includes(name)) return name
+        const matches = projects.filter((root) => projectSaid(root, hostNamed) === name)
+        const [root] = matches
+        if (root === undefined) throw new Error(`No folder called ${name}. Run projects list and use the registered project root.`)
+        if (matches.length > 1) throw new Error(`Several folders are called ${name}. Use the full registered project root.`)
         return root
       },
       projectName: (root) => projectSaid(root, hostNamed),

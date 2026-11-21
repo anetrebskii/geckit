@@ -13,6 +13,12 @@ Alex explicitly requested settings and shortcut changes without GeckIt's additio
 
 The existing Settings and Shortcuts screens remain the place to inspect and manually edit these same saved values. No new form or wizard is needed. First use requires the running host; running a shortcut additionally requires its configured enabled assistant, project and, for Manager targets, configured Manager. Saving a preference is distinct from completing a native connection, provider turn or credential flow. Closing and reopening the screen reads persisted host state.
 
+## Manager setup requests
+
+In a Manager thread with configuration access, requests for recurring work use GeckIt's saved shortcuts. Manager checks the scheduler's local timezone in capabilities, reads existing shortcuts, saves or edits the schedule using the exact registered project root, and reads back the timetable and enabled state. Both shortcut command forms apply an explicit local request without a confirmation card. Manager creates, edits, renames, archives and restores local employees directly from GeckIt Manager chat or a paired owner chat. Other authorized channel threads show the existing Allow or Refuse card. Manager reads the employee record after saving and reports a refusal without retrying the change.
+
+For local host skills, tools and GeckIt installation or setup work, Manager starts a worker in a project on the requested computer. The worker applies the requested change with its normal permissions, verifies it on that computer, and reports any step that needs a dedicated GeckIt command or a native user decision. Manager uses the supported GeckIt command for any remaining authorized product configuration and verifies the final state before reporting completion. Shared team topics and scheduled Manager runs retain their existing scope.
+
 ## 2. Surfaces
 
 | Surface | Change | Visibility |
@@ -78,7 +84,7 @@ No credential handling, provider enable/install, native permission approval, cha
 
 ## 10. Decision
 
-Earlier behavior asked Allow for every saved-shortcut change and Manager preference write. Apply the explicitly requested new rule only to settings and shortcuts. Preserve employee catalog/assignment approvals, file/project deletion decisions, worker native permissions and delegation policy.
+The person's explicit request authorizes local preferences, saved shortcuts and team changes within the Manager setup rules above. When required details are missing, Manager asks for those details. GeckIt still requests decisions for remote writes, team changes from regular worker conversations, file/project deletion and actions that trigger native permission rules.
 
 ## 11. Acceptance
 

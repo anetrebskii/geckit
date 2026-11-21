@@ -2714,6 +2714,18 @@ describe('Manager CLI preferences and explicit new-worker models', () => {
     expect(ops.confirmation(['sessions', 'mark', '--id', first, '--status', 'done'], 'automatic')).toBeUndefined()
     expect(ops.confirmation(['sessions', 'start', ...start.slice(2)], 'approve')).toContain('Start this worker?')
     expect(ops.confirmation(['projects', 'add', '--path', f.root], 'automatic')).toContain('Register this folder')
+    const teamEdit = ['employees', 'create', '--name', 'Setup worker']
+    const channelOps = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager', ownerThread: (thread) => thread === 'owner', sharedThread: (thread) => thread === 'shared', computers: () => [{ id: 'paired', name: 'Paired computer' }] })
+    expect(channelOps.confirmation(teamEdit, 'approve')).toBeUndefined()
+    expect(channelOps.confirmation(teamEdit, 'approve', 'owner')).toBeUndefined()
+    expect(channelOps.confirmation(teamEdit, 'automatic', 'discord')).toContain('Change the GeckIt team?')
+    expect(channelOps.confirmation(teamEdit, 'automatic', 'shared')).toBeUndefined()
+    const rename = ['employees', 'rename', '--id', 'worker', '--name', 'New name', '--expected-name', 'Old name']
+    expect(channelOps.confirmation(rename, 'approve', 'owner')).toBeUndefined()
+    expect(channelOps.confirmation(rename, 'automatic', 'discord')).toContain('Change the GeckIt team?')
+    const save = ['shortcuts', 'save', '--draft', '{}', '--expected', 'null']
+    expect(channelOps.confirmation(save, 'approve')).toBeUndefined()
+    expect(channelOps.confirmation([...save, '--host', 'paired'], 'automatic')).toContain('Change paired?')
   })
 })
 
@@ -2997,6 +3009,8 @@ describe('team topic tools enforce ownership', () => {
     for (const command of ['show', 'stop', 'send', 'retry', 'delete', 'attach', 'follow', 'mark']) await expect(ops.run(['sessions', command, '--id', foreign], `foreign-${command}`)).rejects.toThrow()
     for (const args of [['manager', 'pause'], ['sessions', 'history'], ['sessions', 'assign'], ['settings', 'show'], ['settings', 'manager-edit'], ['employees', 'memory', 'someone'], ['channels', 'list'], ['files', 'read', '--project', f.root, '--path', 'private.txt']]) await expect(ops.run(args, `denied-${args[0]}`)).rejects.toThrow('Team topics')
     await expect(ops.run(['sessions', 'stop', '--id', own], 'stop-team')).resolves.toContain('stopRequested')
+    await expect(ops.run(['employees', 'create', '--name', 'Employee'], 'denied-team-edit')).rejects.toThrow('Team topics')
+    await expect(ops.run(['employees', 'shortcut', 'add', 'none', '--cron', '0 9 * * *'], 'denied-team-schedule')).rejects.toThrow('Team topics')
   })
 })
 

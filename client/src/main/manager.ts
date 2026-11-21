@@ -176,7 +176,7 @@ export interface ManagerDeps {
   readonly restoreRecord?: (record: Json) => Json
   readonly threadAllowed?: (thread: string) => boolean
   readonly syncInstructions?: (instructions: ManagerConfig['instructions']) => Promise<void>
-  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get'>
+  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam'>
   readonly directory: string
   readonly intake?: Pick<ManagerIntakeDeps, 'adapters' | 'classify' | 'pairing' | 'now'>
   readonly attachments?: ChannelAttachments
@@ -1039,7 +1039,7 @@ export class Manager {
       return
     }
     if (pending !== undefined && !approved) return
-    const confirmation = this.#operations.confirmation(command.args, this.#record.config.delegation)
+    const confirmation = this.#operations.confirmation(command.args, this.#record.config.delegation, thread)
     if (!approved && confirmation !== undefined) {
       if (!this.#record.decisions.some((decision) => decision.command.id === command.id)) this.#save({ decisions: [...this.#record.decisions, { id: randomUUID(), title: confirmation, choices: [{ label: 'Allow', value: 'allow' }, { label: 'Refuse', value: 'refuse' }], command, ...(request === undefined ? {} : { request }), ...(thread === MAIN ? {} : { thread }) }] })
       return
@@ -1089,7 +1089,7 @@ export class Manager {
       if (thread === undefined || token.length !== expected.length || !timingSafeEqual(token, expected)) throw new Error('This CLI request is not authorized by the current Manager session.')
       const operation = this.#record.operations.find((one) => one.id === asked.operation && one.state === 'running')
       if (operation === undefined || JSON.stringify(operation.command) !== JSON.stringify(asked.args)) throw new Error('That Manager operation is no longer active.')
-      if (this.#operations.confirmation(asked.args, this.#record.config.delegation) !== undefined && operation.approved !== true) throw new Error('This operation needs a current user confirmation.')
+      if (this.#operations.confirmation(asked.args, this.#record.config.delegation, thread) !== undefined && operation.approved !== true) throw new Error('This operation needs a current user confirmation.')
       const origin = operation.thread ?? MAIN
       if (origin !== thread || operation.attribution?.session !== undefined && operation.attribution.session !== asked.session) throw new Error('That operation belongs to another Manager session.')
       let running = this.#commands.get(asked.operation)
