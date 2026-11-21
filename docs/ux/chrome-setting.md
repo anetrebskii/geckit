@@ -213,3 +213,15 @@ The current working-tree Settings section is renamed "Web Browser". Profile mana
 ## Windows connection
 
 In Settings > Browsers, **Chrome through GeckIt** uses the same switch and connection states on Windows. GeckIt registers the bridge for the current Windows user at service startup and when the setting is enabled. The user installs GeckIt Browser once in Chrome or keeps the extension they already installed. Chrome reconnects automatically, and Settings shows "Connected to Chrome" after the extension checks in. Turning the switch off removes the registration and stops the bridge. Turning it on again restores the connection using the same Chrome extension. Registration runs silently with the existing switch and requires no separate setup step or administrator prompt.
+
+## Navigating from New Incognito Tab
+
+With Chrome's **Allow in Incognito** enabled for GeckIt Browser, a person can ask a conversation to load a website in a specific Incognito tab, including a fresh New Incognito Tab.
+
+| From | Event | To | What the person sees |
+|---|---|---|---|
+| Incognito window with extension access | Run `geckit browser pages` | Tab ID available | Incognito tabs have an `[incognito]` label. The asterisk identifies the active tab in each window. |
+| New Incognito Tab | Run `geckit browser go <tab> <https://url>` with the requested tab ID | Website in that same tab | Chrome loads the website in the existing Incognito window and the command returns the tab ID, title, and URL. |
+| Tab closed before navigation | Run `go` with the stale ID | Command fails | The existing tab error directs the conversation back to `pages` to find current IDs. |
+
+Chrome controls whether the extension can see Incognito tabs. If they are missing from `pages`, confirm **Allow in Incognito** before retrying. Page interaction continues to require Chrome's normal access to the loaded website. Navigating the supplied tab ID keeps control with the person, keeps navigation feedback in that tab, and requires no new permission prompts or notifications.

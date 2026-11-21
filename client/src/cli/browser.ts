@@ -539,9 +539,9 @@ export const BROWSER_HELP = `geckit browser: the person's own Chrome, through th
   stop geckit:<name>            outside conversations: close a test browser; its profile stays
                                 conversation tabs close on Done; the last tab closes the browser
   pages [--profile <name>]      tabs: id, title, url (* is the tab shown in its window), under each Chrome profile's email;
-                                popups say which tab opened them, and other owners' test tabs show [read-only]
+                                [incognito] marks Incognito tabs; popups show their opener; other owners' test tabs show [read-only]
   open <url> [--profile <name>] open a tab and wait for it to load; starts a closed test profile when named
-  go <tab> <url>                load a url in a tab
+  go <tab> <url>                load a url in the specified tab, including from New Incognito Tab
   close <tab>
   text <tab> [--max <n>]        the page's main text, 6000 characters unless --max
   read <tab> [--all]            headings and what can be clicked or typed into, as [ref] role "name"; 200 lines unless --all;
@@ -897,7 +897,12 @@ interface Page { readonly title: string; readonly url: string }
 function shown(what: string, args: readonly string[], words: readonly string[], result: unknown): string {
   switch (what) {
     case 'status': { const known = profiles(); const version = (result as { version: string }).version; return `Connected, ${version.startsWith('Camoufox') ? version : `extension ${version}`}${known.length > 1 ? `, in ${known.length} Chrome profiles: ${known.map((one) => one.label).join(', ')}` : ''}.` }
-    case 'pages': return (result as (Page & { id: number; active: boolean; opener?: number; readOnly?: boolean })[]).map((one) => `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}${one.readOnly ? '  [read-only]' : ''}${one.opener === undefined ? '' : `  (opened by ${one.opener})`}`).join('\n')
+    case 'pages': return (result as (Page & { id: number; active: boolean; opener?: number; readOnly?: boolean; incognito?: boolean })[]).map((one) => {
+      const incognito = one.incognito ? '  [incognito]' : ''
+      const readOnly = one.readOnly ? '  [read-only]' : ''
+      const opener = one.opener === undefined ? '' : `  (opened by ${one.opener})`
+      return `${one.active ? '*' : ' '} ${String(one.id).padEnd(10)} ${one.title.slice(0, 70)}  ${one.url}${incognito}${readOnly}${opener}`
+    }).join('\n')
     case 'open': case 'go': { const page = result as Page & { id: number }; return `${page.id}  ${page.title}  ${page.url}` }
     case 'close': return 'Closed.'
     case 'text': {

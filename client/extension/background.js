@@ -597,7 +597,11 @@ async function answer(request) {
   switch (request.cmd) {
     case 'ping': return { version: chrome.runtime.getManifest().version, id: chrome.runtime.id }
     case 'reload': setTimeout(() => chrome.runtime.reload(), 100); return {}
-    case 'pages': return (await chrome.tabs.query({})).map((one) => ({ id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '', ...(one.openerTabId === undefined ? {} : { opener: one.openerTabId }) }))
+    case 'pages': return (await chrome.tabs.query({})).map((one) => ({
+      id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '',
+      ...(one.incognito ? { incognito: true } : {}),
+      ...(one.openerTabId === undefined ? {} : { opener: one.openerTabId }),
+    }))
     case 'open': {
       const made = await chrome.tabs.create({ url: request.url, active: false })
       await claim(made.id, true)
@@ -606,14 +610,16 @@ async function answer(request) {
       return { id: now.id, title: now.title ?? '', url: now.url ?? '' }
     }
     case 'go': {
-      await tab(id)
-      return debug(id, async () => {
+      const source = await tab(id)
+      const navigate = async () => {
         const back = loaded(id)
         await chrome.tabs.update(id, { url: request.url })
         await orDialog(id, back)
         const now = await chrome.tabs.get(id)
         return { id, title: now.title ?? '', url: now.url ?? '' }
-      })
+      }
+      if (source.incognito && source.url === 'chrome://newtab/' && /^https?:\/\//i.test(request.url)) return navigate()
+      return debug(id, navigate)
     }
     case 'close': await tab(id); await chrome.tabs.remove(id); return {}
     case 'text': return inPage(id, pageText)
