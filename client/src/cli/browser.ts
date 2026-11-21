@@ -44,7 +44,17 @@ export const setBrowserBridgeOn = (on: boolean): void => { bridgeOn = on }
 export interface Reply { readonly ok: boolean; readonly result?: unknown; readonly error?: string }
 
 /** One Chrome profile with the extension: each starts its own host, which says here who it is and which tabs are its own. */
-interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number; readonly display?: string; readonly engine?: 'camoufox' }
+interface Profile { readonly pid: number; readonly label: string; readonly tabs: readonly number[]; readonly focused: number; readonly t: number; readonly display?: string; readonly engine?: 'camoufox'; readonly name?: string; readonly description?: string; readonly incognito?: Incognito }
+
+/** Whether the person let the extension into Incognito, and how many Incognito tabs are open. */
+interface Incognito { readonly allowed: boolean; readonly tabs: number }
+
+/** The name and description the person gave a profile in the extension, kept so a closed profile still shows them. */
+interface About { readonly name?: string; readonly description?: string }
+const aboutFile = (folder: string, label: string): string => join(folder, 'about', `${encodeURIComponent(label)}.json`)
+function aboutOf(folder: string, label: string): About {
+  try { return JSON.parse(readFileSync(aboutFile(folder, label), 'utf8')) as About } catch { return {} }
+}
 
 /** Chrome's own folders for native messaging hosts of the current user, for the browsers present here. */
 function hostFolders(platform: NodeJS.Platform, root: string): string[] {
@@ -187,9 +197,17 @@ export function browserHost(folder: string = browserFolder()): void {
     while (held.length >= 4) {
       const size = held.readUInt32LE(0)
       if (held.length < 4 + size) break
-      const message = JSON.parse(held.subarray(4, 4 + size).toString('utf8')) as Reply & { readonly id: number; readonly event?: string; readonly label?: string; readonly tabs?: number[]; readonly focused?: number }
+      const message = JSON.parse(held.subarray(4, 4 + size).toString('utf8')) as Reply & { readonly id: number; readonly event?: string; readonly label?: string; readonly tabs?: number[]; readonly focused?: number; readonly name?: string; readonly description?: string; readonly incognito?: Incognito }
       held = held.subarray(4 + size)
-      if (message.event === 'profile') { me = { ...me, label: message.label || `profile ${process.pid}`, tabs: message.tabs ?? [], focused: message.focused ?? 0 }; say(); continue }
+      if (message.event === 'profile') {
+        me = { ...me, label: message.label || `profile ${process.pid}`, tabs: message.tabs ?? [], focused: message.focused ?? 0, name: message.name ?? '', description: message.description ?? '', ...(message.incognito === undefined ? {} : { incognito: message.incognito }) }
+        say()
+        if (message.label) {
+          mkdirSync(join(folder, 'about'), { recursive: true })
+          writeFileSync(aboutFile(folder, message.label), JSON.stringify({ name: me.name, description: me.description }))
+        }
+        continue
+      }
       const back = waiting.get(message.id)
       waiting.delete(message.id)
       back?.(message)
@@ -307,7 +325,7 @@ export function chromeProfiles(platform: NodeJS.Platform = process.platform, roo
   })
 }
 
-const matches = (profile: ChromeProfile, named: string): boolean => [profile.email, profile.name, profile.dir].some((one) => one !== '' && one.toLowerCase().includes(named.toLowerCase()))
+const matches = (profile: ChromeProfile, named: string): boolean => [profile.email, profile.name, profile.dir, aboutOf(browserFolder(), profile.email || profile.name).name ?? ''].some((one) => one !== '' && one.toLowerCase().includes(named.toLowerCase()))
 
 /** Opens a window of a Chrome profile, so a profile that has the extension but is closed can be worked in. */
 async function startProfile(named: string | undefined): Promise<{ readonly ok: boolean; readonly said: string }> {
@@ -335,17 +353,25 @@ export async function openTest(name: string, conversation?: TestBrowserRequest['
   return reply.ok ? { ok: true, said: `${TEST_PREFIX}${name} is open.` } : { ok: false, said: reply.error ?? 'The test browser refused.' }
 }
 
+const incognitoText = (host: Profile): string => host.incognito === undefined ? '' : !host.incognito.allowed ? ', Incognito not allowed' : `, Incognito allowed, ${host.incognito.tabs} Incognito tabs`
+
 function listProfiles(): string {
   const known = profiles()
   const last = [...known].sort((a, b) => b.focused - a.focused)[0]
   const chrome = chromeProfiles()
+  const folder = browserFolder()
+  const described = (label: string, own: string | undefined, line: string): string => {
+    const description = own ?? aboutOf(folder, label).description
+    return description ? `${line}\n${''.padEnd(35)}for: ${description}` : line
+  }
   const lines = chrome.map((one) => {
     const label = one.email || one.name
     const open = known.find((host) => host.label === one.email && one.email !== '')
-    const state = !one.extension ? 'no GeckIt Browser' : open !== undefined ? `open, ${open.tabs.length} tabs${open === last ? ', used last' : ''}` : known.length === 0 && fresh(browserFolder()) ? 'GeckIt Browser, an older one that does not say whether it is open: reload it in chrome://extensions' : 'GeckIt Browser, closed: start opens it'
-    return `${label.padEnd(34)} ${one.name.padEnd(20)} ${state}`
+    const state = !one.extension ? 'no GeckIt Browser' : open !== undefined ? `open, ${open.tabs.length} tabs${open === last ? ', used last' : ''}${incognitoText(open)}` : known.length === 0 && fresh(folder) ? 'GeckIt Browser, an older one that does not say whether it is open: reload it in chrome://extensions' : 'GeckIt Browser, closed: start opens it'
+    const name = open?.name || aboutOf(folder, label).name || one.name
+    return described(label, open?.description, `${label.padEnd(34)} ${name.padEnd(20)} ${state}`)
   })
-  const unnamed = known.filter((host) => testName(host.label) === undefined && !chrome.some((one) => one.email === host.label)).map((host) => `${host.label.padEnd(34)} ${''.padEnd(20)} open, ${host.tabs.length} tabs${host === last ? ', used last' : ''}`)
+  const unnamed = known.filter((host) => testName(host.label) === undefined && !chrome.some((one) => one.email === host.label)).map((host) => described(host.label, host.description, `${host.label.padEnd(34)} ${(host.name ?? '').padEnd(20)} open, ${host.tabs.length} tabs${host === last ? ', used last' : ''}${incognitoText(host)}`))
   const testing = testBrowsersState()
   const tests = testing.profiles.map((one) => {
     const open = known.find((host) => host.label === `${TEST_PREFIX}${one.name}`)
@@ -361,6 +387,8 @@ export function pickProfile(known: readonly Profile[], request: { readonly tab?:
   if (named !== undefined) {
     const exact = known.find((one) => one.label.toLowerCase() === named.toLowerCase())
     if (exact !== undefined) return exact
+    const byName = known.filter((one) => one.name !== undefined && one.name !== '' && one.name.toLowerCase() === named.toLowerCase())
+    if (byName.length === 1 && byName[0] !== undefined) return byName[0]
     if (named.startsWith(TEST_PREFIX)) return `${named} is not open. Run geckit browser start ${named}.`
     const emails = chromeProfiles().filter((one) => matches(one, named)).map((one) => one.email)
     const match = known.filter((one) => one.label.toLowerCase().includes(named.toLowerCase()) || emails.includes(one.label))
@@ -513,7 +541,7 @@ async function ask(request: object, folder: string = browserFolder(), to?: numbe
 
 export const BROWSER_HELP = `geckit browser: the person's own Chrome, through the GeckIt Browser extension, and test browsers, Camoufox driven by GeckIt.
 
-  profiles                      the Chrome profiles here: email, name, whether GeckIt Browser is in it and open, which was used last;
+  profiles                      the Chrome profiles here: email, the name and what it is for as the person set them in GeckIt Browser, whether it is open, which was used last, whether Incognito is allowed;
                                 then the test profiles, geckit:<name>, with their descriptions
   profiles create <name> [--note "<description>"]
                                 make a test profile, such as github-work --note "GitHub as alex"; the description is optional;

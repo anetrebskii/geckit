@@ -32,7 +32,7 @@ Reach the result the person asked for on a website.
 For profile creation or account reuse, load `{{profilesSkill}}` from {{profilesPath}} first.
 
 - When the site or account cannot be told from the request, ask.
-- `{{said}} browser profiles` lists Chrome profiles. Pick one before opening anything: for a site that needs an account, the profile signed in to it, by email; for a public page, the one used last; when two fit and the choice matters, ask.
+- `{{said}} browser profiles` lists Chrome profiles with the name, `for:` description and Incognito access set in GeckIt Browser. Pick one before opening: the one whose description fits; for an account site, the one signed in; else the one used last; ask when two fit and it matters.
 - `open <url> --profile <email or name>` opens a tab there. `pages` lists tab IDs usable without `--profile`. `start <profile>` opens a closed profile with GeckIt Browser. If the profile lacks it, name the available profiles.
 - For a site the extension cannot reach, work kept away from the person's tabs, or no usable profile, read [test browsers](references/test-browsers.md) first.
 

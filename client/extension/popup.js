@@ -145,6 +145,24 @@ async function draw() {
   $('log-empty').hidden = state.log.length > 0
 }
 
+async function drawIncognito() {
+  const allowed = await chrome.extension.isAllowedIncognitoAccess()
+  const count = allowed ? (await chrome.tabs.query({})).filter((one) => one.incognito).length : 0
+  $('incognito').textContent = !allowed ? 'Incognito: off. GeckIt sees Incognito tabs only with Allow in Incognito on in chrome://extensions > GeckIt Browser > Details.'
+    : `Incognito: allowed, ${count === 0 ? 'no Incognito tabs open' : `${count} Incognito ${count === 1 ? 'tab' : 'tabs'} open`}. GeckIt tells conversations which tabs are Incognito.`
+}
+
+function saveAbout() {
+  void chrome.storage.local.set({ about: { name: $('about-name').value.trim(), description: $('about-description').value.trim() } })
+}
+$('about-name').oninput = saveAbout
+$('about-description').oninput = saveAbout
+chrome.storage.local.get('about').then(({ about }) => {
+  $('about-name').value = about?.name ?? ''
+  $('about-description').value = about?.description ?? ''
+})
+void drawIncognito()
+
 $('version').textContent = chrome.runtime.getManifest().version
 $('allow').onchange = (event) => { void chrome.storage.local.set({ paused: !event.target.checked }) }
 

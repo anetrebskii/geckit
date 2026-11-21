@@ -84,6 +84,11 @@ ul, ol { list-style: none; }
 .log .where { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-faint); }
 .log .error { display: block; color: var(--danger); }
 .empty { padding: 4px 16px 6px; color: var(--text-faint); }
+.about { display: flex; flex-direction: column; gap: 6px; padding: 0 16px 6px; }
+.about label { display: flex; flex-direction: column; gap: 3px; color: var(--text-dim); }
+.about input, .about textarea { width: 100%; padding: 5px 8px; border: 1px solid var(--separator); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
+.about input:focus-visible, .about textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+.about textarea { min-height: 44px; }
 footer { border-top: 1px solid var(--separator); padding: 10px 16px 12px; }
 .allow { display: flex; align-items: center; gap: 12px; cursor: pointer; }
 .allow > span { flex: 1; }
@@ -107,6 +112,14 @@ footer { border-top: 1px solid var(--separator); padding: 10px 16px 12px; }
 <p id="hint" class="hint" hidden></p>
 <button id="now" class="now" hidden><span class="spin"></span><span class="lines"><span id="now-what" class="title"></span><span id="now-tab" class="sub"></span></span></button>
 <main>
+  <section>
+    <h2>This profile</h2>
+    <div class="about">
+      <label>Name<input id="about-name" maxlength="60" placeholder="Work" autocomplete="off"></label>
+      <label>What it is for<textarea id="about-description" maxlength="300" rows="2" placeholder="Signed in to the company Google, Slack and Linear"></textarea></label>
+      <p id="incognito" class="faint"></p>
+    </div>
+  </section>
   <section>
     <h2>Tabs</h2>
     <ul id="tabs"></ul>

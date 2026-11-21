@@ -84,10 +84,14 @@ let focused = 0
 async function announce() {
   if (port === undefined) return
   const who = await chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }).catch(() => ({ email: '' }))
-  const tabs = (await chrome.tabs.query({})).map((one) => one.id)
+  const all = await chrome.tabs.query({})
+  const tabs = all.map((one) => one.id)
   if (focused === 0 && (await chrome.windows.getAll()).some((one) => one.focused)) focused = Date.now()
-  port?.postMessage({ event: 'profile', label: who.email, tabs, focused })
+  const { about } = await chrome.storage.local.get('about')
+  const incognito = { allowed: await chrome.extension.isAllowedIncognitoAccess(), tabs: all.filter((one) => one.incognito).length }
+  port?.postMessage({ event: 'profile', label: who.email, tabs, focused, name: about?.name ?? '', description: about?.description ?? '', incognito })
 }
+chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.about) void announce() })
 chrome.tabs.onCreated.addListener(() => void announce())
 chrome.tabs.onRemoved.addListener(() => void announce())
 chrome.windows.onFocusChanged.addListener((id) => { if (id !== chrome.windows.WINDOW_ID_NONE) { focused = Date.now(); void announce() } })

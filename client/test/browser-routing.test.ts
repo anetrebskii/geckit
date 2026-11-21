@@ -56,3 +56,13 @@ it('labels incognito tabs independently of which tabs are active', async () => {
     '* 11         New Incognito Tab  chrome://newtab/  [incognito]',
   ].join('\n') })
 })
+
+it('lists the name, description and Incognito state the person gave a profile, and routes by that name', async () => {
+  const folder = join(state.folder, '.geckit', 'browser')
+  writeFileSync(join(folder, 'hosts', '1.json'), JSON.stringify({ pid: 1, label: 'person@example.com', tabs: [10], focused: 1, t: Date.now(), name: 'Work', description: 'Company Google and Slack', incognito: { allowed: true, tabs: 2 } }))
+  const { pickProfile, profiles } = await import('../src/cli/browser')
+  const reply = await browser(['profiles'])
+  expect(reply.said).toContain('person@example.com                 Work                 open, 1 tabs, used last, Incognito allowed, 2 Incognito tabs')
+  expect(reply.said).toContain('for: Company Google and Slack')
+  expect((pickProfile(profiles(folder), {}, 'work') as { pid: number }).pid).toBe(1)
+})
