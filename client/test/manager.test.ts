@@ -1425,6 +1425,43 @@ describe('Manager session inspection', () => {
 describe('Manager task lifecycle', () => {
   const operationsFor = (f: Awaited<ReturnType<typeof fixture>>): ManagerOperations => new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager' })
 
+  it('keeps a worker open until its checklist is approved and its background command ends', async () => {
+    const f = await fixture()
+    const ops = operationsFor(f)
+    const checklist = { items: [{ id: 'review', title: 'Approve the result', check: 'person' as const }] }
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Prepare the result', checklist }, 'manager', 'worker')
+    const mark = ['sessions', 'mark', '--id', worker, '--status', 'done']
+    f.finish(worker, 'Ready for approval')
+    const before = f.notes.all()[worker]?.moves
+    await expect(ops.run(mark, 'early-goal')).rejects.toThrow('goal or checklist is incomplete')
+    expect(f.notes.all()[worker]?.moves).toEqual(before)
+
+    const command = { id: 'search', kind: 'local_bash', what: 'Search', started: 1 }
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { ...command, status: 'running' } }] })
+    expect(f.sessions.approveItem(worker, 'review')).toBe(true)
+    await expect(ops.run(mark, 'early-background')).rejects.toThrow('Background work has not finished')
+    expect(f.notes.all()[worker]?.moves).toEqual(before)
+
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { ...command, status: 'completed', ended: 2 } }] })
+    await expect(ops.run(mark, 'finished')).resolves.toBe(JSON.stringify({ id: worker, status: 'done' }))
+    expect(f.notes.all()[worker]?.moves?.at(-1)).toMatchObject({ status: 'done' })
+  })
+
+  it('keeps a worker with an older standalone goal open until that goal is met', async () => {
+    const f = await fixture()
+    const ops = operationsFor(f)
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Prepare the result' }, 'manager', 'worker')
+    f.finish(worker, 'Prepared the result')
+    const condition = 'Result delivered'
+    f.notes.set(worker, { ...f.notes.all()[worker], goal: { condition, checks: 1 }, goalMet: 'Previous result delivered' })
+    const mark = ['sessions', 'mark', '--id', worker, '--status', 'done']
+    await expect(ops.run(mark, 'early')).rejects.toThrow('goal or checklist is incomplete')
+    expect(f.notes.all()[worker]?.status).toBeUndefined()
+
+    f.notes.set(worker, { ...f.notes.all()[worker], goalMet: condition })
+    await expect(ops.run(mark, 'finished')).resolves.toBe(JSON.stringify({ id: worker, status: 'done' }))
+  })
+
   it.each(['done', 'archived'] as const)('resumes a %s worker in place and creates an independent task separately', async (status) => {
     let worker = ''
     const f = await fixture(0, { disk: { list: async () => worker === '' ? [] : [{ id: worker, title: 'Original result', stands: '', at: Date.now(), driven: true }], read: async () => undefined, has: async () => true } })

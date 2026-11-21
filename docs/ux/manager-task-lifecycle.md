@@ -60,7 +60,8 @@ stateDiagram-v2
 
 | From | Event | To | User sees |
 | --- | --- | --- | --- |
-| In progress | Manager verifies concrete evidence against full goal and latest request, then marks Done automatically | Done | Card moves; result |
+| In progress | Manager verifies concrete evidence against full goal and latest request, then marks Done automatically; the host confirms background work has ended and the recorded goal and checklist are complete | Done | Card moves; result |
+| Any | Manager tries to mark Done with unfinished background work, an unmet goal or an incomplete checklist | Previous status | Manager receives the reason and can inspect the worker before trying again |
 | Any | User cancels; Manager marks Archived; host cancels queued/held work and confirms shutdown | Archived | Card moves; history retained |
 | Any | Shutdown rejects | Previous status | Explicit failure; no success claim |
 | Done / Archived | Manager reads latest request/recent answers, confirms same outcome, sends follow-up; host accepts | In progress automatically | Same card and transcript |
@@ -78,7 +79,7 @@ No arbitrary recency window: read the last user request and recent responses to 
 
 ## 7. Wording
 
-Existing labels: "In progress", "Done", "Archived". Shutdown failure uses section 3's exact text. Manager describes the result or blocker in the user's language through existing voice rules; no new fixed notification.
+Existing labels: "In progress", "Done", "Archived". Shutdown failure uses section 3's exact text. A refused Done operation tells Manager "Background work has not finished. Check the worker before marking it Done." or "The worker's goal or checklist is incomplete. Check its progress before marking it Done." Manager describes the result or blocker in the user's language through existing voice rules; no new fixed notification.
 
 ## 8. Edges
 
@@ -92,7 +93,7 @@ Existing labels: "In progress", "Done", "Archived". Shutdown failure uses sectio
 
 ## 9. Deliberate absences
 
-No semantic verifier in the status API: Manager checks evidence; explicit status operations remain available. No Done on runtime ending, new cancellation CLI verb, deletion on cancellation, project-wide reuse or approval substitution.
+Manager checks the evidence against the request. The Manager status operation enforces the host's recorded completion state. Manual board moves remain available. No Done on runtime ending, new cancellation CLI verb, deletion on cancellation, project-wide reuse or approval substitution.
 
 ## 10. Decisions
 
@@ -102,7 +103,7 @@ Use existing `sessions mark --status archived` with deletion's queue/runtime can
 
 | Requirement | Verification boundary |
 | --- | --- |
-| Done only after full-goal verification | Policy on initial, continuation and restored turns; real model decision checked separately |
+| Done only after full-goal verification | Refuse Manager's Done command while background work or completion conditions remain, then accept once they clear; real model decision checked separately |
 | Cancellation stops pending work and keeps transcript | Manager operation, notes, teardown and queue assertions |
 | Done/Archived follow-up resumes same task | Receipt, same ID, fresh status and history |
 | Independent task starts separately | Context policy and distinct session IDs |
