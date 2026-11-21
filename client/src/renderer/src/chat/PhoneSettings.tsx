@@ -119,7 +119,7 @@ function Root({ chat, go }: Pick<Parameters<typeof PhoneSettings>[0], 'chat'> & 
         </Cell>
       </div>
       <div className="phone-note">
-        Counting tells us which features get used: only their names, the version and a random id for this phone, sent to Google Analytics. Error reports go to Sentry with paths, addresses and links taken out. Never your chats, files, keys, personal or confidential data. On this phone, for every computer it opens.
+        Counting tells us which features get used: only their names, the version, the time zone and its country, and a random id for this phone, sent to Google Analytics. Error reports go to Sentry with paths, addresses and links taken out. Never your chats, files, keys, personal or confidential data. On this phone, for every computer it opens.
       </div>
 
       {paired === undefined ? null : (

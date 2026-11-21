@@ -490,7 +490,7 @@ function General({ settings, change, onWelcome }: Part & { readonly onWelcome: (
           Count which features are used
         </label>
         <span style={NOTE}>
-          Tells us which features get used, so we know what to polish next. Google Analytics gets only feature names such as correct, the version and a random id for this installation. Never your chats, files, keys, personal or confidential data.
+          Tells us which features get used, so we know what to polish next. Google Analytics gets only feature names such as correct, the version, the time zone and its country, and a random id for this installation. Never your chats, files, keys, personal or confidential data.
         </span>
       </div>
 

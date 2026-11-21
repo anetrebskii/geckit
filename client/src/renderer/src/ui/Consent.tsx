@@ -89,7 +89,7 @@ function CountingCard({ change }: { readonly change: (change: Partial<Settings>)
         <span className="title">Help make GeckIt better?</span>
         <span className="body">A small favor: let GeckIt count which features get used, so we know what to polish next.</span>
         <span className="promise">
-          Never your chats, files, keys or any personal or confidential data. Just feature names and a random id for this {ON_PHONE ? 'phone' : 'computer'}.
+          Never your chats, files, keys or any personal or confidential data. Just feature names, the app version, your country and a random id for this {ON_PHONE ? 'phone' : 'computer'}.
         </span>
         <span className="fine">{'Saying no sends one anonymous "no", then nothing at all.'}</span>
         <span className="actions">
