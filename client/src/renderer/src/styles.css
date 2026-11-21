@@ -8253,6 +8253,8 @@ html.framed .board-head {
   inset: 0;
   z-index: 5;
   background: rgb(0 0 0 / 35%);
+  /* Over the head, which drags the window: without no-drag a click there never reaches the scrim. The conversation's own head still drags. */
+  -webkit-app-region: no-drag;
 }
 
 /* A form opened over an open conversation stands above it. */

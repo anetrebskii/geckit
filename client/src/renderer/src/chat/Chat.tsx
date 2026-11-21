@@ -1130,7 +1130,14 @@ export function Chat(): React.JSX.Element {
   const away = servers !== undefined && remote
 
   return (
-    <div className={away ? 'app-away' : `app${place === 'tasks' ? '' : ' placed'}${place === 'questions' ? ' on-questions' : ''}${asking ? ' asking' : ''}`}>
+    <div
+      className={away ? 'app-away' : `app${place === 'tasks' ? '' : ' placed'}${place === 'questions' ? ' on-questions' : ''}${asking ? ' asking' : ''}`}
+      // The rail is outside the scrim, so a press on it puts away an open conversation the same way.
+      onMouseDownCapture={(event) => {
+        if (making || asking || !(event.target instanceof Element) || event.target.closest('.app-nav') === null) return
+        if ((raised && place !== 'questions') || (overBoard && !below)) chat.open({ kind: 'new' })
+      }}
+    >
       {away ? null : <AppNav chat={chat} place={place} rail={rail} over={navOver} onPlace={go} onToggle={toggleNames} reading={servers ?? ''} onComputer={(id) => { go('tasks'); setServers(id ?? ':add') }} />}
       {!away && navOver ? <div className="nav-catch" onMouseDown={() => { setNavOver(false) }} /> : null}
       <div className="app-main">
