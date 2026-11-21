@@ -17,7 +17,7 @@ import { Manager, runManagerCli } from '../src/main/manager'
 import { MANAGER_WORKFLOWS } from '../src/main/guide'
 import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { ManagerOperations, managerFile, managerProvider, managerReadOnly } from '../src/main/manager-operations'
-import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerNote, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
+import { managerContext, managerHistoryItem, managerMessage, managerNote, managerOutput, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
 import { askedEndpoint } from '../src/cli/endpoint'
 import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerReplyOrigin, ManagerThread, ManagerView } from '../src/shared/manager'
@@ -1798,6 +1798,28 @@ describe('Manager session', () => {
     await vi.waitFor(() => expect(replies).toEqual(['Which app is it, the desktop one?\n\nI will coordinate that.']))
   })
 
+  it('keeps command arguments out of a Discord reply after an unclosed status block', async () => {
+    const f = await fixture()
+    const replies: string[] = []
+    f.manager.onResponse((text) => replies.push(text))
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'channel:discord', place: 'Discord', key: 'discord-thread' })
+    const id = await f.manager.open(thread)
+    await f.manager.send('Which assistants are available?', 'channel', 'discord:1', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(f.sent[0]?.input).toContain('Reply destination for this thread: "Discord".')
+    expect(f.sent[0]?.input).toContain('send-discord-reply')
+
+    const args = ['providers', 'list']
+    f.finish(id, `Проверяю доступных ассистентов.\n\n\`\`\`status\nСмотрю настройки.\n\`\`\`geckit\n${JSON.stringify({ id: 'discord-providers', args })}\n\`\`\``)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('discord-providers'))
+    expect(f.sent.at(-1)?.input).toContain('Reply destination for this thread: "Discord".')
+    expect(f.cli.map((call) => call.args)).toEqual([args])
+    expect(replies).toEqual([])
+    f.finish(id, '')
+    await vi.waitFor(() => expect(replies).toEqual(['Проверяю доступных ассистентов.']))
+  })
+
   it('hides status blocks from the answer and shows the last one in the thread until Manager answers', async () => {
     expect(managerMessage('```status\nChecking the workers.\n```\nDone.')).toBe('Done.')
     expect(managerNote('```status\nOne.\n```\ntext\n```status\n  Checking\n the  workers.\n```')).toBe('Checking the workers.')
@@ -2134,8 +2156,8 @@ describe('Manager session', () => {
     f.finish(id, f.command('bad-flag', ['projects', 'list', '--shell', 'touch escaped']))
     await vi.waitFor(async () => expect((await f.manager.view()).activity[0]?.state).toBe('failed'))
     expect((await f.manager.view()).activity[0]?.result).toContain('Unsupported flag')
-    expect(managerCommands('```geckit\n{"id":"literal","args":["files","write","--text","$(touch nope); echo hi"]}\n```')[0]?.args.at(-1)).toBe('$(touch nope); echo hi')
-    expect(() => managerCommands('```geckit\n{"id":"bad","args":[3]}\n```')).toThrow('invalid')
+    expect(managerOutput('```geckit\n{"id":"literal","args":["files","write","--text","$(touch nope); echo hi ```"]}\n```')).toEqual({ commands: [{ id: 'literal', args: ['files', 'write', '--text', '$(touch nope); echo hi ```'] }], visible: '' })
+    expect(() => managerOutput('```geckit\n{"id":"bad","args":[3]}\n```')).toThrow('invalid')
     expect(managerVisibleItem({ kind: 'theirs', id: '1', text: 'Hello\n```geckit\npartial' })).toMatchObject({ text: 'Hello' })
   })
 

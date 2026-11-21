@@ -3,6 +3,7 @@ import { expect, it, vi } from 'vitest'
 import type { ChannelContext, ChannelEvent, ManagerDecision } from '../src/main/channels/channel-api'
 import { DISCORD_INTENTS, chunks, createDiscord, discordApi, inspectDiscord, snowflakeAt } from '../src/main/channels/discord'
 import type { DiscordTransport } from '../src/main/channels/discord'
+import { managerOutput } from '../src/main/manager-protocol'
 import { DISCORD_INVITE_PERMISSIONS, discordId } from '../src/shared/discord'
 
 const ALLOWED = '301234567890123456'
@@ -172,14 +173,39 @@ it('opens a Discord thread per mention, keeps each thread and direct message its
   expect(run.sent.map(([id]) => id).sort()).toEqual(['channel:discord:500000000000000001', 'channel:discord:500000000000000002', 'channel:discord:500000000000000001', 'channel:discord:dm:dm-channel-1'].sort())
   expect(run.sent.find(([, message]) => message.text === 'and keep the tests green')?.[1]).toEqual({ text: 'and keep the tests green', from: 'Ben' })
 
-  run.watchers.get('channel:discord:500000000000000001')?.({ kind: 'answer', text: 'Started a worker for it.' })
+  const { visible } = managerOutput('Started a worker for it.\n\n- **Next:** Check the redirect.\n\n```status\nChecking workers.\n```geckit\n{"id":"discord-workers","args":["sessions","list"]}\n```')
+  run.watchers.get('channel:discord:500000000000000001')?.({ kind: 'answer', text: visible })
   run.watchers.get('channel:discord:dm:dm-channel-1')?.({ kind: 'answer', text: 'Nothing is running.' })
   await run.settle()
   expect(run.posts().slice(-2).map((one) => [one.path, one.body['content'], one.body['allowed_mentions']])).toEqual([
-    ['/channels/500000000000000001/messages', 'Started a worker for it.', { parse: [] }],
+    ['/channels/500000000000000001/messages', 'Started a worker for it.\n\n- **Next:** Check the redirect.', { parse: [] }],
     ['/channels/dm-channel-1/messages', 'Nothing is running.', { parse: [] }],
   ])
   await run.channel.stop()
+})
+
+it('posts and edits worker status with Discord list formatting', async () => {
+  const run = harness()
+  await run.channel.start()
+  try {
+    vi.useFakeTimers()
+    run.ready()
+    run.message('500000000000000001', ALLOWED, `<@${BOT}> check the redirect`)
+    await vi.advanceTimersByTimeAsync(0)
+    const watch = run.watchers.get('channel:discord:500000000000000001')
+    const activity = { manager: 'Running:', ending: 'Done:', active: false }
+    const workers = [{ id: 'worker', line: '• Redirect: checking\n  - Tests: running', active: true }]
+    watch?.({ kind: 'status', activity: { ...activity, workers } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(run.posts().at(-1)?.body['content']).toBe('Running:\n\n- Redirect: checking\n  - Tests: running')
+
+    watch?.({ kind: 'status', activity: { ...activity, workers: [{ id: 'worker', line: '• Redirect: done', active: false }] } })
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(run.calls.findLast((call) => call.method === 'PATCH')?.body['content']).toBe('Done:\n\n- Redirect: done')
+  } finally {
+    vi.useRealTimers()
+    await run.channel.stop()
+  }
 })
 
 it('passes a reply to an answer as a reference to the work it was about, and not once that work is gone', async () => {

@@ -62,6 +62,8 @@ export function chunks(text: string, limit = LIMIT): readonly string[] {
   return out
 }
 
+const statusContent = (text: string): string => text.replace(/\n(?=• )/, '\n\n').replace(/^• /gm, '- ')
+
 const buttonId = (decision: string, index: number): string => `gk:${createHash('sha256').update(decision).digest('hex').slice(0, 20)}:${String(index)}`
 
 interface DiscordUser {
@@ -347,11 +349,11 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     const status = new StatusMessage({
       post: async (text) => {
         if (!current()) throw new Error('Manager conversation changed.')
-        const id = await post(channel, text)
+        const id = await post(channel, statusContent(text))
         if (id === undefined) throw new Error('Discord did not return the message.')
         return id
       },
-      edit: async (id, text) => { if (!current()) return; await api('PATCH', `/channels/${channel}/messages/${id}`, { content: text.slice(0, LIMIT), allowed_mentions: { parse: [] } }) },
+      edit: async (id, text) => { if (!current()) return; await api('PATCH', `/channels/${channel}/messages/${id}`, { content: statusContent(text).slice(0, LIMIT), allowed_mentions: { parse: [] } }) },
       remove: async (id) => { if (!current()) return; await api('DELETE', `/channels/${channel}/messages/${id}`) },
     }, { failed: warn('discord.status.failed') })
     const legacyClosed = Promise.all(prompts(key).map(async (prompt) => { await api('PATCH', `/channels/${channel}/messages/${prompt.message}`, { components: [], content: '-# This request was replaced by the current approval below.', allowed_mentions: { parse: [] } }) })).then(() => { context.store.set(`prompts:${key}`, []) }).catch(warn('discord.prompt.close.failed'))
