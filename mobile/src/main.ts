@@ -35,7 +35,10 @@ const SERVER_VIEW = 'geckit-server-view'
 let serverMounted = false
 
 // The page says which phone it is on where that is not an iPhone.
-if (Capacitor.getPlatform() === 'android') (window as { geckitPhoneOs?: string }).geckitPhoneOs = 'android'
+if (Capacitor.getPlatform() === 'android') {
+  ;(window as { geckitPhoneOs?: string }).geckitPhoneOs = 'android'
+  document.documentElement.classList.add('android')
+}
 // A drop from switching networks mends in seconds; a Mac that is asleep should not be asked every second.
 const AGAIN = [0, 2000, 5000, 10_000, 30_000]
 
