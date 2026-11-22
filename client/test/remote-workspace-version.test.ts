@@ -4,6 +4,7 @@ import type { WorkspaceConnection, WorkspaceMount } from '../src/renderer/src/re
 import type { PhoneCalls } from '../src/renderer/src/phone-calls'
 import { workspaceApi } from '../src/renderer/src/remote/workspace-api'
 import type { RemoteServer } from '../src/shared/remote/protocol'
+import type { SessionItem, SessionItems } from '../src/shared/api'
 
 const server: RemoteServer = { id: 'remote-version', name: 'Remote server', publicKey: 'key' }
 const metadata: Awaited<ReturnType<CoreMethods['service:about']>> = { platform: 'linux', home: '/home/remote', name: 'Remote server', speech: { state: 'absent', received: 0, total: 1 }, version: '1.258.0' }
@@ -20,6 +21,29 @@ function connection() {
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
+
+it('refreshes the open phone chat on resume without a reconnect event', async () => {
+  const initial: SessionItem = { kind: 'theirs', id: 'first', text: 'Last reply before pause' }
+  const fresh: SessionItem = { kind: 'theirs', id: 'next', text: 'New reply while away' }
+  let items = [initial]
+  const link: WorkspaceConnection = {
+    call: async <K extends keyof CoreMethods>(method: K, ..._args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => {
+      const value = (method as string) === 'chat:turns' ? { items, left: 0 } : method === 'service:about' ? metadata : undefined
+      return value as Awaited<ReturnType<CoreMethods[K]>>
+    },
+    on: () => () => undefined,
+  }
+  const phoneWindow: { readonly parent: object; geckitPhone?: PhoneCalls } = { parent: {} }
+  vi.stubGlobal('window', phoneWindow)
+  const api = await workspaceApi(link, server, true)
+  const updates: SessionItems[] = []
+  api.chat.onItems((update) => updates.push(update))
+  expect(await api.chat.items('opened')).toEqual([initial])
+  phoneWindow.geckitPhone?.away(true)
+  items = [initial, fresh]
+  phoneWindow.geckitPhone?.away(false)
+  await vi.waitFor(() => expect(updates.at(-1)?.items).toEqual([initial, fresh]), { timeout: 200 })
+})
 
 describe('links in the phone workspace', () => {
   it('opens sign-in in GeckIt and keeps ordinary web links in the browser', async () => {

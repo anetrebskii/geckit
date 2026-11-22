@@ -3792,6 +3792,15 @@ html.phone .find-bar .icon-button {
   margin-top: 12px;
 }
 
+html.phone .step > button.did {
+  min-height: 44px;
+  align-items: center;
+}
+
+html:not(.phone):not(.remote-workspace-page) .step > .skeleton-line {
+  animation: skeleton-wait 0s linear 150ms both;
+}
+
 .mine {
   padding: 9px 12px;
   white-space: pre-wrap;

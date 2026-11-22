@@ -112,9 +112,10 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
         const failure = error instanceof Error ? error : new Error(typeof (error as { message?: unknown } | null)?.message === 'string' ? (error as { message: string }).message : String(error))
         if (failure.message === 'Unknown GeckIt method.') {
           const older = new Error('GeckIt on the server is older than this app. Update it there to use this.')
-          if (!quiet.has(channel)) report(older)
+          if (channel !== 'chat:file' && !quiet.has(channel)) report(older)
           throw older
         }
+        if (channel === 'chat:file') throw failure
         report(failure)
         throw error
       }
@@ -230,7 +231,10 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     localFetch: (request) => connection.call('local:fetch', request),
     forwardLink: (root, href) => connection.call('hosts:forwardLink', root, href),
     pushToken: (token) => { void connection.call('push:token', token).catch(() => undefined) },
-    away: (on) => { void connection.call('push:here' as keyof CoreMethods, ...([on] as unknown as Parameters<CoreMethods[keyof CoreMethods]>)).catch(() => undefined) },
+    away: (on) => {
+      void connection.call('push:here' as keyof CoreMethods, ...([on] as unknown as Parameters<CoreMethods[keyof CoreMethods]>)).catch(() => undefined)
+      if (!on) data.refresh()
+    },
   }
   if (onPhone) {
     Object.defineProperty(window, 'geckitPhone', { value: phone })

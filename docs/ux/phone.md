@@ -352,6 +352,10 @@ Signed Release 1.100.0/build 209 was installed in place and launched successfull
 
 Performance review against `docs/performance.md`: no problems found. Choices are mapped only while their existing question row renders; custom answer state stays local to that question. No global collection, formatter, pointer listener, polling interval or animation was introduced. Removing sticky positioning and composer blocking uses the existing transcript scroll path. Phone bundle rebuilt; these bounded changes require no additional profiling.
 
+## Files opened from a conversation
+
+Tapping a file link opens its preview sheet immediately with "Reading it on [computer]...". HTML displays as a page and Markdown reads as formatted text. If the connected computer does not answer a file read within 20 seconds, or the link drops during the read, GeckIt retries once in the same sheet. Either attempt can fill the sheet, so a larger file still has the normal two-minute reply window. When the read expires or fails, the sheet shows the error. Done closes the sheet in each state.
+
 ## Android localhost forms - 2026-10-18
 
 Submitting an HTML POST form on a computer localhost page carries the fields, chosen files, encoding and pressed submit button to the computer, then opens the response in the same localhost view. This includes pressing Enter, requestSubmit and the form's native submit method. Page handlers that cancel submission keep control; GET forms and external-site forms follow their existing browser behavior. The form's response creates a browser navigation, so Back returns to the form. Android carries the body beside the navigation because WebView does not expose a native navigation's POST bytes. The host performs the POST, keeps its cookies and follows redirects as for fetch/XHR.

@@ -15,16 +15,18 @@ A desktop connected to another computer opens and stays as quick as the phone do
 
 ## 1. A part still loading
 
-Applies to the local desktop and a desktop connected to another computer. The phone already behaves this way and does not change.
+Applies to local desktop, remote desktop and phone.
 
 | Moment | What is shown | Why |
 |---|---|---|
 | Conversation opened, its end not yet here | The existing grey placeholder lines shown while a conversation is first read (`skeleton-bubble`, `skeleton-line` in `chat/Chat.tsx`), in the transcript area. Composer usable. | Same look on every client; nothing new to learn. |
 | Scrolled to the top, earlier part asked for | The existing Load earlier row stays in place and reads "Loading earlier" while the part is on its way. No spinner. | The row the person is looking at says what is happening. The row is the existing one at the top of the transcript that draws more of what is loaded; it now also asks the computer when nothing more is loaded. |
-| A run of steps opened, its steps not yet here | The run's line opens at once and shows one grey placeholder line under it until the steps arrive. | The press visibly took effect. |
+| A run of steps opened, its steps not yet here | The chevron points down and a grey placeholder appears beneath the row. When the steps arrive, they replace the placeholder. | The press visibly took effect. |
 | A picture scrolled into view, not yet here | A grey box at the picture's drawn size (the existing `picture-waiting` box in `chat/Transcript.tsx`). | The layout does not jump when it arrives. |
 
 Thresholds: on the local desktop each of these normally finishes in under 100 ms, so a placeholder is shown only after 150 ms without an answer. A placeholder shown for less than that reads as a flicker. On a remote link the placeholder appears at once.
+
+Step runs use a chevron while work is active as well as after it finishes. The collapsed active run shows the latest step, and the existing "Still working" line reports overall activity. The disclosure target on phones is at least 44 points high.
 
 Failure: if a part cannot be loaded (link dropped, server stopped), the place it was asked for says "Could not load. Try again" as a quiet button in the row. Pressing it asks again. No dialog.
 
@@ -67,6 +69,8 @@ Applies to a desktop connected to another computer and to the phone. The phone a
 - Whatever the person does meanwhile waits and happens when the link is back. If the link is not back within 60 s, each waiting action fails with "The link to the computer is down. Try again when it is back." in the place it was done.
 - An action that had already gone out when the link dropped is not sent again. It fails with the existing "Connection lost. Check the computer before retrying this action."
 - 60 s: long enough for a network change or a short tunnel, short enough that nothing goes out long after the person stopped expecting it.
+- When the connection returns, GeckIt refreshes the open conversation and retries the read once if it fails. New messages appear even when details for an open step run are unavailable. A run whose details are missing appears collapsed and can be opened again.
+- Returning to the phone app refreshes the conversation in place even if the connection stayed open. During live updates, details for an expanded run get up to two seconds to arrive. If they take longer, GeckIt shows the collapsed run and delivers the waiting messages.
 
 This replaces "Reconnecting… writes disabled" in `docs/ux/remote-clients.md` for remote desktops.
 

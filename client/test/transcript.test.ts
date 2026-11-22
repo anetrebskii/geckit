@@ -178,8 +178,8 @@ describe('progress belongs to the current turn', () => {
       expect(waiting).toContain('Still working')
       expect(waiting).not.toContain('1 step, Checking models')
       const working = drawn(items([...continued, { kind: 'did', id: 'd2', what: 'Checking the fix', live: true }]), true)
-      expect(working.match(/spinner-turn/g)).toHaveLength(2)
-      expect(working).toContain('1 step, Checking the fix')
+      expect(working.match(/spinner-turn/g)).toHaveLength(1)
+      expect(working).toMatch(/title="Show what was done" aria-expanded="false"[^>]*>.*1 step, Checking the fix/)
       expect(working).not.toContain('1 step, Checking models')
       const completed = drawn(items([...continued, { kind: 'theirs', id: 't2', text: 'Fixed' }]))
       expect(completed).not.toContain('spinner-turn')
@@ -272,7 +272,7 @@ it('keeps current progress active when an unsent message is present', () => {
     { kind: 'mine', id: 'm2', text: 'Not delivered', unsent: true },
   ], true)
   expect(html).toContain('1 step, Checking models')
-  expect(html.match(/spinner-turn/g)).toHaveLength(2)
+  expect(html.match(/spinner-turn/g)).toHaveLength(1)
   expect(html).toContain('Send again')
 })
 

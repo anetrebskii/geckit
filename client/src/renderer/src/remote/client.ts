@@ -10,6 +10,7 @@ import { devicePublicKey, rememberServer, signDevice } from './storage'
 // A call made while the link is down waits this long for it to be back.
 export const HOLD = 60_000
 export const LINK_DOWN = 'The link to the computer is down. Try again when it is back.'
+const FILE_RETRY_AFTER = 20_000
 export type ConnectionState = 'connecting' | 'pending' | 'connected' | 'reconnecting' | 'disconnected' | 'expired' | 'reused' | 'revoked' | 'incompatible' | 'error'
 /** The steps of a connect, in order: the pairing service, the computer's answer, the link, proving who each side is, its state, the workspace starting, the conversation list. */
 export const CONNECT_STAGES = [...DIAL_STAGES, 'proving', 'snapshot', 'bootstrap', 'list'] as const
@@ -39,7 +40,7 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
   let heard = 0
   const events = new Set<(event: CoreEvent) => void>()
   const readyAgain = new Set<() => void>()
-  // What was asked while the link was down goes once it is back, unless it stays away this long; what had already gone out is never sent again.
+  // Calls made while the link is down wait for it to return. A sent file read can be tried again once.
   const held: { readonly go: () => void; readonly give: (error: Error) => void }[] = []
   const pending = new Map<number, { readonly resolve: (value: RemoteResult) => void; readonly reject: (error: Error) => void; readonly timer: ReturnType<typeof setTimeout> }>()
   const rejectPending = (reason = 'Connection lost. Check the server before retrying this action.'): void => { ready = false; for (const one of pending.values()) { clearTimeout(one.timer); one.reject(new Error(reason)) }; pending.clear() }
@@ -151,11 +152,11 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
       later()
     }
   }
-  const call = <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> => new Promise((resolve, reject) => {
+  const request = <K extends keyof CoreMethods>(method: K, args: Parameters<CoreMethods[K]>, retryFile: boolean): Promise<Awaited<ReturnType<CoreMethods[K]>>> => new Promise((resolve, reject) => {
     // A saved computer's calls wait for the link, the first one too, so its workspace opens on what was kept before it answers.
     if ((!ready || channel === undefined) && !stopped && trust?.full === true) {
       const one = {
-        go: () => { clearTimeout(expired); void call(method, ...args).then(resolve, reject) },
+        go: () => { clearTimeout(expired); void request(method, args, retryFile).then(resolve, reject) },
         give: (error: Error) => { clearTimeout(expired); reject(error) },
       }
       const expired = setTimeout(() => { const at = held.indexOf(one); if (at >= 0) held.splice(at, 1); reject(new Error(LINK_DOWN)) }, HOLD)
@@ -165,12 +166,31 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
     if (!ready || !trust?.full || channel === undefined) { reject(new Error('Connect to this server before using its workspace.')); return }
     const id = ++next
     const sentOn = channel
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error('Server did not answer. Check the server before retrying this action.')) }, method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000)
+    const file = method === 'chat:file'
+    let retried = false
+    const retryRead = (): void => {
+      if (retried) return
+      retried = true
+      void request(method, args, false).then((value) => {
+        if (pending.delete(id)) clearTimeout(timer)
+        resolve(value)
+      }, (error: Error) => {
+        if (pending.delete(id)) clearTimeout(timer)
+        reject(error)
+      })
+    }
+    const retryTimer = retryFile ? setTimeout(retryRead, FILE_RETRY_AFTER) : undefined
+    const wait = method === 'browser:openTest' || method === 'browser:viewStart' ? 16 * 60_000 : 120_000
+    const timer = setTimeout(() => {
+      pending.delete(id)
+      reject(new Error(file ? 'The computer did not finish sending the file. Try again.' : 'Server did not answer. Check the server before retrying this action.'))
+    }, wait)
     const starting = (method as string) === 'service:about' || method === 'service:bootstrap'
     const first = starting && ['snapshot', 'bootstrap'].includes(steps.at(-1)?.stage ?? '') ? 'start' : method === 'chat:list' && steps.at(-1)?.stage === 'bootstrap' ? 'chat:list' : undefined
     if (first === 'start' && steps.at(-1)?.stage === 'snapshot') stage('bootstrap')
     if (first === 'chat:list') stage('list')
     pending.set(id, { resolve: (value) => {
+      clearTimeout(retryTimer)
       if (first === 'start') { sized('bootstrap', heard); change({ ...base, steps }) }
       if (first === 'chat:list') {
         sized('list', heard)
@@ -180,9 +200,15 @@ export function connectRemote(pairing: RemoteSignal, name: string, change: (view
       // Said back plainly; from then on this side sends deflated too.
       if ((method as string) === 'link:can' && value !== null && typeof value === 'object' && 'can' in value && Array.isArray(value.can) && value.can.includes('deflate')) sentOn.compress?.(true)
       resolve(value as Awaited<ReturnType<CoreMethods[K]>>)
-    }, reject, timer })
-    try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) } catch (error) { clearTimeout(timer); pending.delete(id); reject(error) }
+    }, reject: (error) => {
+      clearTimeout(retryTimer)
+      if (retryFile && !stopped && error.message === LINK_DOWN) retryRead()
+      else reject(error)
+    }, timer })
+    try { send({ type: 'core-call', id, call: { method, args } as RemoteCall }) } catch (error) { clearTimeout(timer); clearTimeout(retryTimer); pending.delete(id); reject(error) }
   })
+  const call = <K extends keyof CoreMethods>(method: K, ...args: Parameters<CoreMethods[K]>): Promise<Awaited<ReturnType<CoreMethods[K]>>> =>
+    request(method, args, method === 'chat:file')
   void dial()
   return {
     close: () => { stopped = true; rejectPending(); for (const one of held.splice(0)) one.give(new Error('Disconnected')); abort.abort(); if (refresh !== undefined) clearTimeout(refresh); channel?.close(); change({ state: 'disconnected', message: 'Disconnected' }) },
