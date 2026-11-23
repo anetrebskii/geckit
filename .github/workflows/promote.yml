@@ -59,7 +59,7 @@ jobs:
 
   testflight:
     needs: promote
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.TESTFLIGHT_AUTO_PUBLISH == 'true'
     runs-on: macos-26
     environment: testflight
     timeout-minutes: 30
