@@ -212,16 +212,12 @@ jobs:
 
       - name: Archive and export the signed iOS package
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          IOS_APP_PROFILE: ${{ secrets.IOS_APP_PROFILE }}
+          IOS_EXTENSION_PROFILE: ${{ secrets.IOS_EXTENSION_PROFILE }}
           IOS_SIGNING_P12: ${{ secrets.IOS_SIGNING_P12 }}
           IOS_SIGNING_P12_PASSWORD: ${{ secrets.IOS_SIGNING_P12_PASSWORD }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          : "${ASC_KEY_ID:?Configure ASC_KEY_ID in the testflight environment}"
-          : "${ASC_ISSUER_ID:?Configure ASC_ISSUER_ID in the testflight environment}"
-          : "${ASC_PRIVATE_KEY:?Configure ASC_PRIVATE_KEY in the testflight environment}"
           : "${IOS_SIGNING_P12:?Configure IOS_SIGNING_P12 in the testflight environment}"
           : "${IOS_SIGNING_P12_PASSWORD:?Configure IOS_SIGNING_P12_PASSWORD in the testflight environment}"
           umask 077
@@ -229,7 +225,6 @@ jobs:
           keychain="$signing/ios.keychain-db"
           trap 'security delete-keychain "$keychain" 2>/dev/null || true; rm -r "$signing"' EXIT
           unlock=$(openssl rand -hex 24)
-          printf '%s\n' "$ASC_PRIVATE_KEY" > "$signing/AuthKey.p8"
           printf '%s' "$IOS_SIGNING_P12" | base64 --decode > "$signing/signing.p12"
           security create-keychain -p "$unlock" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
@@ -237,13 +232,8 @@ jobs:
           security import "$signing/signing.p12" -k "$keychain" -P "$IOS_SIGNING_P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$unlock" "$keychain" >/dev/null
           security list-keychains -d user -s "$keychain"
-          unset ASC_PRIVATE_KEY IOS_SIGNING_P12 IOS_SIGNING_P12_PASSWORD
-          auth=(-allowProvisioningUpdates -authenticationKeyPath "$signing/AuthKey.p8" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-          archive="$RUNNER_TEMP/GeckIt.xcarchive"
-          xcodebuild "${auth[@]}" -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$archive" archive "MARKETING_VERSION=$VERSION" "CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER"
-          xcodebuild "${auth[@]}" -exportArchive -archivePath "$archive" -exportOptionsPlist ios/ExportOptions.plist -exportPath "$RUNNER_TEMP/ios-export"
-          mv "$RUNNER_TEMP/ios-export/"*.ipa "$RUNNER_TEMP/GeckIt.ipa"
-          node scripts/testflight.mjs verify "$RUNNER_TEMP/GeckIt.ipa" "$VERSION" "$GITHUB_RUN_NUMBER"
+          unset IOS_SIGNING_P12 IOS_SIGNING_P12_PASSWORD
+          bash scripts/export-ios.sh "$VERSION" "$GITHUB_RUN_NUMBER"
 
       - name: Retain the signed IPA
         id: ipa

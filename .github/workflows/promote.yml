@@ -97,7 +97,6 @@ jobs:
       - name: Deliver the retained IPA to TestFlight Public
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           VERSION: ${{ steps.ipa.outputs.version }}
           BUILD: ${{ steps.ipa.outputs.build }}

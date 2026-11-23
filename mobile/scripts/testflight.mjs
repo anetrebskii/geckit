@@ -8,30 +8,34 @@ import { setTimeout } from 'node:timers/promises'
 
 const [command, ipa, version, buildNumber] = process.argv.slice(2)
 const bundleId = 'com.anetrebskii.geckit'
+const appId = '6815725206'
 const appPath = 'Payload/App.app'
 const readyStates = ['WAITING_FOR_BETA_REVIEW', 'IN_BETA_REVIEW', 'BETA_APPROVED', 'IN_BETA_TESTING']
 
-assert(command === 'verify' || command === 'deliver', 'Choose verify or deliver')
-assert(ipa && /^\d+\.\d+\.\d+$/.test(version) && /^\d+$/.test(buildNumber), 'Enter an IPA, release version, and build number')
+assert(['verify', 'check-access', 'deliver'].includes(command), 'Choose verify, check-access or deliver')
 
-for (const [path, id] of [
-  [appPath, bundleId],
-  [`${appPath}/PlugIns/NotificationService.appex`, `${bundleId}.NotificationService`],
-]) {
-  const plist = execFileSync('unzip', ['-p', ipa, `${path}/Info.plist`])
-  const info = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', '--', '-'], { input: plist, encoding: 'utf8' }))
-  assert.equal(info.CFBundleIdentifier, id)
-  assert.equal(info.CFBundleShortVersionString, version, `Version in ${id}`)
-  assert.equal(info.CFBundleVersion, buildNumber, `Build number in ${id}`)
+if (command !== 'check-access') {
+  assert(ipa && /^\d+\.\d+\.\d+$/.test(version) && /^\d+$/.test(buildNumber), 'Enter an IPA, release version, and build number')
+
+  for (const [path, id] of [
+    [appPath, bundleId],
+    [`${appPath}/PlugIns/NotificationService.appex`, `${bundleId}.NotificationService`],
+  ]) {
+    const plist = execFileSync('unzip', ['-p', ipa, `${path}/Info.plist`])
+    const info = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', '--', '-'], { input: plist, encoding: 'utf8' }))
+    assert.equal(info.CFBundleIdentifier, id)
+    assert.equal(info.CFBundleShortVersionString, version, `Version in ${id}`)
+    assert.equal(info.CFBundleVersion, buildNumber, `Build number in ${id}`)
+  }
+  console.log(`Verified GeckIt iOS ${version} (${buildNumber}) and its notification extension.`)
 }
-console.log(`Verified GeckIt iOS ${version} (${buildNumber}) and its notification extension.`)
 
-function upload(key, keyId, issuerId) {
+function upload(key, keyId) {
   const directory = mkdtempSync(join(tmpdir(), 'geckit-testflight-'))
-  const keyPath = join(directory, `AuthKey_${keyId}.p8`)
+  const keyPath = join(directory, `ApiKey_${keyId}.p8`)
   writeFileSync(keyPath, key, { mode: 0o600 })
   try {
-    execFileSync('xcrun', ['altool', '--upload-package', ipa, '--api-key', keyId, '--api-issuer', issuerId], {
+    execFileSync('xcrun', ['altool', '--upload-package', ipa, '--api-key', keyId, '--api-issuer', '', '--api-key-subject', 'user'], {
       env: { ...process.env, API_PRIVATE_KEYS_DIR: directory },
       stdio: 'inherit',
     })
@@ -42,14 +46,14 @@ function upload(key, keyId, issuerId) {
 }
 
 async function deliver() {
-  const { ASC_KEY_ID: keyId, ASC_ISSUER_ID: issuerId, ASC_PRIVATE_KEY: key } = process.env
-  assert(keyId && issuerId && key, 'Configure ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY in the testflight environment')
+  const { ASC_KEY_ID: keyId, ASC_PRIVATE_KEY: key } = process.env
+  assert(keyId && key, 'Configure the GeckIt-only individual key as ASC_KEY_ID and ASC_PRIVATE_KEY in the testflight environment')
   delete process.env.ASC_PRIVATE_KEY
 
   async function request(path, query = {}, method = 'GET', data) {
     const now = Math.floor(Date.now() / 1000)
     const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url')
-    const claims = `${encode({ alg: 'ES256', typ: 'JWT', kid: keyId })}.${encode({ iss: issuerId, iat: now, exp: now + 300, aud: 'appstoreconnect-v1' })}`
+    const claims = `${encode({ alg: 'ES256', typ: 'JWT', kid: keyId })}.${encode({ sub: 'user', iat: now, exp: now + 300, aud: 'appstoreconnect-v1' })}`
     const signature = sign('sha256', Buffer.from(claims), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url')
     const url = new URL(path, 'https://api.appstoreconnect.apple.com/v1/')
     url.search = new URLSearchParams(query).toString()
@@ -65,9 +69,13 @@ async function deliver() {
     return result
   }
 
-  const apps = await request('apps', { 'filter[bundleId]': bundleId })
-  assert.equal(apps.data.length, 1, 'Expected a single GeckIt app')
-  const appId = apps.data[0].id
+  const apps = await request('apps', { limit: '2' })
+  assert(!apps.links?.next && apps.data.length === 1 && apps.data[0].id === appId
+    && apps.data[0].attributes.bundleId === bundleId, 'The individual App Store Connect key must have access only to GeckIt')
+  if (command === 'check-access') {
+    console.log('App Store Connect key access is limited to GeckIt.')
+    return
+  }
   const groups = await request(`apps/${appId}/betaGroups`)
   const group = groups.data.find(({ attributes }) => attributes.name === 'Public' && !attributes.isInternalGroup)
   assert(group?.attributes.publicLinkEnabled, 'GeckIt Public must have an enabled TestFlight link')
@@ -94,7 +102,7 @@ async function deliver() {
   }
 
   let build = await findBuild()
-  if (!build && !(await findUpload())) upload(key, keyId, issuerId)
+  if (!build && !(await findUpload())) upload(key, keyId)
   for (let attempt = 0; build?.attributes.processingState !== 'VALID'; attempt += 1) {
     const delivery = await findUpload()
     assert(!delivery?.errors?.length && delivery?.state !== 'FAILED', `Apple upload failed: ${JSON.stringify(delivery?.errors)}`)
@@ -153,4 +161,4 @@ async function deliver() {
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + '\n')
 }
 
-if (command === 'deliver') await deliver()
+if (command !== 'verify') await deliver()
