@@ -1,0 +1,80 @@
+name: android
+
+# Builds the Android app and hands it to Publish as an artifact. Signed with the release key when ANDROID_KEYSTORE is set, so one build installs over the last; without it a debug build, which each runner signs with a key of its own. Pushed to any branch but main, a change to the build runs it alone, so it can be tried without making a release.
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - 'mobile/android/**'
+      - '.github/workflows/android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      VERSION: ${{ inputs.version || format('0.0.{0}', github.run_number) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Install and build
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          npm ci --prefix ../client
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Build the Android package
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          version=(-PgeckitVersionName="$VERSION" -PgeckitVersionCode="$GITHUB_RUN_NUMBER")
+          out="$RUNNER_TEMP/android"
+          mkdir -p "$out"
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            umask 077
+            printf '%s' "$ANDROID_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/geckit.keystore"
+            trap 'rm -f "$RUNNER_TEMP/geckit.keystore"' EXIT
+            ./gradlew :app:assembleRelease :app:bundleRelease "${version[@]}" \
+              -Pandroid.injected.signing.store.file="$RUNNER_TEMP/geckit.keystore" \
+              -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
+            cp app/build/outputs/apk/release/app-release.apk "$out/GeckIt-$VERSION.apk"
+            cp app/build/outputs/bundle/release/app-release.aab "$out/GeckIt-$VERSION.aab"
+          else
+            ./gradlew :app:assembleDebug "${version[@]}"
+            cp app/build/outputs/apk/debug/app-debug.apk "$out/GeckIt-$VERSION-debug.apk"
+          fi
+          aapt2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort -V | tail -1)
+          badging=$("$aapt2" dump badging "$out"/*.apk | head -1)
+          echo "$badging"
+          grep -q "versionCode='$GITHUB_RUN_NUMBER' versionName='$VERSION'" <<< "$badging"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: geckit-android-${{ env.VERSION }}
+          path: ${{ runner.temp }}/android/
+          if-no-files-found: error
+          retention-days: 90

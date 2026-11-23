@@ -244,11 +244,22 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  android:
+    needs: version
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.version.outputs.version }}
+
   # Published only once every build is in it, which is when the installed copies see it. A prerelease is the Development channel; Promote is what makes one Latest, which is Stable and what the website links at.
   release:
-    needs: [version, publish, ios]
+    needs: [version, publish, ios, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: geckit-android-${{ needs.version.outputs.version }}
+          path: android
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -258,5 +269,5 @@ jobs:
           : "${IOS_ARTIFACT_ID:?Publish did not produce an iOS artifact}"
           jq -n --arg version "$VERSION" --arg build "$GITHUB_RUN_NUMBER" --arg source "$GITHUB_SHA" --arg artifactId "$IOS_ARTIFACT_ID" \
             '{version: $version, build: $build, source: $source, artifactId: $artifactId}' > ios-build.json
-          gh release upload "v$VERSION" ios-build.json --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "v$VERSION" ios-build.json android/* --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
