@@ -584,6 +584,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onScreenshot: never,
       onTask: never,
       listening: nothing,
+      popOut: nothing,
+      away: nothing,
+      onWindows: never,
     },
     lineup: {
       state: () => call('lineup.state'),

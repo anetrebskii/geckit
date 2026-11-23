@@ -43,6 +43,7 @@ import { ago, byDay } from './time'
 import type { Chat } from './useChat'
 import { TaskListStatus, taskListSettled } from './TaskListStatus'
 import { TaskFilters } from './TaskFilters'
+import { popsOut } from './solo'
 
 /**
  * The conversations as cards in columns, by how each stands.
@@ -490,6 +491,7 @@ const BoardView = memo(function BoardView({
                   { value: 'delete', label: `Delete ${String(picked.size)}`, danger: true, icon: 'trash' },
                 ]
               : [
+                  ...(popsOut() ? [{ value: 'window', label: 'Open in new window', icon: 'external' }] : []),
                   { value: 'rename', label: 'Rename', icon: 'pencil' },
                   { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
                   {
@@ -525,6 +527,7 @@ const BoardView = memo(function BoardView({
               if (column.order === 'lineup') chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, ids, value) })
               else chat.change({ columnOrders: { ...chat.settings.columnOrders, [column.id]: movedOrder(column.rows.map((session) => session.id), ids, value) } })
             }
+            if (value === 'window') window.geckit.chat.popOut(menu.id)
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'shortcut') {
               const one = chat.everyone.find((session) => session.id === menu.id)

@@ -3651,6 +3651,19 @@ button.tag.work {
   border-bottom: 1px solid var(--border);
 }
 
+/* A conversation in a window of its own: no board, sidebar or top bar, so its head is the window's bar, as tall as Chat's so the title lines up with the traffic lights and starts past them. See docs/ux/conversation-windows.md. */
+.chat.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chat.solo .talk-head {
+  height: 45px;
+}
+
+html:not(.framed) .chat.solo .talk-head {
+  padding-left: 84px;
+}
+
 /* Everything in the head stays on its one line; the title gives way first, then the project, never a second line. */
 .talk-head > * {
   white-space: nowrap;
