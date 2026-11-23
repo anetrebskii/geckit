@@ -55,3 +55,9 @@ Not applicable: no product UI.
 ## Result
 
 - The GitHub `testflight` environment was created and verified to allow only `main`. It needs signing credentials before the first hosted Publish run. The environment credentials and retention window are documented in `CLAUDE.md`.
+
+## GeckIt-only publishing credentials
+
+- Apple team keys are account-wide. GitHub will use an individual key for an App Manager whose App Store Connect access is limited to GeckIt. Promotion checks the account's visible apps before upload and stops unless GeckIt is the only one.
+- Publish signs offline with the distribution identity and App Store profiles for GeckIt and its notification extension. Both profiles were created on Apple and verified against their exact bundle IDs. Xcode archived and exported a signed 1.303.0 (410) IPA with both profiles and no App Store Connect key. Signature and version checks passed.
+- The existing team key was rejected by Apple's individual-key authentication. App Store Connect has no App Manager restricted to GeckIt. Creating and verifying the individual key is the remaining credential setup step.
