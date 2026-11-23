@@ -5,8 +5,8 @@ import type { Json, JsonObject } from '../shared/elicitation'
 import { jsonObject } from '../shared/elicitation'
 import type { ManagerTelegramReply, TelegramAction, TelegramAccount, TelegramBot, TelegramDecision, TelegramView } from '../shared/telegram'
 import { memberAllowed, targetMessage, topicBody, TEAM_QUEUE_LIMIT, TEAM_AUDIT_LIMIT } from './telegram-team'
-import { endsIn, shareLink, shareMentions } from '../shared/share'
-import type { ShareMention } from '../shared/share'
+import { endsIn } from '../shared/share'
+import { linkLocal } from './channels/share-links'
 import type { Shares } from './shares'
 import { channelDecisionReason } from '../shared/channel-ui'
 import { plainText } from './channel-text'
@@ -371,21 +371,8 @@ export class ManagerTelegram {
   }
 
   /** The words a message uses for a localhost address, a file or a folder become the link to it; what cannot be shared is left as Manager wrote it, in silence. */
-  private async linked(text: string): Promise<string> {
-    const shares = this.options.shares
-    if (shares === undefined) return text
-    const made: { readonly mention: ShareMention; readonly key: string; readonly expiresAt: number }[] = []
-    for (const mention of shareMentions(text)) {
-      const opened = await shares.open(mention.target).catch(() => undefined)
-      if (opened === undefined || 'why' in opened) continue
-      made.push({ mention, key: opened.key, expiresAt: opened.expiresAt })
-    }
-    let out = text
-    for (const { mention, key, expiresAt } of made.reverse()) {
-      const words = text.slice(mention.at, mention.at + mention.length).replace(/^`|`$/g, '')
-      out = `${out.slice(0, mention.at)}[${words}](${shareLink(key, expiresAt)})${out.slice(mention.at + mention.length)}`
-    }
-    return out
+  private linked(text: string): Promise<string> {
+    return linkLocal(text, this.options.shares, (words, url) => `[${words}](${url})`)
   }
 
   private keepShareButton(connection: Connection, callback: Callback): void {

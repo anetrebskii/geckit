@@ -132,6 +132,7 @@ export function MANAGER_WORKFLOWS(claude: boolean): string {
     slackReplySkill: skillSaid('send-slack-reply', claude), slackReplyPath: skillPath('send-slack-reply', claude),
     telegramReplySkill: skillSaid('send-telegram-reply', claude), telegramReplyPath: skillPath('send-telegram-reply', claude),
     discordReplySkill: skillSaid('send-discord-reply', claude), discordReplyPath: skillPath('send-discord-reply', claude),
+    linksSkill: skillSaid('share-result-links', claude), linksPath: skillPath('share-result-links', claude),
   })
 }
 

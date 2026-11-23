@@ -11,7 +11,6 @@ import QRCode from 'qrcode'
 import { ANYWHERE, DEFAULT_SETTINGS, assistantsIn, homeOf, noticeWanted, providerOf, shownProjects } from '../shared/api'
 import type { Anywhere, Answered, ErrorAnswer, PhoneView, Recording, ScreenControl, ScreenSource, SessionImage, SessionNotice, Settings, TranscribeRequest } from '../shared/api'
 import type { BrowserViewFrameReply } from '../shared/renderer-api'
-import type { LocalAsk } from '../shared/local'
 import { SIGNAL } from '../shared/pairing'
 import { invitationLink } from '../shared/remote/protocol'
 import { isRemote, machineName } from '../shared/hosts'
@@ -413,9 +412,9 @@ function keepPhone(on: boolean, key: string): void {
 
 const tabVideoRooms = new Map<string, string | undefined>()
 
-/** The peer window is there while Phone is on or a link is shared. */
+/** The peer window is there while Phone is on or a tab video is shown; shared links are answered by the service. */
 function keepPeer(): void {
-  const needed = phoneOn || (snapshot?.shares.length ?? 0) > 0 || tabVideoRooms.size > 0
+  const needed = phoneOn || tabVideoRooms.size > 0
   if (needed) peerWindow()
   else if (shownPeer() !== undefined) closePeer()
 }
@@ -502,7 +501,7 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
       tell(event.name, event.args[0]); drawTray(); return
     case 'peer:shares':
       if (snapshot !== undefined) snapshot = { ...snapshot, shares: event.args[0] }
-      keepPeer(); shownPeer()?.webContents.send(event.name, event.args[0]); return
+      return
     case 'channels:shown':
       for (const window of everyWindow()) window.webContents.send(event.name, event.args[0])
       shownPeer()?.webContents.send('peer:tell', 'channels:shown', { id: event.args[0].id, value: event.args[0].phone ?? null }); return
@@ -807,17 +806,7 @@ function wire(): void {
     event.sender === shownPeer()?.webContents && phoneOn ? { key: getSettings().phoneKey, signal: SIGNAL } : undefined,
   )
 
-  ipcMain.handle('peer:shares', (event) => (event.sender === shownPeer()?.webContents ? snapshot?.shares ?? [] : []))
   ipcMain.handle('peer:tabVideos', (event) => (event.sender === shownPeer()?.webContents ? [...tabVideoRooms] : []))
-
-  // A link page may ask only about its own link, and only these three things.
-  ipcMain.handle('peer:share', async (event, id: string, name: string, args: readonly NativeValue[]) => {
-    if (event.sender !== shownPeer()?.webContents) throw new Error('Not the phone')
-    if (name === 'share.about') return invoke('share:about', id)
-    if (name === 'share.fetch') return invoke('share:fetch', id, args[0] as LocalAsk)
-    if (name === 'share.read') return invoke('share:read', id, typeof args[0] === 'string' ? args[0] : '')
-    throw new Error(`No such call: ${name}`)
-  })
 
   ipcMain.handle('peer:call', async (event, name: string, args: readonly NativeValue[]) => {
     if (event.sender !== shownPeer()?.webContents) throw new Error('Not the phone')

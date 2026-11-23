@@ -2,8 +2,12 @@ import { transportBinding } from '../../shared/remote/identity'
 import { cleanup, PeerConnection } from 'node-datachannel'
 import type { DataChannel, IceServer } from 'node-datachannel'
 import { remoteChannel } from '../../shared/remote/channel'
+import type { RawChannel } from '../../shared/remote/channel'
 import type { RemoteChannel, RemoteSignal } from '../../shared/remote/protocol'
-import { answer, iceFor, offers, postSignal, presence } from '../../shared/remote/signaling'
+import { iceFor, postSignal, presence } from '../../shared/remote/signaling'
+import { waitAnswer, watchOffers } from '../../shared/remote/listen'
+// How often a listening room says it is there, inside the ice function's five minutes.
+const PRESENCE = 4 * 60_000
 import { randomUUID } from 'node:crypto'
 const ice = async (pairing: RemoteSignal): Promise<IceServer[]> => (await iceFor(pairing)).flatMap((server) => (typeof server.urls === 'string' ? [server.urls] : server.urls).map((url) => {
   const found = /^(stun|turn|turns):([^:/?]+)(?::(\d+))?(?:\?transport=(udp|tcp))?$/.exec(url)
@@ -18,12 +22,13 @@ function said(peer: PeerConnection): void {
   if (pair === null) return
   console.warn(`Remote link made: ${pair.local.type} ${pair.local.transportType} to ${pair.remote.type} ${pair.remote.transportType}`)
 }
-export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChannel) => void, failed: (error: Error) => void): () => void {
+export const nodeListen = (pairing: RemoteSignal, joined: (channel: RemoteChannel) => void, failed: (error: Error) => void): (() => void) => nodeAnswer(pairing, (raw, binding) => joined(remoteChannel(raw, binding)), failed)
+
+/** Answers every fresh offer in the room with a raw data channel, for links that speak something other than the remote protocol. */
+export function nodeAnswer(pairing: RemoteSignal, opened: (raw: RawChannel, binding: Promise<string>) => void, failed: (error: Error) => void): () => void {
   const peers = new Set<PeerConnection>()
   const seen = new Set<string>()
   let stopped = false
-  let busy = false
-  let ticks = 0
   const accept = async (id: string, sdpOffer: string): Promise<void> => {
     if (peers.size >= 16) return
     let binding: Promise<string> = Promise.reject(new Error('ICE description not ready'))
@@ -48,7 +53,7 @@ export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChanne
         const listeners: (() => void)[] = []
         channel.onClosed(() => { drop('the data channel closed'); for (const listener of listeners) listener() })
         channel.setBufferedAmountLowThreshold(250_000)
-        joined(remoteChannel({ send: (text) => { channel.sendMessage(text) }, sendBinary: (bytes) => { channel.sendMessageBinary(Buffer.from(bytes)) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else heard(bytesOf(data)) }), closed: (closed) => listeners.push(closed), close: () => { channel.close(); drop('closed here'); for (const listener of listeners) listener() }, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, binding))
+        opened({ send: (text) => { channel.sendMessage(text) }, sendBinary: (bytes) => { channel.sendMessageBinary(Buffer.from(bytes)) }, hear: (heard) => channel.onMessage((data) => { if (typeof data === 'string') heard(data); else heard(bytesOf(data)) }), closed: (closed) => listeners.push(closed), close: () => { channel.close(); drop('closed here'); for (const listener of listeners) listener() }, buffered: () => channel.bufferedAmount(), drain: (ready) => channel.onBufferedAmountLow(ready) }, binding)
       })
     })
     peer.onGatheringStateChange((state) => {
@@ -60,23 +65,23 @@ export function nodeListen(pairing: RemoteSignal, joined: (channel: RemoteChanne
     })
     peer.setRemoteDescription(sdpOffer, 'offer')
   }
-  const tick = async (): Promise<void> => {
-    if (busy || stopped) return
-    busy = true
-    try {
-      if (ticks++ % 15 === 0) await presence(pairing)
-      for (const one of await offers(pairing)) {
+  // Said every few minutes, so a phone off this network is handed the relay; the ice function trusts it for five.
+  const here = (): void => void presence(pairing).catch((error: unknown) => { if (!stopped) failed(error instanceof Error ? error : new Error(String(error))) })
+  here()
+  const interval = setInterval(here, PRESENCE)
+  interval.unref()
+  let accepting = Promise.resolve()
+  const unwatch = watchOffers(pairing, (found) => {
+    accepting = accepting.then(async () => {
+      for (const one of found) {
         if (stopped || seen.has(one.id)) continue
         seen.add(one.id)
         if (seen.size > 1024) seen.delete(seen.values().next().value ?? '')
         await accept(one.id, one.description.sdp)
       }
-    } catch (error) { if (!stopped) failed(error instanceof Error ? error : new Error(String(error))) }
-    finally { busy = false }
-  }
-  void tick()
-  const interval = setInterval(() => void tick(), 2000)
-  return () => { stopped = true; clearInterval(interval); for (const peer of peers) peer.close(); peers.clear() }
+    }).catch((error: unknown) => { if (!stopped) failed(error instanceof Error ? error : new Error(String(error))) })
+  }, (error) => { if (!stopped) failed(error) })
+  return () => { stopped = true; clearInterval(interval); unwatch(); for (const peer of peers) peer.close(); peers.clear() }
 }
 
 /** This service calling another GeckIt it is paired with, the way a desktop or phone dials it. */
@@ -97,12 +102,8 @@ export async function nodeDial(pairing: RemoteSignal): Promise<RemoteChannel> {
     if (offer === undefined) throw new Error('No connection offer.')
     const id = randomUUID()
     await postSignal(pairing, 'offers', id, { sdp: offer, at: Date.now() })
-    let description = await answer(pairing, id)
-    while (description === undefined) {
-      if (Date.now() > until) throw new Error('The computer did not answer. Is GeckIt running there?')
-      await new Promise((done) => setTimeout(done, 1000))
-      description = await answer(pairing, id)
-    }
+    const description = await waitAnswer(pairing, id, until)
+    if (description === undefined) throw new Error('The computer did not answer. Is GeckIt running there?')
     peer.setRemoteDescription(description.sdp, 'answer')
     await opened
     const listeners: (() => void)[] = []

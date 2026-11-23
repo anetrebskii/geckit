@@ -28,6 +28,8 @@ import { requestedProvider } from '../cli/start'
 import { attachmentFilename, attachmentImage } from './channel-attachments'
 import type { ChannelAttachments } from './channel-attachments'
 import type { NotesStore, Sessions } from './sessions'
+import type { Shares } from './shares'
+import { shareLink } from '../shared/share'
 
 interface OperationDeps {
   readonly target?: (host: string, args: readonly string[], authorized: () => boolean) => Promise<string>
@@ -42,6 +44,8 @@ interface OperationDeps {
   }
   readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam' | 'list'>
   readonly attachments?: ChannelAttachments
+  /** Links that open a local file, folder or localhost site in any browser. */
+  readonly shares?: Pick<Shares, 'open' | 'list' | 'stop'>
   readonly channelFile?: (thread: string) => ChannelFileSender
   /** The largest document a thread's channel takes, in MiB; 10 when it does not say. */
   readonly fileLimit?: (thread: string) => number | undefined
@@ -131,6 +135,9 @@ export const MANAGER_CAPABILITIES = {
     'settings manager',
     'settings manager-edit --instructions <text> --expected-instructions <last-read-text> (no product confirmation; empty text clears; read settings manager afterwards)',
     'attachments send --attachment <retained-attachment-id> --id <managed-local-worker-id> --text <instruction> (explicit permanent project input copy; retained until user/project cleanup)',
+    'links share --id <managed-local-worker-id> --path <worker-root-relative-file-or-folder> (link that opens it in any browser for 12 h: a folder lists its files, a file shows a preview and Download; works in team threads for their own workers)',
+    'links share --project <project> --path <relative-file-or-folder> | links share --url <http://localhost:PORT/...> (not in team threads)',
+    'links list | links stop --id <link-id> (not in team threads)',
     'channels send-file --id <managed-local-worker-id> --path <project-relative-deliverable> [--caption <caption>] [--as document|photo] (explicit selected artifact only; default document; to the channel thread this conversation is in; native receipt IDs; no automatic retry)',
   ],
   teamChanges: 'Local employee creation, editing, renaming, archiving and restoration apply directly in GeckIt Manager chat and paired owner chats. Other authorized channel threads require a bound confirmation. Shared team topics cannot edit the team.',
@@ -183,6 +190,9 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'settings', command: 'edit', flags: ['--patch', '--expected'] },
   { domain: 'attachments', command: 'send', flags: ['--attachment', '--id', '--text'] },
   { domain: 'channels', command: 'send-file', flags: ['--id', '--path', '--caption', '--as'] },
+  { domain: 'links', command: 'share', flags: ['--id', '--project', '--path', '--url'] },
+  { domain: 'links', command: 'list', flags: [] },
+  { domain: 'links', command: 'stop', flags: ['--id'] },
 ]
 
 export function managerReadOnly(args: readonly string[]): boolean {
@@ -191,7 +201,7 @@ export function managerReadOnly(args: readonly string[]): boolean {
   args = selected.args
   if (args.includes('--help') || args[0] === 'help') return true
   const [domain, command] = args
-  return domain === 'shortcuts' && ['destinations', 'runs', 'schema'].includes(command ?? '') || domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || ['computers', 'devices', 'channels', 'hosts', 'shortcuts'].includes(domain ?? '') && ['list', 'known'].includes(command ?? '') || domain === 'access' && command === 'status' || domain === 'manager' && ['view', 'inspect', 'receipt'].includes(command ?? '') || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager') || domain === 'checklists' && (command === 'list' || command === 'show')
+  return domain === 'shortcuts' && ['destinations', 'runs', 'schema'].includes(command ?? '') || domain === 'employees' && ['list', 'show', 'memory', 'current', 'shortcuts'].includes(command ?? '') || domain === 'capabilities' || ['computers', 'devices', 'channels', 'hosts', 'shortcuts'].includes(domain ?? '') && ['list', 'known'].includes(command ?? '') || domain === 'access' && command === 'status' || domain === 'manager' && ['view', 'inspect', 'receipt'].includes(command ?? '') || domain === 'providers' && (command === 'list' || command === 'models') || domain === 'projects' && (command === 'list' || command === 'provider' && !args.includes('--provider') && !args.includes('--clear')) || domain === 'files' && (command === 'list' || command === 'read') || domain === 'sessions' && (command === 'list' || command === 'show') || domain === 'settings' && (command === 'show' || command === 'schema' || command === 'manager') || domain === 'checklists' && (command === 'list' || command === 'show') || domain === 'links' && command === 'list'
 }
 
 const values = (args: readonly string[]): Map<string, string> => {
@@ -330,6 +340,7 @@ export class ManagerOperations {
     const sharedCommand = domain === 'capabilities' || domain === 'attachments' ||
       domain === 'sessions' && THREAD_WORKER_COMMANDS.includes(command ?? '') ||
       domain === 'channels' && command === 'send-file' ||
+      domain === 'links' && command === 'share' && args.includes('--id') && !args.includes('--project') && !args.includes('--url') ||
       (domain === 'projects' || domain === 'employees') && command === 'list' ||
       domain === 'providers' && (command === 'list' || command === 'models')
     if (team && (selected.computer !== undefined || !sharedCommand)) throw new Error('Team topics can coordinate their own workers only. Use GeckIt for history, settings, other channels and global Manager controls.')
@@ -454,6 +465,26 @@ export class ManagerOperations {
         await rm(path, { recursive: false })
         return JSON.stringify({ path, removed: true })
       }
+    }
+    if (domain === 'links') {
+      const shares = this.#deps.shares
+      if (shares === undefined) throw new Error('Links are unavailable on this GeckIt.')
+      if (command === 'list') return JSON.stringify(shares.list())
+      if (command === 'stop') return JSON.stringify(shares.stop(required(flags, '--id')) ?? { stopped: false, reason: 'No live link with that id. Run links list.' })
+      const url = flags.get('--url')
+      const target = url !== undefined
+        ? url
+        : flags.has('--id')
+          ? await (async () => {
+            const worker = await this.#worker(required(flags, '--id'))
+            await this.#currentWorker(worker, this.#deps.managerSession())
+            if (team && this.#deps.notes.all()[worker.id]?.managerThread !== (this.#deps.managerThread?.() ?? 'main')) throw new Error('This worker belongs to another Manager thread.')
+            return managerFile(worker.root, flags.get('--path') ?? '.')
+          })()
+          : await managerFile(this.#project(required(flags, '--project')), flags.get('--path') ?? '.')
+      const opened = await shares.open(target)
+      if ('why' in opened) throw new Error(opened.why)
+      return JSON.stringify({ id: opened.id, link: shareLink(opened.key, opened.expiresAt), title: opened.title, expiresAt: new Date(opened.expiresAt).toISOString(), again: opened.again })
     }
     if (domain === 'attachments' || domain === 'channels' && command === 'send-file') {
       const managerSession = this.#deps.managerSession()

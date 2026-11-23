@@ -8,6 +8,7 @@ import type { ChannelFileSender } from './channel-files'
 import type { ChannelInfo } from '../../shared/channels'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule } from './channel-api'
 import { StatusMessage } from '../manager-status'
+import { linkLocal, namesLocal } from './share-links'
 import { ChannelShortcutError } from './channel-api'
 import { heard as speechOf, say } from '../manager-voice'
 
@@ -19,7 +20,7 @@ export const SLACK_INFO: ChannelInfo = {
   name: 'Slack',
   icon: 'slack',
   description: 'Each Slack thread with the bot is a Manager thread of its own.',
-  capabilities: ['conversations', 'manager', 'delivery', 'files'],
+  capabilities: ['conversations', 'manager', 'delivery', 'files', 'shares'],
   fields: [
     { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'xoxb-, from OAuth and Permissions. Scopes: app_mentions:read, chat:write, im:history, mpim:history, channels:history, groups:history, channels:read, groups:read, users:read, files:read, files:write, reactions:write.' },
     { key: 'appToken', label: 'App token', type: 'secret', required: true, help: 'xapp-, with connections:write, for Socket Mode. Enable Interactivity & Shortcuts in the Slack app for approval buttons.' },
@@ -334,6 +335,8 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     }
     context.files?.bind(thread, upload)
     let busy = false
+    // Answers go in the order they came, though linking the files one names takes a moment.
+    let answers: Promise<unknown> = Promise.resolve()
     const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     const status = new StatusMessage({
       format: (text, bold) => bold === true && !/[*_`~]/.test(text) ? `*${plain(text)}*` : plain(text),
@@ -399,7 +402,7 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         else if (busy) { busy = false; unmark(thread) }
         status.update(event.activity)
       }
-      if (event.kind === 'answer') { unmark(thread); status.after(posted(channel, ts, event.text)) }
+      if (event.kind === 'answer') { unmark(thread); const sent = !namesLocal(event.text, context.shares) ? posted(channel, ts, event.text) : answers.then(() => linkLocal(event.text, context.shares, (words, url) => `<${url}|${words.replace(/[|>]/g, ' ')}>`, context.projects().map((one) => one.root))).then((text) => posted(channel, ts, text)); answers = sent.catch(() => undefined); status.after(sent) }
       if (event.kind === 'decisions') queue.update(event.decisions)
     }))
     queue.refresh()

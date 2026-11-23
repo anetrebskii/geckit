@@ -26,6 +26,9 @@ let directory: string
 let project: string
 let env: NodeJS.ProcessEnv
 let running: ChildProcess | undefined
+// Every service started here, so a failed or interrupted run leaves none behind.
+const started = new Set<ChildProcess>()
+process.once('exit', () => { for (const one of started) one.kill('SIGKILL') })
 let output = ''
 
 async function eventually<T>(read: () => Promise<T>, check: (value: T) => boolean, timeout = 8_000): Promise<T> {
@@ -41,6 +44,9 @@ async function eventually<T>(read: () => Promise<T>, check: (value: T) => boolea
 async function start(): Promise<void> {
   output = ''
   running = spawn(process.execPath, ['--import', join(import.meta.dirname, 'fixtures', 'headless', 'stall-fetch.mjs'), join(folder, 'service', 'service.js'), '--data', directory], { cwd: client, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  const one = running
+  started.add(one)
+  one.once('exit', () => started.delete(one))
   running.stdout?.on('data', (part: Buffer) => { output += part.toString() })
   running.stderr?.on('data', (part: Buffer) => { output += part.toString() })
   await eventually(async () => output, (value) => value.includes('GeckIt service ready.'))
@@ -106,6 +112,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (running?.exitCode === null && running.signalCode === null) { const closed = once(running, 'exit'); running.kill('SIGTERM'); await closed }
+  for (const one of started) one.kill('SIGKILL')
   if (folder !== undefined) await rm(folder, { recursive: true, force: true })
 }, 20_000)
 

@@ -3,6 +3,7 @@ import { remoteComputers } from './remote/computers'
 import type { RemoteComputers } from './remote/computers'
 import { setLiveServer, setTabHandoff } from '../cli/live-view'
 import { tabHandoffs } from './remote/tab-handoff'
+import { shareRooms } from './remote/share-rooms'
 import type { RemoteAccess } from './remote/access'
 import { randomBytes } from 'node:crypto'
 import { rmSync, writeFileSync } from 'node:fs'
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
   let computers: RemoteComputers | undefined
   let stopComputers: (() => void) | undefined
   let stopSecrets: (() => void) | undefined
+  let rooms: ReturnType<typeof shareRooms> | undefined
   let stopping: Promise<void> | undefined
   const handoffs = tabHandoffs(() => remote?.server()?.name ?? hostname(), (event) => {
     if (rpc === undefined || rpc.connections === 0) return false
@@ -72,6 +74,7 @@ async function main(): Promise<void> {
   const stop = (): Promise<void> => stopping ??= (async () => {
     setTabHandoff(undefined)
     handoffs.dispose()
+    rooms?.dispose()
     remote?.dispose()
     stopSecrets?.()
     stopComputers?.()
@@ -136,7 +139,10 @@ async function main(): Promise<void> {
     rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote, computers, scaler, idler), undefined, (method) => {
       if ((method === 'service:shutdownForUpdate' || method === 'service:importConfiguration') && runtime?.sessions.working().length === 0) shutdown()
     })
+    rooms = shareRooms(runtime.shares)
+    rooms.keep(runtime.shares.rooms())
     unsubscribe = runtime.subscribe((event) => {
+      if (event.name === 'peer:shares') rooms?.keep(event.args[0])
       if (event.name === 'core:terminal' && rpc?.connections === 0) {
         const status = event.args[2]
         if (status !== undefined) { try { writeFileSync(status, '1') } catch (error) { console.error(error) } }

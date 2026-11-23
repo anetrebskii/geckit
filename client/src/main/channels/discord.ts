@@ -10,6 +10,7 @@ import type { DiscordInspect, DiscordPerson, DiscordServer, DiscordSetupView } f
 import { DISCORD_INVITE_PERMISSIONS } from '../../shared/discord'
 import type { Channel, ChannelContext, ChannelEvent, ChannelModule, ChannelSetupContext, Json, ManagerQuotedReply, ManagerReplyOrigin } from './channel-api'
 import { StatusMessage } from '../manager-status'
+import { linkLocal, namesLocal } from './share-links'
 import { ChannelShortcutError } from './channel-api'
 import { heard as speechOf, localeSpeech, say } from '../manager-voice'
 import { containsSecret } from '../../shared/channel-safety'
@@ -19,7 +20,7 @@ export const DISCORD_INFO: ChannelInfo = {
   name: 'Discord',
   icon: 'discord',
   description: 'Each Discord thread or direct message with the bot is a Manager thread of its own.',
-  capabilities: ['conversations', 'manager', 'replies', 'delivery', 'files'],
+  capabilities: ['conversations', 'manager', 'replies', 'delivery', 'files', 'shares'],
   fields: [
     { key: 'botToken', label: 'Bot token', type: 'secret', required: true, help: 'From the Discord Developer Portal, Bot, Reset Token. Turn on Message Content Intent there too.' },
     { key: 'allow', label: 'People who may write', type: 'list', required: true, help: 'Discord user IDs. Nobody else is answered.' },
@@ -346,6 +347,8 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
       return { channel: 'channel:discord', destination: channel, messageId: receipt.id, fileId: file.id }
     }
     context.files?.bind(thread, upload)
+    // Answers go in the order they came, though linking the files one names takes a moment.
+    let answers: Promise<unknown> = Promise.resolve()
     const status = new StatusMessage({
       format: (text, bold) => bold === true ? `**${text.replace(/[\\*_`~|[\]]/g, '\\$&')}**` : text,
       post: async (text) => {
@@ -402,7 +405,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         else if (busy) { busy = false; unmark(thread) }
         status.update(event.activity)
       }
-      if (event.kind === 'answer') { unmark(thread); const sent = posted(channel, event.text); void sent.then((id) => remember(id, event.reply, event.text), () => undefined); status.after(sent) }
+      if (event.kind === 'answer') { unmark(thread); const sent = !namesLocal(event.text, context.shares) ? posted(channel, event.text) : answers.then(() => linkLocal(event.text, context.shares, (words, url) => `[${words.replace(/[[\]]/g, '')}](${url})`, context.projects().map((one) => one.root))).then((text) => posted(channel, text)); answers = sent.catch(() => undefined); void sent.then((id) => remember(id, event.reply, event.text), () => undefined); status.after(sent) }
       if (event.kind === 'decisions') queue.update(event.decisions)
     }))
     queue.refresh()
