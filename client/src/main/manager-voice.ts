@@ -15,7 +15,10 @@ const EN = {
   received: 'Got your message, starting in a moment.',
   working: 'Working on it.',
   asks: 'Waiting for your answer above.',
-  idle: 'While I wait, here is what is going on:',
+  progress: 'In progress',
+  namedWorker: (name: string, activity: string): string => activity === EN.worker.finished
+    ? `${name} finished`
+    : `${name} is ${activity === EN.worker.pending ? 'waiting to start' : activity}`,
   stopped: (reason: string) => `I can't go on: ${reason}`,
   done: 'Done.',
   answering: (minutes: number, doing: string) => `⏳ Working on it${minutes > 0 ? ` · ${String(minutes)} min` : ''}\n${doing}`,
@@ -128,7 +131,8 @@ const RU: typeof EN = {
   received: 'Сообщение получено, сейчас начну.',
   working: 'Работаю над этим.',
   asks: 'Жду ответа выше.',
-  idle: 'Пока жду, вот что сейчас идёт:',
+  progress: 'В работе',
+  namedWorker: (name, activity) => `${name}: ${activity}`,
   stopped: (reason) => `Не могу продолжить: ${reason}`,
   done: 'Готово.',
   answering: (minutes, doing) => `⏳ Готовлю ответ${minutes > 0 ? ` · ${String(minutes)} мин` : ''}\n${doing}`,

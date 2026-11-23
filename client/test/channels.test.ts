@@ -530,20 +530,20 @@ it('Slack: the status shows while workers run, leaves while Manager answers and 
   await run.settle()
   const watch = run.watchers.get('channel:slack:C1:3.0')
   const posts = run.posted.length
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: true, workers: [] } })
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: true, workers: [] } })
   await run.settle()
   expect(run.posted).toHaveLength(posts)
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
-  await vi.waitFor(() => expect(run.posted.at(-1)?.text).toMatch(/^While I wait, here is what is going on:\n• Fix &lt;login&gt;: working$/))
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: false, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - working', active: true }] } })
+  await vi.waitFor(() => expect(run.posted.at(-1)?.text).toMatch(/^\*In progress\*\n• \*Fix &lt;login&gt;\* - working$/))
   const status = `9.${String(run.posted.length)}`
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: true, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: true, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - working', active: true }] } })
   await vi.waitFor(() => expect(run.deleted.at(-1)).toEqual({ channel: 'C1', ts: status }))
   watch?.({ kind: 'answer', text: 'Still on it.' })
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
-  await vi.waitFor(() => expect(run.posted.slice(-2).map((one) => one.text.split('\n')[0])).toEqual(['Still on it.', 'While I wait, here is what is going on:']))
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: false, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - working', active: true }] } })
+  await vi.waitFor(() => expect(run.posted.slice(-2).map((one) => one.text.split('\n')[0])).toEqual(['Still on it.', '*In progress*']))
   const again = `9.${String(run.posted.length)}`
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: finished', active: false }] } })
-  await vi.waitFor(() => expect(run.updated.at(-1)).toMatchObject({ ts: again, text: expect.stringMatching(/^Done\.\n• Fix &lt;login&gt;: finished$/) }), { timeout: 5_000 })
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: false, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - finished', active: false }] } })
+  await vi.waitFor(() => expect(run.updated.at(-1)).toMatchObject({ ts: again, text: expect.stringMatching(/^Done\.\n• \*Fix &lt;login&gt;\* - finished$/) }), { timeout: 5_000 })
   await run.channel.stop()
 }, 15_000)
 

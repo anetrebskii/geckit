@@ -336,13 +336,14 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
     let busy = false
     const plain = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
     const status = new StatusMessage({
+      format: (text, bold) => bold === true && !/[*_`~]/.test(text) ? `*${plain(text)}*` : plain(text),
       post: async (text) => {
         if (!current()) throw new Error('Manager conversation changed.')
-        const reply = await post(channel, ts, plain(text))
+        const reply = await post(channel, ts, text)
         if (reply.ts === undefined) throw new Error('Slack chat.postMessage: no ts')
         return reply.ts
       },
-      edit: async (id, text) => { if (!current()) return; await slack('chat.update', { channel, ts: id, text: plain(privateText(channel, text)) }) },
+      edit: async (id, text) => { if (!current()) return; await slack('chat.update', { channel, ts: id, text: privateText(channel, text) }) },
       remove: async (id) => { if (!current()) return; await slack('chat.delete', { channel, ts: id }) },
     }, { failed: (error) => context.log.write('warn', 'slack.status.failed', { reason: said(error) }) })
     const queue = new ApprovalQueue({

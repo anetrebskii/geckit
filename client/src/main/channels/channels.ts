@@ -417,7 +417,7 @@ export class Channels {
   }
 
   #status(view: ManagerView, thread: string): void {
-    const activity = threadActivity(view, thread)
+    const activity = threadActivity(view, thread, Date.now(), this.#deps.employees())
     const status = JSON.stringify(activity ?? null)
     if ((activity !== undefined || this.#v2(thread) && this.#statuses.has(thread)) && status !== this.#statuses.get(thread)) {
       this.#statuses.set(thread, status)

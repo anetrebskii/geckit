@@ -10,7 +10,7 @@ import type { ShareMention } from '../shared/share'
 import type { Shares } from './shares'
 import { channelDecisionReason } from '../shared/channel-ui'
 import { plainText } from './channel-text'
-import { telegramMessages } from './telegram-render'
+import { escape as escapeTelegramHtml, telegramMessages } from './telegram-render'
 import type { TelegramPiece } from './telegram-render'
 import { AttachmentFailure, attachmentFilename, attachmentImage } from '../shared/channel-files'
 import type { ChannelAttachment, FileRoute } from '../shared/channel-files'
@@ -498,13 +498,14 @@ export class ManagerTelegram {
     if (this.status?.connection !== connection || this.status.chatId !== chatId) {
       const signal = connection.controller.signal
       this.status = { connection, chatId, message: new StatusMessage({
+        format: (text, bold) => bold === true ? `<b>${escapeTelegramHtml(text)}</b>` : escapeTelegramHtml(text),
         post: async (text) => {
-          const sent = jsonObject(await connection.client.call('sendMessage', { ...topicBody(connection.kept.account), chat_id: chatId, text, disable_notification: true, link_preview_options: { is_disabled: true } }, signal))
+          const sent = jsonObject(await connection.client.call('sendMessage', { ...topicBody(connection.kept.account), chat_id: chatId, text, parse_mode: 'HTML', disable_notification: true, link_preview_options: { is_disabled: true } }, signal))
           const id = sent?.['message_id']
           if (!safeInteger(id)) throw new Error('Telegram sendMessage: no message_id')
           return String(id)
         },
-        edit: async (id, text) => { await connection.client.call('editMessageText', { ...topicBody(connection.kept.account), chat_id: chatId, message_id: Number(id), text, link_preview_options: { is_disabled: true } }, signal) },
+        edit: async (id, text) => { await connection.client.call('editMessageText', { ...topicBody(connection.kept.account), chat_id: chatId, message_id: Number(id), text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } }, signal) },
         remove: async (id) => { await connection.client.call('deleteMessage', { ...topicBody(connection.kept.account), chat_id: chatId, message_id: Number(id) }, signal) },
       }, { now: this.now }) }
     }

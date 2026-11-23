@@ -347,6 +347,7 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
     }
     context.files?.bind(thread, upload)
     const status = new StatusMessage({
+      format: (text, bold) => bold === true ? `**${text.replace(/[\\*_`~|[\]]/g, '\\$&')}**` : text,
       post: async (text) => {
         if (!current()) throw new Error('Manager conversation changed.')
         const id = await post(channel, statusContent(text))

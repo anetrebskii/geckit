@@ -1188,7 +1188,7 @@ describe('Telegram intake confirmation transport with real persistent intake and
 describe('Telegram status message', () => {
   it('sends the status silently to the paired chat while workers run, not before pairing, and moves it below a reply', async () => {
     const value = fixture()
-    const working = { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix: working', active: true }] }
+    const working = { manager: 'In progress', ending: 'Done.', active: false, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - working', active: true }] }
     value.telegram.progress(working)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(sent(value.api)).toEqual([])
@@ -1197,11 +1197,11 @@ describe('Telegram status message', () => {
     value.telegram.progress(working)
     value.telegram.progress(working)
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
-    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, text: expect.stringMatching(/^While I wait, here is what is going on:\n• Fix: working$/), disable_notification: true })
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, parse_mode: 'HTML', text: '<b>In progress</b>\n• <b>Fix &lt;login&gt;</b> - working', disable_notification: true })
     await value.telegram.notify('Still on it.')
     await vi.waitFor(() => expect(value.api.calls.filter((call) => call.method === 'deleteMessage')).toHaveLength(1))
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 3))
-    expect(sent(value.api).slice(-2).map((one) => String(one.body['text']).split('\n')[0])).toEqual(['Still on it.', 'While I wait, here is what is going on:'])
+    expect(sent(value.api).slice(-2).map((one) => String(one.body['text']).split('\n')[0])).toEqual(['Still on it.', '<b>In progress</b>'])
   })
   it('carries what a tmux worker of the Telegram thread does to the chat while Manager waits, in the language the person wrote in', async () => {
     const value = fixture()
@@ -1212,7 +1212,7 @@ describe('Telegram status message', () => {
     const view = { state: 'idle', config: {}, workers: [worker], activity: [], providers: [], decisions: [], queued: 0, threads: [thread] } as unknown as ManagerView
     value.telegram.progress(threadActivity(view, 'telegram:81'))
     await vi.waitFor(() => expect(sent(value.api).length).toBe(before + 1))
-    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, disable_notification: true, text: expect.stringMatching(/^Пока жду, вот что сейчас идёт:\n• Ответы менеджера: запускает тесты$/) })
+    expect(sent(value.api).at(-1)?.body).toMatchObject({ chat_id: 81, disable_notification: true, parse_mode: 'HTML', text: '<b>В работе</b>\n• <b>Ответы менеджера</b> - запускает тесты' })
     expect(String(sent(value.api).at(-1)?.body['text'])).not.toContain('vitest')
   })
 })
@@ -1265,7 +1265,7 @@ describe('runtime: Telegram status from Manager views', () => {
     await vi.waitFor(() => expect(statuses()).toHaveLength(2), { timeout: 5_000 })
     const first = statuses()[1]
     expect(first?.body).toMatchObject({ chat_id: 81, disable_notification: true })
-    expect(String(first?.body['text'])).toMatch(/^Пока жду, вот что сейчас идёт:\n• Почини тесты логина: запускает тесты$/)
+    expect(String(first?.body['text'])).toBe('<b>В работе</b>\n• <b>Почини тесты логина</b> - запускает тесты')
 
     const calls = progress.mock.calls.length
     for (let at = 0; at < 3; at += 1) telegramProgress(value.telegram, view)
@@ -1280,7 +1280,7 @@ describe('runtime: Telegram status from Manager views', () => {
     telegramProgress(value.telegram, view)
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(statuses()).toHaveLength(3)
-    expect(statuses()[2]).toMatchObject({ method: 'editMessageText', body: { chat_id: 81, text: expect.stringContaining('• Почини тесты логина: читает src/login.ts') } })
+    expect(statuses()[2]).toMatchObject({ method: 'editMessageText', body: { chat_id: 81, parse_mode: 'HTML', text: '<b>В работе</b>\n• <b>Почини тесты логина</b> - читает src/login.ts' } })
     for (const call of statuses()) {
       const text = String(call.body['text'])
       expect(text).not.toContain('Slack only')

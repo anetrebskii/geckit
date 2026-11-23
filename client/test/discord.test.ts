@@ -193,15 +193,15 @@ it('posts and edits worker status with Discord list formatting', async () => {
     run.message('500000000000000001', ALLOWED, `<@${BOT}> check the redirect`)
     await vi.advanceTimersByTimeAsync(0)
     const watch = run.watchers.get('channel:discord:500000000000000001')
-    const activity = { manager: 'Running:', ending: 'Done:', active: false }
-    const workers = [{ id: 'worker', line: '• Redirect: checking\n  - Tests: running', active: true }]
+    const activity = { manager: 'In progress', ending: 'Done.', active: false }
+    const workers = [{ id: 'worker', title: 'Redirect', line: '• Redirect - checking\n  - Tests: running', active: true }]
     watch?.({ kind: 'status', activity: { ...activity, workers } })
     await vi.advanceTimersByTimeAsync(0)
-    expect(run.posts().at(-1)?.body['content']).toBe('Running:\n\n- Redirect: checking\n  - Tests: running')
+    expect(run.posts().at(-1)?.body['content']).toBe('**In progress**\n\n- **Redirect** - checking\n  - Tests: running')
 
-    watch?.({ kind: 'status', activity: { ...activity, workers: [{ id: 'worker', line: '• Redirect: done', active: false }] } })
+    watch?.({ kind: 'status', activity: { ...activity, workers: [{ id: 'worker', title: 'Redirect', line: '• Redirect - done', active: false }] } })
     await vi.advanceTimersByTimeAsync(3_000)
-    expect(run.calls.findLast((call) => call.method === 'PATCH')?.body['content']).toBe('Done:\n\n- Redirect: done')
+    expect(run.calls.findLast((call) => call.method === 'PATCH')?.body['content']).toBe('Done.\n\n- **Redirect** - done')
   } finally {
     vi.useRealTimers()
     await run.channel.stop()

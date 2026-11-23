@@ -15,7 +15,7 @@ interface Block extends TelegramPiece {
 const LIMIT = 3500
 const QUOTE_LINES = 10
 
-const escape = (text: string): string => text.replace(/[&<>]/g, (one) => one === '&' ? '&amp;' : one === '<' ? '&lt;' : '&gt;')
+export const escape = (text: string): string => text.replace(/[&<>]/g, (one) => one === '&' ? '&amp;' : one === '<' ? '&lt;' : '&gt;')
 
 function marks(text: string): string {
   return text
