@@ -6,7 +6,7 @@ A test browser is Camoufox that GeckIt starts and drives itself, with a profile 
 - the work stays away from the person's own tabs and accounts: checking an app on localhost, trying a sign-up as a new user, a design check that must not touch their windows;
 - no ordinary Chrome profiles are available, or no Chrome profile has GeckIt Browser.
 
-Otherwise use the person's own Chrome: it has their accounts. `open <url> --profile geckit` starts or reuses the persistent test browser for the conversation's registered project and returns a tab owned by the conversation. Camoufox can show each tab in a separate window. The person and conversations in the same profile share sign-ins and own separate tabs. In `pages`, `[read-only]` marks other owners' tabs. Use `text`, `read`, `find`, `style` or `wait` to inspect one when the task calls for it. Open your own tab for interaction. Moving the card to Done closes its tabs and popups. The browser shuts down when its last tab closes and keeps sign-ins for next time.
+Otherwise use the person's own Chrome: it has their accounts. `open <url> --profile geckit` starts or reuses the persistent test browser for the conversation's registered project and returns a tab owned by the conversation. Additional opens add tabs to the same Camoufox window. The person and conversations in the same profile share sign-ins and own separate tabs. In `pages`, `[read-only]` marks other owners' tabs. Use `text`, `read`, `find`, `style` or `wait` to inspect one when the task calls for it. Open your own tab for interaction. Moving the card to Done closes its tabs and popups. The browser shuts down when its last tab closes and keeps sign-ins for next time.
 
 In a test browser, `click`, `hover` and `type` move the real cursor and press real keys, and `scroll` turns the real wheel. Always use them; use `eval` only when they block what the person asked for.
 
@@ -19,15 +19,6 @@ The person can also configure separate account profiles in `~/.geckit/browser-st
 
 ## Keep pages in one window
 
-Reuse a task-owned page with `go <tab> <url>` when another page need not stay open. Do not use repeated `open` commands to promise tabs in one Camoufox window.
-
-To request another tab from an existing task page, use the browser CLI's page evaluation without window features:
-
-```sh
-{{said}} browser eval <tab> "(() => { const opened = window.open('https://example.com', '_blank'); return { opened: opened !== null }; })()"
-{{said}} browser pages --profile geckit:<name>
-```
-
-Take the new page id from `pages`. Check that its address matches the requested destination and that this conversation can read it. A non-null return means a page opened; it does not prove that the browser placed it in the same window. Ask the person to confirm the visible tab bar when the CLI cannot expose window placement. If a popup is blocked or another window appears, stop opening more pages and report that result.
+Use `open <url> --profile geckit` for each page that should stay open. Use `go <tab> <url>` to replace a page in a task-owned tab. GeckIt opens a separate window for a `data:` address or when all existing tabs are busy or block opening tabs. A site may also open its own popup window.
 
 The current CLI has no command to merge existing Camoufox windows or move a page between them. Do not claim that a page list proves windows were combined. Preserve pages containing sign-in progress, unsaved input or one-time keys. With authorization to consolidate, recreate only pages whose state can be discarded, verify their replacements, then close the original task-owned pages. Report any window that remains separate.
