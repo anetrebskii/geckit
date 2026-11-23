@@ -9,6 +9,7 @@ import { nextSet } from '../../../shared/schedule'
 import { saveShortcut } from '../../../shared/shortcut-save'
 import { useShortcutRuns } from './ShortcutDestinations'
 import { Icon } from '../ui/Icon'
+import { Picker } from '../ui/Menu'
 import { projectLabel } from './project'
 import { FIRST_CRON, NEW_LABEL, PromptEditor } from './PromptEditor'
 import type { ShortcutChat } from './PromptEditor'
@@ -39,6 +40,16 @@ const VIEWS: readonly { readonly value: ScheduledView; readonly label: string; r
 
 const busy = (chat: ShortcutChat, session: string | undefined): boolean =>
   session !== undefined && chat.everyone.some((one) => one.id === session && (one.state === 'working' || one.state === 'asks'))
+
+/** Who runs an item, as the employee filter names it. */
+const whoKey = (one: Shortcut): string => one.target === 'manager' ? 'manager' : one.employeeId ?? 'none'
+const whoRank = (key: string): number => key === 'manager' ? 1 : key === 'none' ? 2 : 0
+
+function countBy(list: readonly Shortcut[], key: (one: Shortcut) => string): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>()
+  for (const one of list) counts.set(key(one), (counts.get(key(one)) ?? 0) + 1)
+  return counts
+}
 
 /** The prompts of one kind, in the order the page lists them. */
 export function promptsOf(prompts: readonly Shortcut[], kind: PromptKind, now: number): readonly Shortcut[] {
@@ -101,6 +112,8 @@ export function ShortcutList({
   useEffect(() => { if (editing === undefined && returnTo.current !== undefined) rowButtons.current.get(returnTo.current)?.focus() }, [editing])
   const lastRuns = useShortcutRuns(chat.settings)
   const [search, setSearch] = useState('')
+  const [folderPick, setFolderPick] = useState('')
+  const [whoPick, setWhoPick] = useState('')
   const [runError, setRunError] = useState('')
   const [runningId, setRunningId] = useState<string>()
   const [deleted, setDeleted] = useState<Shortcut>()
@@ -126,17 +139,27 @@ export function ShortcutList({
 
   useEffect(() => {
     const key = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !place) onClose()
+      // The editor answers Escape itself: back to the list, or a question when there are changes.
+      if (event.key === 'Escape' && !place && !event.defaultPrevented && editing === undefined) onClose()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [onClose, place])
+  }, [onClose, place, editing])
 
   const settings = chat.settings
   const ordered = useMemo(() => promptsOf(settings.shortcuts.filter((one) => shownProjects(settings).includes(one.root)), kind, now), [settings, kind, now])
   const all = ordered.filter((one) => one.id !== deleted?.id)
+  const folderCounts = countBy(all, (one) => one.root)
+  const whoCounts = countBy(all, whoKey)
+  // A choice whose last item went away falls back to All.
+  const folderFilter = folderCounts.has(folderPick) ? folderPick : ''
+  const whoFilter = whoCounts.has(whoPick) ? whoPick : ''
+  const filtering = folderFilter !== '' || whoFilter !== ''
+  const filtered = filtering ? all.filter((one) => (folderFilter === '' || one.root === folderFilter) && (whoFilter === '' || whoKey(one) === whoFilter)) : all
   const query = search.trim().toLowerCase()
-  const found = query === '' ? all : all.filter((one) => assigneeSearch(chat, one).includes(query))
+  const found = query === '' ? filtered : filtered.filter((one) => assigneeSearch(chat, one).includes(query))
+  const whoName = (key: string): string => key === 'manager' ? 'Manager' : key === 'none' ? 'No employee' : chat.employees.find((one) => one.id === key)?.name ?? 'Employee unavailable'
+  const clearFilters = (): void => { setFolderPick(''); setWhoPick('') }
   const ran = kind === 'scheduled' ? shortcuts.filter((one) => one.at !== undefined && one.outcome?.state === 'ran' && one.id !== deleted?.id) : []
   const view: ScheduledView = chat.settings.scheduledView
   const canAdd = kind !== 'scheduled' || chat.settings.promptKindsVersion === 1
@@ -182,7 +205,7 @@ export function ShortcutList({
           rowRef={(node) => { if (node === null) rowButtons.current.delete(one.id); else rowButtons.current.set(one.id, node) }}
           onEdit={() => edit(one)}
           onRun={() => run(one)}
-          onOpen={() => { if (one.lastSession !== undefined) chat.goTo(one.lastSession); onClose() }}
+          onOpen={(session) => { chat.goTo(session); onClose() }}
           onDuplicate={() => setEditing(duplicateDraft(one, Date.now(), zone))}
           onDelete={() => remove(one)}
           onPostpone={(at) => { void window.geckit.shortcuts.postpone(one.id, at).catch(() => setRunError('Pick a time from now on.')) }}
@@ -201,7 +224,7 @@ export function ShortcutList({
     <>
       <ScheduledCalendar
         chat={chat}
-        prompts={all}
+        prompts={filtered}
         view={view === 'month' ? 'month' : 'week'}
         now={now}
         onEdit={edit}
@@ -215,7 +238,7 @@ export function ShortcutList({
   ) : all.length === 0 && undoRow === null ? (
     <div className="shortcut-empty"><Icon name={GLYPH[kind]} size={18} /><strong>{emptyTitle}</strong><span>{emptyLine}</span>{canAdd ? <button type="button" className="primary" onClick={() => setEditing(blank())}>{NEW_LABEL[kind]}</button> : null}</div>
   ) : found.length === 0 && undoRow === null ? (
-    <div className="shortcut-empty"><span>Nothing matches.</span></div>
+    filtering && query === '' ? <div className="shortcut-empty"><span>Nothing matches these filters.</span><button type="button" className="quiet" onClick={clearFilters}>Clear filters</button></div> : <div className="shortcut-empty"><span>Nothing matches.</span></div>
   ) : rows
 
   return (
@@ -230,11 +253,27 @@ export function ShortcutList({
                 </div>
               </div> : null}
               {all.length === 0 ? null : <label className="employee-find shortcut-find"><Icon name="search" size={13} /><input type="search" aria-label={`Search ${TITLE[kind].toLowerCase()}`} placeholder="Search" value={search} onChange={(event) => setSearch(event.target.value)} />{search === '' ? null : <button type="button" className="find-clear" aria-label="Clear search" onClick={() => setSearch('')}><Icon name="close" size={8} /></button>}</label>}
+              {folderCounts.size < 2 ? null : <Picker
+                className={`picker shortcut-filter${folderFilter === '' ? '' : ' on'}`}
+                label={<><Icon name="folder" size={12} /><span>{folderFilter === '' ? 'All folders' : projectLabel(folderFilter)}</span></>}
+                tip="Show the items of one folder"
+                chosen={folderFilter}
+                choices={[{ value: '', label: 'All folders', says: String(all.length) }, ...[...folderCounts].sort(([a], [b]) => projectLabel(a).localeCompare(projectLabel(b))).map(([root, count], index) => ({ value: root, label: projectLabel(root), says: String(count), ...(index === 0 ? { divided: true } : {}) }))]}
+                onPick={setFolderPick}
+              />}
+              {whoCounts.size < 2 ? null : <Picker
+                className={`picker shortcut-filter${whoFilter === '' ? '' : ' on'}`}
+                label={<><Icon name="team" size={12} /><span>{whoFilter === '' ? 'All employees' : whoName(whoFilter)}</span></>}
+                tip="Show the items one employee runs"
+                chosen={whoFilter}
+                choices={[{ value: '', label: 'All employees', says: String(all.length) }, ...[...whoCounts].sort(([a], [b]) => whoRank(a) - whoRank(b) || whoName(a).localeCompare(whoName(b))).map(([key, count], index) => ({ value: key, label: whoName(key), says: String(count), ...(index === 0 ? { divided: true } : {}) }))]}
+                onPick={setWhoPick}
+              />}
               <span className="spacer" />
               {canAdd ? <button type="button" className="primary shortcut-new" onClick={() => setEditing(blank())}><Icon name="plus" size={12} />{NEW_LABEL[kind]}</button> : null}
             </header>
             {calendar ? null : <div className="prompt-page-title">
-              <h2>{TITLE[kind]}{all.length === 0 ? null : <span className="employee-count">{all.length}</span>}</h2>
+              <h2>{TITLE[kind]}{all.length === 0 ? null : <span className="employee-count">{filtering ? found.length : all.length}</span>}</h2>
               <p className="shortcut-list-about">{ABOUT[kind]}</p>
             </div>}
             {body}

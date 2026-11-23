@@ -13,7 +13,7 @@ export const PREFERENCE_SECTIONS = {
 
 export const LOCAL_SETTINGS = ['audioDevices', 'client', 'transcriptions', 'favorites', 'phoneKey', 'progressOrder', 'columnOrders', 'providerUpdatesReady', 'providerRemovalPending'] as const satisfies readonly (keyof Settings)[]
 
-type ShortcutHistory = Pick<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession'>
+type ShortcutHistory = Pick<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession' | 'runSessions'>
 export type ConfiguredShortcut = Omit<Shortcut, Exclude<keyof ShortcutHistory, 'id'>>
 export type LocalSettings = Partial<Pick<Settings, typeof LOCAL_SETTINGS[number]>> & { readonly shortcutHistory?: readonly ShortcutHistory[] }
 type PreferenceSections = { readonly [Section in keyof typeof PREFERENCE_SECTIONS]?: Partial<Pick<Settings, typeof PREFERENCE_SECTIONS[Section][number]>> }

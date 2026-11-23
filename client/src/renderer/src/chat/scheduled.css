@@ -696,3 +696,44 @@
 .shortcut-actions .icon-button.shortcut-run:disabled {
   opacity: 0.4;
 }
+
+/* Asked over the editor, so above the Shortcuts dialog when the editor is in one. */
+.prompt-leave {
+  z-index: 100;
+}
+
+.prompt-leave .dialog {
+  inline-size: min(400px, 92vw);
+}
+
+.prompt-leave p {
+  margin: 4px 0 16px;
+  color: var(--text-dim);
+}
+
+/* Folder and employee filters beside Search: quiet until one is chosen, then tinted like a set filter. */
+.shortcut-filter {
+  flex-shrink: 0;
+  max-inline-size: 180px;
+  font-size: 12px;
+}
+
+.shortcut-list-head .shortcut-new {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.shortcut-list-head .shortcut-find {
+  flex-shrink: 1;
+  min-inline-size: 110px;
+}
+
+.shortcut-filter > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shortcut-filter.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}

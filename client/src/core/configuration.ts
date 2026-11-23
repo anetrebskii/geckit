@@ -39,14 +39,14 @@ function sections(settings: Partial<Settings>): Configuration {
     ...Object.fromEntries(Object.entries(PREFERENCE_SECTIONS).map(([section, keys]) => [section, pick(settings, keys)])),
     conversation: { ...pick(settings, PREFERENCE_SECTIONS.conversation), ...board },
     ...(settings.hosts === undefined ? {} : { hosts: settings.hosts }),
-    ...(settings.shortcuts === undefined ? {} : { shortcuts: settings.shortcuts.map(({ since: _since, lastRun: _lastRun, lastSession: _lastSession, ...shortcut }) => shortcut) }),
+    ...(settings.shortcuts === undefined ? {} : { shortcuts: settings.shortcuts.map(({ since: _since, lastRun: _lastRun, lastSession: _lastSession, runSessions: _runSessions, ...shortcut }) => shortcut) }),
     ...(settings.phrases === undefined ? {} : { phrases: settings.phrases }),
     ...(settings.checklists === undefined ? {} : { checklists: settings.checklists }),
   }
 }
 
 function localSettings(settings: Partial<Settings>): LocalSettings {
-  return { ...pick(settings, LOCAL_SETTINGS), ...(settings.shortcuts === undefined ? {} : { shortcutHistory: settings.shortcuts.map(({ id, since, lastRun, lastSession }) => ({ id, since, ...(lastRun === undefined ? {} : { lastRun }), ...(lastSession === undefined ? {} : { lastSession }) })) }) }
+  return { ...pick(settings, LOCAL_SETTINGS), ...(settings.shortcuts === undefined ? {} : { shortcutHistory: settings.shortcuts.map(({ id, since, lastRun, lastSession, runSessions }) => ({ id, since, ...(lastRun === undefined ? {} : { lastRun }), ...(lastSession === undefined ? {} : { lastSession }), ...(runSessions === undefined ? {} : { runSessions }) })) }) }
 }
 
 function validateEmployees(employees: readonly Partial<Employee>[]): void {

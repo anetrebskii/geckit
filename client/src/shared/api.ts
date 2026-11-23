@@ -1333,6 +1333,8 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly lastRun?: number
   /** The conversation the last run started. */
   readonly lastSession?: string
+  /** The conversations its runs started, newest first, at most 50: what Runs lists. */
+  readonly runSessions?: readonly { readonly session: string; readonly at: number }[]
 }
 
 export type ShortcutOutcome =

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { assistantsIn, modelName } from '../../../shared/api'
-import type { Shortcut } from '../../../shared/api'
+import type { ChatSession, Shortcut } from '../../../shared/api'
 import { llmProviderInfo } from '../../../shared/providers'
 import { isRemote } from '../../../shared/hosts'
 import { nextSet } from '../../../shared/schedule'
@@ -38,13 +38,33 @@ export function WhoMark({ chat, prompt, size = 28 }: { readonly chat: Pick<Short
   )
 }
 
+const RUN_STATE: Record<ChatSession['state'], string> = { working: 'Running', asks: 'Needs you', unread: 'Done, unread', idle: 'Done', limit: 'Hit the plan limit', failed: 'Failed' }
+
+/** The conversations its runs started, newest first: the ones recorded, the last one, and before runs were recorded, those named after it in its folder. */
+export function runsOf(chat: Pick<ShortcutChat, 'everyone'>, prompt: Shortcut): readonly { readonly session: ChatSession; readonly at: number }[] {
+  const byId = new Map(chat.everyone.map((one) => [one.id, one]))
+  const seen = new Set<string>()
+  const found: { readonly session: ChatSession; readonly at: number }[] = []
+  const add = (id: string, at: number): void => {
+    const session = byId.get(id)
+    if (session === undefined || seen.has(id)) return
+    seen.add(id)
+    found.push({ session, at })
+  }
+  for (const run of prompt.runSessions ?? []) add(run.session, run.at)
+  if (prompt.lastSession !== undefined) add(prompt.lastSession, prompt.lastRun ?? byId.get(prompt.lastSession)?.at ?? 0)
+  if (prompt.target !== 'manager') for (const one of chat.everyone) if (one.title === prompt.name && one.root === prompt.root && one.employeeId === prompt.employeeId) add(one.id, one.at)
+  return found.sort((a, b) => b.at - a.at)
+}
+
 /** The model, when it is not Default. */
 export const modelShown = (prompt: Shortcut): string | undefined => prompt.target === 'manager' || prompt.model === undefined || prompt.model === '' ? undefined : modelName(prompt.model)
 
 export const assigneeSearch = (chat: Pick<ShortcutChat, 'employees' | 'settings'>, prompt: Shortcut): string => `${prompt.name} ${prompt.prompt} ${projectLabel(prompt.root)} ${assigneeOf(chat, prompt).name}`.toLowerCase()
 
-export function moreChoices(kind: PromptKind, once: boolean): readonly Choice[] {
+export function moreChoices(kind: PromptKind, once: boolean, runs = 0): readonly Choice[] {
   return [
+    ...(runs > 0 ? [{ value: 'runs', label: 'Runs...', says: String(runs) }] : []),
     ...(kind === 'shortcut' && once ? [{ value: 'later', label: 'Run later...' }] : []),
     { value: 'duplicate', label: 'Duplicate', says: `${MOD}+D` },
     { value: 'delete', label: 'Delete', danger: true, divided: true },
@@ -124,12 +144,13 @@ export function PromptRow({
   readonly onDelete: () => void
   readonly onRunLater: (at: number) => void
   readonly onPostpone: (at: number) => void
-  readonly onOpen: () => void
+  readonly onOpen: (session: string) => void
   readonly rowRef: (node: HTMLButtonElement | null) => void
 }): React.JSX.Element {
   const kind = kindOf(prompt)
   const zone = chat.settings.calendarTimeZone
-  const [menu, setMenu] = useState<{ readonly kind: 'more' | 'postpone' | 'later'; readonly anchor: DOMRect }>()
+  const [menu, setMenu] = useState<{ readonly kind: 'more' | 'postpone' | 'later' | 'runs'; readonly anchor: DOMRect }>()
+  const runs = kind === 'scheduled' ? [] : prompt.target === 'manager' ? runsOf(chat, prompt).slice(0, 1) : runsOf(chat, prompt)
   const provider = prompt.provider ?? 'claude'
   const info = llmProviderInfo(provider, 'stream', chat.settings.providerPlugins)
   const available = prompt.target === 'manager' || assistantsIn(chat.settings).includes(provider) && (info.localOnly !== true || !isRemote(prompt.root))
@@ -143,11 +164,12 @@ export function PromptRow({
   const ended = prompt.recurrence !== undefined && next === undefined
   const delivery = run === undefined ? '' : deliveryMessage(run)
   const deliveryProblem = run !== undefined && (run.delivery === 'failed' || run.delivery === 'uncertain' || run.state === 'failed')
-  const open = (which: 'more' | 'postpone', anchor: DOMRect): void => setMenu({ kind: which, anchor })
+  const open = (which: 'more' | 'postpone' | 'runs', anchor: DOMRect): void => setMenu({ kind: which, anchor })
   const pick = (value: string): void => {
     if (value === 'duplicate') onDuplicate()
     else if (value === 'delete') onDelete()
     else if (value === 'later' && menu !== undefined) setMenu({ kind: 'later', anchor: menu.anchor })
+    else if (value === 'runs' && menu !== undefined) setMenu({ kind: 'runs', anchor: menu.anchor })
   }
   return (
     <>
@@ -193,9 +215,13 @@ export function PromptRow({
           {delivery === '' ? null : <span className={`shortcut-status${deliveryProblem ? ' problem' : ''}`}>{delivery}</span>}
         </button>
         <span className="shortcut-actions">
-          {kind === 'scheduled' || prompt.lastSession === undefined ? null : (
-            <button type="button" className="icon-button" aria-label="Open the last run" title={prompt.target === 'manager' ? 'Open Manager' : 'Open the conversation the last run started'} onClick={onOpen}>
+          {runs.length === 0 ? null : prompt.target === 'manager' ? (
+            <button type="button" className="icon-button" aria-label="Open Manager" title="Open Manager" onClick={() => onOpen(runs[0]!.session.id)}>
               <Icon name="right" size={13} />
+            </button>
+          ) : (
+            <button type="button" className="icon-button shortcut-runs-button" aria-label={`Runs of ${prompt.name}`} title={`Runs (${String(runs.length)})`} aria-haspopup="menu" aria-expanded={menu?.kind === 'runs'} onClick={(event) => open('runs', event.currentTarget.getBoundingClientRect())}>
+              <Icon name="list" size={13} />
             </button>
           )}
           <button type="button" className="icon-button" aria-label={`More for ${prompt.name}`} title="More" aria-haspopup="menu" aria-expanded={menu?.kind === 'more' || menu?.kind === 'later'} onClick={(event) => open('more', event.currentTarget.getBoundingClientRect())}>
@@ -222,7 +248,15 @@ export function PromptRow({
         </span>
       </div>
       {note}
-      {menu?.kind === 'more' ? <Menu anchor={menu.anchor} autoFocus choices={moreChoices(kind, chat.settings.promptKindsVersion === 1)} onPick={pick} onClose={() => setMenu((was) => was?.kind === 'more' ? undefined : was)} /> : null}
+      {menu?.kind === 'runs' ? <Menu
+        anchor={menu.anchor}
+        autoFocus
+        title={runs.length === 1 ? '1 run' : `${String(runs.length)} runs`}
+        choices={runs.map((one) => ({ value: one.session.id, label: scheduledLead(one.at, now, zone), says: RUN_STATE[one.session.state] }))}
+        onPick={onOpen}
+        onClose={() => setMenu((was) => was?.kind === 'runs' ? undefined : was)}
+      /> : null}
+      {menu?.kind === 'more' ? <Menu anchor={menu.anchor} autoFocus choices={moreChoices(kind, chat.settings.promptKindsVersion === 1, prompt.target === 'manager' ? 0 : runs.length)} onPick={pick} onClose={() => setMenu((was) => was?.kind === 'more' ? undefined : was)} /> : null}
       {menu?.kind === 'later' ? <WhenMenu anchor={menu.anchor} title="Run later" zone={zone} action="Schedule" now={now} onPick={onRunLater} onClose={() => setMenu(undefined)} /> : null}
       {menu?.kind === 'postpone' ? <WhenMenu anchor={menu.anchor} zone={zone} action="Postpone" now={now} onPick={onPostpone} onClose={() => setMenu(undefined)} /> : null}
     </>

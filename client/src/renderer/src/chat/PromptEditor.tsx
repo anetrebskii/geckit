@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { assistantsIn, modelName, shownProjects } from '../../../shared/api'
 import { isCodexProvider, llmProviderInfo, providerModel, selectableProviders } from '../../../shared/providers'
@@ -158,6 +159,10 @@ export function PromptEditor({
   const unchangedOnce = given.id !== undefined && once === given.at
   const wrongOnce = kind === 'scheduled' && !unchangedOnce ? onceError(once, now) : undefined
   const change = (change: Partial<ShortcutDraft>): void => { setFailedDraft(undefined); setDraft({ ...draft, ...change }) }
+  const [start] = useState(draft)
+  const [startOnce] = useState(`${onceDate} ${onceTime}`)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(start) || (kind === 'scheduled' && `${onceDate} ${onceTime}` !== startOnce)
+  const [leaving, setLeaving] = useState(false)
   const closeCustom = (): void => { setCustom(false); (customOpener.current?.isConnected === true ? customOpener.current : repeatTrigger.current?.querySelector('button'))?.focus() }
 
   const models = [
@@ -185,6 +190,32 @@ export function PromptEditor({
     setFailedDraft(undefined)
     void saveShortcut(window.geckit.shortcuts, chat.settings, { ...draft, mode: 'auto', ...(manager ? {} : { provider }), ...(manager || !isCodexProvider(provider) ? {} : { reasoning }), ...(kind === 'scheduled' ? { at: once, on: true } : {}), name, prompt: draft.prompt.trim() }).then(onDone).catch(() => setFailedDraft(draft)).finally(() => setSaving(false))
   }
+
+  const leave = (): void => {
+    if (saving) return
+    if (dirty) setLeaving(true)
+    else onDone()
+  }
+  const leaveNow = useRef(leave)
+  const covered = useRef(false)
+  useEffect(() => { leaveNow.current = leave; covered.current = custom || leaving })
+  useEffect(() => {
+    const open = (): boolean => covered.current || document.querySelector('[role="menu"]') !== null
+    const key = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented || open()) return
+      event.preventDefault()
+      leaveNow.current()
+    }
+    // The mouse's Back button arrives as button 3.
+    const back = (event: MouseEvent): void => {
+      if (event.button !== 3 || open()) return
+      event.preventDefault()
+      leaveNow.current()
+    }
+    window.addEventListener('keydown', key)
+    window.addEventListener('mouseup', back)
+    return () => { window.removeEventListener('keydown', key); window.removeEventListener('mouseup', back) }
+  }, [])
 
   const pickRepeats = (picked: Repeats): void => {
     if (picked === 'custom') { setCustom(true); return }
@@ -231,7 +262,7 @@ export function PromptEditor({
       }}
     >
       <header className="shortcut-editor-head">
-        <button type="button" className="shortcut-crumb" title={`Back to ${PAGE_NAME[kind]}`} onClick={onDone}>{PAGE_NAME[kind]}</button>
+        <button type="button" className="shortcut-crumb" title={`Back to ${PAGE_NAME[kind]}`} onClick={leave}>{PAGE_NAME[kind]}</button>
         <span className="shortcut-crumb-sep" aria-hidden="true">/</span>
         <h2 className="shortcut-heading">{given.id === undefined ? NEW_LABEL[kind] : given.name.trim() || KIND_NAME[kind]}</h2>
       </header>
@@ -430,6 +461,55 @@ export function PromptEditor({
         setRepeats('custom')
         closeCustom()
       }} /> : null}
+      {leaving ? <SaveChanges
+        name={name === '' ? `this new ${NEW_NOUN[kind]}` : `"${name}"`}
+        canSave={ready}
+        onSave={() => { setLeaving(false); save() }}
+        onDiscard={() => { setLeaving(false); onDone() }}
+        onKeep={() => setLeaving(false)}
+      /> : null}
     </div>
+  )
+}
+
+const NEW_NOUN: Record<PromptKind, string> = { repeating: 'repeating job', scheduled: 'scheduled prompt', shortcut: 'shortcut' }
+
+/** Asked when the editor is left by Escape, Back or the page button with changes not saved. */
+function SaveChanges({ name, canSave, onSave, onDiscard, onKeep }: { readonly name: string; readonly canSave: boolean; readonly onSave: () => void; readonly onDiscard: () => void; readonly onKeep: () => void }): React.JSX.Element {
+  const dialog = useRef<HTMLDivElement>(null)
+  const kept = useRef(onKeep)
+  useEffect(() => { kept.current = onKeep }, [onKeep])
+  useEffect(() => {
+    const opener = document.activeElement
+    const buttons = (): HTMLButtonElement[] => [...(dialog.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+    buttons().at(-1)?.focus()
+    const key = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); kept.current(); return }
+      if (event.key !== 'Tab') return
+      const all = buttons()
+      const at = all.findIndex((one) => one === document.activeElement)
+      event.preventDefault()
+      all[(at + (event.shiftKey ? -1 : 1) + all.length) % all.length]?.focus()
+    }
+    window.addEventListener('keydown', key, true)
+    return () => { window.removeEventListener('keydown', key, true); if (opener instanceof HTMLElement && opener.isConnected) opener.focus() }
+  }, [])
+  const title = `Save changes to ${name}?`
+  return createPortal(
+    <div className="dialog-scrim prompt-leave" onMouseDown={onKeep}>
+      <div ref={dialog} className="dialog" role="alertdialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+        <h2>{title}</h2>
+        <p>Your changes will be lost if you don't save them.</p>
+        <div className="dialog-actions">
+          <button type="button" className="quiet" onClick={onDiscard}>Don't Save</button>
+          <span className="spacer" />
+          <span className="together">
+            <button type="button" className="quiet" onClick={onKeep}>Cancel</button>
+            <button type="button" className="primary" disabled={!canSave} onClick={onSave}>Save</button>
+          </span>
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
