@@ -176,7 +176,7 @@ export interface ManagerDeps {
   readonly restoreRecord?: (record: Json) => Json
   readonly threadAllowed?: (thread: string) => boolean
   readonly syncInstructions?: (instructions: ManagerConfig['instructions']) => Promise<void>
-  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam'>
+  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam' | 'list'>
   readonly directory: string
   readonly intake?: Pick<ManagerIntakeDeps, 'adapters' | 'classify' | 'pairing' | 'now'>
   readonly attachments?: ChannelAttachments

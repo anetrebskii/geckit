@@ -40,7 +40,7 @@ interface OperationDeps {
     readonly read: () => ManagerConfig['instructions']
     readonly write: (instructions: ManagerConfig['instructions'], expected: ManagerConfig['instructions']) => Promise<ManagerInstructionsResult>
   }
-  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam'>
+  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam' | 'list'>
   readonly attachments?: ChannelAttachments
   readonly channelFile?: (thread: string) => ChannelFileSender
   /** The largest document a thread's channel takes, in MiB; 10 when it does not say. */
@@ -141,6 +141,8 @@ export const MANAGER_CAPABILITIES = {
     { aspects: 'arbitrary shell, native permission approval, deep code execution and direct provider API calls', reason: 'Outside Manager coordination. Delegate deep execution to workers; normal provider tools and permission checks remain available.' },
   ],
 } as const
+
+const THREAD_WORKER_COMMANDS = ['list', 'show', 'start', 'assign', 'send', 'retry', 'steer', 'stop', 'mark', 'answer']
 
 interface CommandShape {
   readonly domain: string
@@ -324,17 +326,27 @@ export class ManagerOperations {
     if (typeof selected === 'string') throw new Error(selected)
     if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
     const team = this.#deps.sharedThread?.(this.#deps.managerThread?.() ?? 'main') === true
-    if (team && (selected.computer !== undefined || !(['capabilities', 'sessions', 'attachments'].includes(selected.args[0] ?? '') || selected.args[0] === 'channels' && selected.args[1] === 'send-file' || selected.args[0] === 'projects' && selected.args[1] === 'list' || selected.args[0] === 'providers' && ['list', 'models'].includes(selected.args[1] ?? '')) || selected.args[0] === 'sessions' && (!['list', 'show', 'start', 'send', 'retry', 'steer', 'stop', 'mark', 'answer'].includes(selected.args[1] ?? '') || selected.args.includes('--employee')))) throw new Error('Team topics can coordinate their own workers only. Use GeckIt for history, settings, other channels and global Manager controls.')
+    const [domain, command] = selected.args
+    const sharedCommand = domain === 'capabilities' || domain === 'attachments' ||
+      domain === 'sessions' && THREAD_WORKER_COMMANDS.includes(command ?? '') ||
+      domain === 'channels' && command === 'send-file' ||
+      (domain === 'projects' || domain === 'employees') && command === 'list' ||
+      domain === 'providers' && (command === 'list' || command === 'models')
+    if (team && (selected.computer !== undefined || !sharedCommand)) throw new Error('Team topics can coordinate their own workers only. Use GeckIt for history, settings, other channels and global Manager controls.')
     if (selected.computer !== undefined) {
       if (this.#deps.target === undefined) throw new Error('Host targeting is unavailable on this GeckIt. No command ran locally.')
       if (!managerReadOnly(selected.args) && !this.#deps.computers?.().some((one) => one.id === selected.computer)) throw new Error('Remote changes require the immutable computer ID from computers list. Read the target capabilities and request confirmation with that ID.')
       return this.#deps.target(selected.computer, selected.args, () => this.#deps.authorized?.() !== false)
     }
     args = selected.args
-    const [domain, command] = args
     if (this.#deps.authorized?.() === false) throw new Error('The originating Manager session is no longer authorized.')
     if (domain === 'employees' && command !== 'rename') {
       if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.')
+      if (team) {
+        if (args.length !== 2 && !(args.length === 3 && args[2] === '--json')) throw new Error('Use employees list to see active employees.')
+        const employees = this.#deps.employees.list().employees.filter((one) => !one.archived).map(({ id, name, role }) => ({ id, name, role }))
+        return JSON.stringify({ employees })
+      }
       if (MANAGER_TEAM_EDITS.includes(command ?? '')) {
         const session = this.#deps.managerSession()
         return this.#deps.employees.editTeam(args.slice(1), () => session !== undefined && session === this.#deps.managerSession() && this.#deps.authorized?.() !== false)
@@ -344,7 +356,7 @@ export class ManagerOperations {
     if (domain === 'computers' && command === 'list' && args.length === 2) return JSON.stringify(this.#deps.computers?.() ?? [])
     if (domain === 'capabilities') {
       if (args.length !== 1) throw new Error('capabilities takes no arguments.')
-      if (team) return JSON.stringify({ interface: MANAGER_CAPABILITIES.interface, commands: MANAGER_CAPABILITIES.commands.filter((one) => one.startsWith('sessions ') && !/^sessions (attach|assign|follow|unfollow|delete)/.test(one) || one.startsWith('attachments ') || one.startsWith('channels ')), limitations: 'Team-owned workers and attachments only. Global controls, history, settings, employee memory and other channels require the installation owner in GeckIt.' })
+      if (team) return JSON.stringify({ interface: MANAGER_CAPABILITIES.interface, commands: MANAGER_CAPABILITIES.commands.filter((one) => one.startsWith('sessions ') && THREAD_WORKER_COMMANDS.includes(one.split(' ')[1] ?? '') || one === 'employees list' || one === 'projects list' || one === 'providers list' || one.startsWith('providers models ') || one.startsWith('attachments ') || one.startsWith('channels ')), limitations: 'Assign active employees to workers owned by this thread. The employee roster contains IDs, names and roles only. Global controls, history, settings, employee memory and other channels require the installation owner in GeckIt.' })
       return JSON.stringify({ schedulerTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, ...MANAGER_CAPABILITIES, configurationCommands: PRODUCT_COMMANDS.filter((one) => !one.startsWith('sessions ') && !one.startsWith('employees ')), configuration: this.#deps.product === undefined ? undefined : JSON.parse(await this.#deps.product(['capabilities'])) as Json, target: 'local', computers: this.#deps.computers?.() ?? [] })
     }
     if (!(domain === 'channels' && command === 'send-file') && (['hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'speech', 'browser-config'].includes(domain ?? '') || domain === 'computers') && this.#deps.product !== undefined) return this.#deps.product(args)
@@ -527,8 +539,6 @@ export class ManagerOperations {
         return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0, ...(one.checklist === undefined ? {} : { checklist: checklistSummary(one.checklist, false) }) })))
       }
       if (command === 'start') {
-        const bindingsAvailable = (): boolean => !team || Object.values(this.#deps.notes.all()).filter((note) => note.managerRequestSource !== undefined).length < 2048
-        if (!bindingsAvailable()) throw new Error('Team worker links are full (2048). Remove finished team conversations in GeckIt before starting more workers.')
         const root = this.#project(required(flags, '--project'))
         const explicit = flags.get('--provider')
         const provider = explicit === undefined ? undefined : requestedProvider(explicit)
@@ -554,7 +564,7 @@ export class ManagerOperations {
         const manager = this.#deps.managerSession()
         const request = this.#deps.managerRequest?.()
         const ownership = team ? { managerThread: this.#deps.managerThread?.() ?? 'main', ...(request === undefined ? {} : { managerRequestSource: request }), labels: this.#deps.threadLabels?.() ?? {} } : undefined
-        const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, manager, () => manager === this.#deps.managerSession() && this.#deps.authorized?.() !== false && bindingsAvailable(), ownership)
+        const id = await this.#deps.sessions.startManaged(message, this.#deps.owner, operation, manager, () => manager === this.#deps.managerSession() && this.#deps.authorized?.() !== false, ownership)
         this.#own(id)
         if (flags.has('--title')) this.#deps.sessions.rename(id, required(flags, '--title'))
         const worker = await this.#worker(id)

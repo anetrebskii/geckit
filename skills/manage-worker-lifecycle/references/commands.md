@@ -8,14 +8,17 @@ Use the authenticated Manager host protocol, not a shell. Emit a `geckit` fence 
 
 Check `capabilities` first. Commands below are Manager arguments; ordinary conversation CLI commands have different flags and authority.
 
+An employee can run several tasks in parallel. Each task has its own GeckIt chat and card. At most one Manager thread tracks each task.
+
 | Need | Arguments |
 | --- | --- |
 | Find candidates | `sessions list` or `sessions list --managed` |
 | Read candidate | `sessions show --id <full-id> --last 30` |
-| Inspect employees | `employees list`, then `employees show <employee-id>` |
+| Inspect employees | `employees list`, then `employees show <employee-id>` if advertised |
 | Inspect projects/providers | `projects list`, `providers list`, `providers models --provider <provider-id>` |
 | Find checklists | `checklists list --project <project>` |
 | Assign new work | `sessions start --project <project> --text <assignment> --goal <condition> --employee <active-id>` |
+| Change a worker's employee | `sessions assign --id <managed-worker-id> --employee <active-id\|none>` |
 | Assign with a checklist | `sessions start --project <project> --text <assignment> --checklist <id-or-name>` or `--items <JSON array>` in place of `--goal` |
 | Change a running task's checklist | `sessions checklist --id <full-id> --items <JSON array>` |
 | Continue same outcome | `sessions send --id <full-id> --text <next-step>` |
@@ -31,6 +34,6 @@ Manager's list has no `--status`, `--since` or text-search flag. Select candidat
 
 Read current `state`, `status`, `delivery`, `tasks`, `queued`, `canInject` and `observedAt` when returned. Their timestamps describe observation, not guaranteed causal completion. Accepted, queued and steered are different delivery stages; none proves the requested outcome.
 
-An existing worker must belong to the current Manager thread for mutations. Attach/follow only when authorized. Another thread's tracker requires an explicit coordination handoff. Team topics can restrict capabilities to their own workers; a skill does not expand that authority.
+In shared and scheduled result threads, use `employees list` to match an active employee by name and role. Pass the returned ID when starting or reassigning a worker. An existing worker must belong to the current Manager thread for mutations. Reassignment saves the employee on the worker without sending a new turn. Attach or follow only when capabilities advertises the command and the person asks for it. A worker tracked by another thread requires a handoff.
 
 For a remote target, use its stable `--host` ID, check that target's capabilities first and keep it on subsequent operations. Never fall back to local state after a remote failure. Keep native provider permissions and channel approval rules.

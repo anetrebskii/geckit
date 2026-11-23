@@ -1517,7 +1517,7 @@ describe('Manager task lifecycle', () => {
 })
 
 describe('Manager session', () => {
-  it('delivers built-in task separation policy on initial, continuation, follow-up and restored turns without saved preferences', async () => {
+  it('delivers the task and employee selection rules on initial, continuation, follow-up and restored turns without saved preferences', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true, instructions: '' })
     const id = await f.manager.send('Coordinate the first task', 'channel')
@@ -1541,8 +1541,10 @@ describe('Manager session', () => {
     expect(f.sent[4]?.text).toContain('Coordinate after reload')
     expect(restored.instructions()).toBe('')
     expect(f.sent[0]?.input).toMatch(/read sessions show.*latest user request and recent responses.*only for the same task/)
-    expect(f.sent[0]?.input).toMatch(/matching project, employee, topic or keywords alone is insufficient.*independent task or an unclear relationship, start a new session/)
-    expect(f.sent[0]?.input).toMatch(/same employee keeps their identity and source memory across separate task sessions/)
+    expect(f.sent[0]?.input).toMatch(/Decide how many task cards the request needs.*Keep steps with one shared outcome on one card.*Create separate cards when outcomes need separate delivery or tracking/)
+    expect(f.sent[0]?.input).toMatch(/choose a suitable active employee for each task yourself, even if several fit/)
+    expect(f.sent[0]?.input).toMatch(/matching project, employee, topic or keywords alone is insufficient/i)
+    expect(f.sent[0]?.input).toMatch(/same employee keeps their identity and source memory across task sessions/)
     expect(f.sent[0]?.input).toMatch(/Honor the user's explicit direction to continue a specific session/)
     expect(f.sent[0]?.input).not.toContain('Use ordinary Send for separate later work.')
     expect(f.sent[0]?.input).toContain('A runtime ending, Goal reached badge, ticked checklist or worker claim alone is not proof.')
@@ -3080,18 +3082,36 @@ describe('Manager built-in channel attachments', () => {
 describe('team topic tools enforce ownership', () => {
   it('filters worker lists and refuses personal history, mutations, global controls and installation preferences', async () => {
     const f = await fixture()
+    const employees = new Employees({ directory: f.directory, sync: async () => undefined, assignment: () => undefined, sources: async () => [], items: async () => [] })
+    await employees.save({ name: 'Scotty', role: 'SEO', description: 'Private instructions', avatar: 'employee-01' })
+    await employees.save({ name: 'Retired', role: 'SEO', description: '', avatar: 'employee-02' })
+    const [employee, retired] = employees.list().employees
+    if (employee === undefined || retired === undefined) throw new Error('Missing employee fixture')
+    await employees.archive(retired.id, retired.revision)
     await f.manager.configure({ enabled: true })
     const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:example-generation', shared: true })
     const managerSession = await f.manager.open(thread)
     const own = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Team work' }, 'manager', 'team-worker')
     const foreign = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Personal work' }, 'manager', 'private-worker')
     f.notes.set(own, { ...f.notes.all()[own], managerThread: thread })
-    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => ({ ...f.settings(), ...change }), owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => managerSession, managerThread: () => thread, sharedThread: (one) => one === thread, authorized: () => true })
+    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => ({ ...f.settings(), ...change }), owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => managerSession, managerThread: () => thread, sharedThread: (one) => one === thread, authorized: () => true, employees })
     const listed = await ops.run(['sessions', 'list'], 'list-team')
     expect(listed).toContain(own)
     expect(listed).not.toContain(foreign)
     for (const command of ['show', 'stop', 'send', 'retry', 'delete', 'attach', 'follow', 'mark']) await expect(ops.run(['sessions', command, '--id', foreign], `foreign-${command}`)).rejects.toThrow()
-    for (const args of [['manager', 'pause'], ['sessions', 'history'], ['sessions', 'assign'], ['settings', 'show'], ['settings', 'manager-edit'], ['employees', 'memory', 'someone'], ['channels', 'list'], ['files', 'read', '--project', f.root, '--path', 'private.txt']]) await expect(ops.run(args, `denied-${args[0]}`)).rejects.toThrow('Team topics')
+    for (const args of [['manager', 'pause'], ['sessions', 'history'], ['settings', 'show'], ['settings', 'manager-edit'], ['employees', 'memory', employee.id], ['employees', 'show', employee.id], ['channels', 'list'], ['files', 'read', '--project', f.root, '--path', 'private.txt']]) await expect(ops.run(args, `denied-${args[0]}`)).rejects.toThrow('Team topics')
+    const capabilities = await ops.run(['capabilities'], 'team-capabilities')
+    expect(capabilities).toContain('employees list')
+    expect(capabilities).toContain('sessions assign')
+    expect(capabilities).toContain('sessions start')
+    expect(JSON.parse(await ops.run(['employees', 'list'], 'team-employees'))).toEqual({ employees: [{ id: employee.id, name: 'Scotty', role: 'SEO' }] })
+    await expect(ops.run(['sessions', 'assign', '--id', foreign, '--employee', employee.id], 'assign-foreign')).rejects.toThrow('another Manager thread')
+    await expect(ops.run(['sessions', 'assign', '--id', own, '--employee', retired.id], 'assign-archived')).rejects.toThrow('archived')
+    const turns = f.sent.length
+    expect(JSON.parse(await ops.run(['sessions', 'assign', '--id', own, '--employee', employee.id], 'assign-own'))).toEqual({ id: own, employeeId: employee.id })
+    expect(f.notes.all()[own]).toMatchObject({ managerThread: thread, employeeId: employee.id })
+    expect(f.sessions.employeeAssignment(foreign)).toBeUndefined()
+    expect(f.sent).toHaveLength(turns)
     await expect(ops.run(['sessions', 'stop', '--id', own], 'stop-team')).resolves.toContain('stopRequested')
     await expect(ops.run(['employees', 'create', '--name', 'Employee'], 'denied-team-edit')).rejects.toThrow('Team topics')
     await expect(ops.run(['employees', 'shortcut', 'add', 'none', '--cron', '0 9 * * *'], 'denied-team-schedule')).rejects.toThrow('Team topics')
@@ -3264,6 +3284,40 @@ it('team regression: replaced backing session does not block later replies', asy
 })
 
 describe('scheduled run Manager contexts', () => {
+  it('starts two parallel tasks for one employee from one Slack request past the old task cap', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'geckit-digest-employees-'))
+    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    const employees = new Employees({ directory, sync: async () => undefined, assignment: () => undefined, sources: async () => [], items: async () => [] })
+    const [employee] = (await employees.save({ name: 'Scotty', role: 'SEO', description: '', avatar: 'employee-01' })).employees
+    if (employee === undefined) throw new Error('Missing employee fixture')
+    const f = await fixture(0, { validateEmployee: (id) => { employees.active(id) } }, undefined, undefined, employees)
+    for (let index = 0; index < 2048; index += 1) {
+      const id = `past-task-${index}`
+      f.notes.set(id, { managerRequestSource: { id, bot: 1, chatId: -10081, topicId: 42, generation: 'example', actor: 82, messageId: index + 1 } })
+    }
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'channel:slack', key: 'shortcut-run:seo', place: 'SEO digest' }, true)
+    const manager = await f.manager.runShortcut({ id: 'seo', name: 'SEO digest', root: f.root, prompt: 'Report SEO runs' }, 'shortcut:seo:digest', thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === manager && one.text.includes('Report SEO runs'))).toBe(true))
+    f.finish(manager, 'SEO digest ready')
+    await vi.waitFor(() => expect(f.manager.shortcutSettled(thread)).toBe(true))
+    f.manager.bindShortcutThread(thread, { channel: 'channel:slack', key: 'seo:123', place: 'SEO digest' })
+    await f.manager.send('Ask Scotty to correct the partner price and update the backlog in separate PRs', 'channel', 'seo-follow-up', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === manager && one.text.includes('Ask Scotty'))).toBe(true))
+    const price = f.command('start-scotty-price', ['sessions', 'start', '--project', f.root, '--text', 'Correct the partner price', '--goal', 'Open a PR', '--employee', employee.id])
+    const backlog = f.command('start-scotty-backlog', ['sessions', 'start', '--project', f.root, '--text', 'Update the backlog', '--goal', 'Open a PR', '--employee', employee.id])
+    f.finish(manager, `${price}\n\n${backlog}`)
+    await vi.waitFor(async () => {
+      const view = await f.manager.view()
+      const workers = view.workers.filter((one) => one.employeeId === employee.id)
+      expect(workers).toHaveLength(2)
+      expect(workers.map((one) => one.state)).toEqual(['working', 'working'])
+      expect(view.threads?.find((one) => one.id === thread)?.owns).toEqual(expect.arrayContaining(workers.map((one) => one.id)))
+      expect(view.threads?.find((one) => one.id === 'main')?.owns).toEqual([])
+      expect(f.sent.filter((one) => workers.some((worker) => worker.id === one.id)).map((one) => one.text)).toEqual(expect.arrayContaining(['Correct the partner price', 'Update the backlog']))
+    })
+  })
+
   it('waits beyond a Manager acknowledgement for its owned worker, then binds the same context for continuation', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })
