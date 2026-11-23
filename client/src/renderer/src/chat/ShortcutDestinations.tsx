@@ -8,7 +8,9 @@ import { Cell } from './PhoneKit'
 type DestinationSettings = Pick<Settings, 'shortcutDestinationsVersion'>
 type DestinationEditor = ReturnType<typeof useShortcutDestination>
 
-export const destinationSummary = (destination: ShortcutDestination): string => `${destination.channel.replace(/^channel:/, '')} · ${destination.label ?? destination.destination}`
+const channelName = (channel: string): string => { const name = channel.replace(/^channel:/, ''); return name.charAt(0).toUpperCase() + name.slice(1) }
+export const destinationSummary = (destination: ShortcutDestination): string => `${channelName(destination.channel)} · ${(destination.label ?? destination.destination).replace(/\s*\(\d{6,}\)$/, '')}`
+export const destinationFull = (destination: ShortcutDestination): string => `${channelName(destination.channel)} · ${destination.label ?? destination.destination}`
 
 export function useShortcutDestination(settings: DestinationSettings, destination: Shortcut['destination'], change: (destination: Shortcut['destination']) => void) {
   const supported = settings.shortcutDestinationsVersion === 1
@@ -79,8 +81,10 @@ export function useShortcutRuns(settings: Pick<Settings, 'shortcuts' | 'shortcut
   }, [runs])
 }
 
+export const deliveryMessage = (run: ShortcutRun): string => run.delivery === 'uncertain' ? 'Result delivery is uncertain. Check the destination before retrying.' : run.delivery === 'failed' ? `Result delivery failed: ${run.error ?? 'Destination unavailable'}` : run.state === 'failed' ? `Run failed: ${run.error ?? 'Source unavailable'}` : run.delivery === 'sending' ? 'Sending result...' : run.delivery === 'waiting' ? run.error ?? 'Result waiting for the run to finish.' : ''
+
 export function ShortcutDelivery({ run }: { readonly run: ShortcutRun | undefined }): React.JSX.Element | null {
   if (run === undefined) return null
-  const message = run.delivery === 'uncertain' ? 'Result delivery is uncertain. Check the destination before retrying.' : run.delivery === 'failed' ? `Result delivery failed: ${run.error ?? 'Destination unavailable'}` : run.state === 'failed' ? `Run failed: ${run.error ?? 'Source unavailable'}` : run.delivery === 'sending' ? 'Sending result...' : run.delivery === 'waiting' ? run.error ?? 'Result waiting for the run to finish.' : ''
+  const message = deliveryMessage(run)
   return <span className="shortcut-delivery">{message === '' ? null : <span>{message}</span>}{run.receipt?.link === undefined ? null : <a href={run.receipt.link} target="_blank" rel="noreferrer">Open result thread</a>}</span>
 }

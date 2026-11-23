@@ -66,6 +66,26 @@ export function timetableSaid(draft: Pick<ShortcutDraft, 'cron' | 'recurrence' |
   return draft.vary === true ? said.replace(' at ', ' around ') : said
 }
 
+const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** "Daily", "Weekdays", "Tue, Thu": the pattern alone, for a row that shows the next time beside it. */
+export function timetableShort(draft: Pick<ShortcutDraft, 'cron' | 'recurrence'>): string {
+  const rule = draft.recurrence
+  if (rule !== undefined) {
+    const every = `Every ${String(rule.interval)} ${rule.unit}s`
+    if (rule.unit === 'week') {
+      const days = [1, 2, 3, 4, 5, 6, 0].filter((day) => rule.weekdays.includes(day))
+      const named = days.length === 7 ? 'Daily' : days.length === 5 && !days.includes(0) && !days.includes(6) ? 'Weekdays' : days.length === 2 && days.includes(0) && days.includes(6) ? 'Weekends' : days.map((day) => SHORT_DAYS[day]).join(', ')
+      return rule.interval === 1 ? named : `${every}, ${named}`
+    }
+    if (rule.interval !== 1) return every
+    return rule.unit === 'day' ? 'Daily' : rule.unit === 'month' ? 'Monthly' : 'Yearly'
+  }
+  if (draft.cron === undefined) return ''
+  const when = whenOf(draft.cron)
+  return when.kind === 'hour' ? 'Hourly' : when.kind === 'day' ? 'Daily' : when.kind === 'weekdays' ? 'Weekdays' : when.kind === 'week' ? `${WEEKDAYS[when.weekday] ?? ''}s` : 'Custom timetable'
+}
+
 /** One editor for the three kinds: the kind is fixed when the prompt is made, and only the timing differs. */
 export function PromptEditor({
   chat,
