@@ -27,6 +27,6 @@ A prompt has one kind, fixed when it is saved: Repeating (`--every` or `--cron`)
 
 `--vary on|off` lets a Repeating or Scheduled run start at a stable random minute up to 30 minutes either side of its set time (a quarter of the gap for hourly and shorter timetables). This is not an exact-time promise. The older `--start-window-minutes` is read as `--vary on`, or `off` for `none`.
 
-Dispatch is checked about every 20 seconds while GeckIt runs. A previous busy worker skips a timed occurrence without accumulating overlapping workers. Manager dispatch avoids overlapping pending submissions. One overdue occurrence can run after downtime; missed occurrences are not all replayed. Re-enabling a shortcut or changing its timetable resets its scheduling baseline. An archived employee's timed shortcuts are skipped.
+Dispatch is checked about every 20 seconds while GeckIt runs. A repeating shortcut skips a timed occurrence while its own previous run is busy. An employee can run independent tasks in parallel. Manager dispatch avoids overlapping pending submissions. At most one overdue occurrence can run after downtime. Re-enabling a shortcut or changing its timetable resets its scheduling baseline. An archived employee's timed shortcuts are skipped.
 
 A manual Run performs the work and does not replace configuration readback. Its receipt proves dispatch only; check worker completion or Manager handling separately. External messages and paid operations keep their ordinary authorization requirements.

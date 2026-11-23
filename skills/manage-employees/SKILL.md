@@ -1,6 +1,6 @@
 ---
 name: manage-employees
-description: Create and configure GeckIt employees, including roles, instructions, portraits and assignments. Read assigned-role context and conversation memory; change team settings, shortcuts or Manager preferences through supported CLI operations. Starting and tracking work belongs to manage-conversations.
+description: Create and configure GeckIt employees, including roles, instructions and portraits. Read assigned-role context and conversation memory or change team settings, shortcuts and Manager preferences. Manager task creation and assignment use manage-worker-lifecycle.
 ---
 
 # Manage GeckIt employees
@@ -13,7 +13,9 @@ Resolve the current role from live GeckIt data and carry out requested team or p
 
 Use the person's request and `{{said}} employees current`. Read [employee, memory and settings commands](references/commands.md) before lookup or modification. Use `GECKIT_SOURCE_CLI` when set, so the request reaches this copy of GeckIt.
 
-Resolve employee IDs through `employees list` and `employees show <employee-id>`. Ask when several employees fit. Report an inaccessible CLI or source history as unavailable; never infer a role from a cached catalog.
+For employee lookup or configuration, resolve IDs through `employees list` and `employees show <employee-id>` when available. Ask if the employee the person wants to inspect or change cannot be identified. Report an inaccessible CLI or source history as unavailable. Use the live catalog for role information.
+
+When Manager decides which task cards to create or whom to assign, load `{{lifecycleSkill}}` from {{lifecyclePath}}. Manager can use employee roles and past work to choose an assignee when the person leaves the choice open.
 
 For employee creation or configuration, read [employee setup](references/setup.md) before drafting the role or changing the team. Extend an existing matching employee when the request changes that role.
 

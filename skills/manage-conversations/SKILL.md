@@ -1,6 +1,6 @@
 ---
 name: manage-conversations
-description: Inspect GeckIt conversations and history, request separate conversations for independent work, and track linked results. Use for board status, prior conversation decisions, delegating work through GeckIt, or checking tasks requested from this conversation. Personal day plans and reminders use their own tools.
+description: Inspect GeckIt conversation history, request separate conversations from an ordinary task, and track linked results. Use for board status, earlier decisions or tasks requested from this conversation. Manager uses manage-worker-lifecycle for task creation and assignment. Personal day plans and reminders use their own tools.
 ---
 
 # Manage GeckIt conversations
@@ -8,6 +8,8 @@ description: Inspect GeckIt conversations and history, request separate conversa
 ## Purpose
 
 Find evidence in GeckIt history or request independent work as its own conversation. Do not move the current task or a step you are about to perform into another conversation.
+
+For authenticated Manager task creation and assignment, load `{{lifecycleSkill}}` from {{lifecyclePath}}. The request and approval workflow below applies to ordinary conversations.
 
 ## Inputs
 

@@ -12,12 +12,7 @@ Check `capabilities` first. Commands below are Manager arguments; ordinary conve
 | --- | --- |
 | Find candidates | `sessions list` or `sessions list --managed` |
 | Read candidate | `sessions show --id <full-id> --last 30` |
-| Inspect employees | `employees list`, then `employees show <employee-id>` |
-| Inspect projects/providers | `projects list`, `providers list`, `providers models --provider <provider-id>` |
-| Find checklists | `checklists list --project <project>` |
-| Assign new work | `sessions start --project <project> --text <assignment> --goal <condition> --employee <active-id>` |
-| Assign with a checklist | `sessions start --project <project> --text <assignment> --checklist <id-or-name>` or `--items <JSON array>` in place of `--goal` |
-| Change a running task's checklist | `sessions checklist --id <full-id> --items <JSON array>` |
+| Inspect employees | `employees list`, then `employees show <employee-id>` if advertised |
 | Continue same outcome | `sessions send --id <full-id> --text <next-step>` |
 | Correct active work | `sessions steer --id <full-id> --text <correction>` |
 | Retry held operation | `sessions retry --id <full-id>` |
@@ -25,7 +20,7 @@ Check `capabilities` first. Commands below are Manager arguments; ordinary conve
 | Record blocked work | `sessions mark --id <full-id> --status blocked` |
 | Cancel but keep history | `sessions mark --id <full-id> --status archived` |
 
-Omit `--employee` for unassigned work. Add an enabled `--provider` and available `--model` only when chosen under the provider rules. Supply a self-contained prompt even when assigning an employee; the employee recovers their own prior context.
+If the review identifies a need for a new card or a different assignee, load `{{lifecycleSkill}}` from {{lifecyclePath}} for the decision and commands.
 
 Manager's list has no `--status`, `--since` or text-search flag. Select candidate rows from the returned status and context; inspect likely completed tasks rather than assuming a title proves continuity. Show is bounded to the latest 1-30 items. Recover missing original requirements before judging Done.
 
