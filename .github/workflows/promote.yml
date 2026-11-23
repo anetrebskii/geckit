@@ -19,12 +19,15 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.promote.outputs.tag }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
       VERSION: ${{ inputs.version }}
     steps:
       - name: Promote to Stable
+        id: promote
         run: |
           if [ -z "$VERSION" ]; then
             tag=$(gh release list --repo "$REPO" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
@@ -52,3 +55,50 @@ jobs:
           gh release upload "$tag" --repo "$REPO" --clobber "$dir"/*
           gh release edit "$tag" --repo "$REPO" --draft=false --prerelease=false --latest
           echo "$tag is Stable: https://github.com/$REPO/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  testflight:
+    needs: promote
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    environment: testflight
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Retrieve the signed IPA for the promoted version
+        id: ipa
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.promote.outputs.tag }}
+        run: |
+          if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern ios-build.json --dir "$RUNNER_TEMP"; then
+            echo "::error::$TAG has no iOS package recorded. TestFlight needs a release built by the updated Publish workflow."
+            exit 1
+          fi
+          manifest="$RUNNER_TEMP/ios-build.json"
+          version=${TAG#v}
+          artifact=$(jq -er --arg version "$version" 'select(.version == $version) | .artifactId | select(test("^[0-9]+$"))' "$manifest")
+          build=$(jq -er '.build | select(test("^[0-9]+$"))' "$manifest")
+          if ! gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$RUNNER_TEMP/geckit-ios.zip"; then
+            echo "::error::$TAG iOS artifact $artifact is unavailable. Check its GitHub Actions retention."
+            exit 1
+          fi
+          unzip -p "$RUNNER_TEMP/geckit-ios.zip" GeckIt.ipa > "$RUNNER_TEMP/GeckIt.ipa"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - name: Deliver the retained IPA to TestFlight Public
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          VERSION: ${{ steps.ipa.outputs.version }}
+          BUILD: ${{ steps.ipa.outputs.build }}
+        run: node mobile/scripts/testflight.mjs deliver "$RUNNER_TEMP/GeckIt.ipa" "$VERSION" "$BUILD"
