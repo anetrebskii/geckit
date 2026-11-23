@@ -126,7 +126,9 @@ Both off until asked, as in Notula. On the first start a card asks whether GeckI
 
 ## CI/CD
 
-`.github/workflows/publish.yml` builds and publishes macOS, Windows and Linux on push to `main` when `client/` changes, as a prerelease: that is the Development channel. `.github/workflows/promote.yml`, run by hand, marks one release Latest, which is the Stable channel, and adds copies of its installers named without the version, which the README's `releases/latest/download/<name>` buttons fetch. The channel a copy follows is `updateChannel` in Settings, Version; `main/updates.ts` reads Development with `allowPrerelease`.
+`.github/workflows/publish.yml` builds macOS, Windows, Linux and iOS on eligible pushes to `main`. It publishes desktop installers as a prerelease for the Development channel and retains the signed iOS IPA as a 90-day Actions artifact. The release's `ios-build.json` identifies the artifact and records the version, build number and source commit. `.github/workflows/promote.yml`, run by hand from `main`, marks one release Latest for the Stable channel and adds the versionless installers linked from the README. A separate promotion job uploads that release's IPA to TestFlight Public without rebuilding it. Apple distributes it after beta approval with automatic notification enabled. A release without an available IPA can still be promoted on desktop and reports an error in the TestFlight job. The desktop channel is `updateChannel` in Settings, Version, and `main/updates.ts` reads Development with `allowPrerelease`.
+
+Configure the GitHub Actions `testflight` environment for `main`. Set `ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_PRIVATE_KEY` (the contents of the team API key's `.p8` file) for provisioning, upload and TestFlight management. Set `IOS_SIGNING_P12` to a base64-encoded password-protected PKCS#12 containing the iOS development and distribution signing identities and `IOS_SIGNING_P12_PASSWORD` to its password. The app and notification extension use Xcode-managed provisioning. Rerun the TestFlight job to resume if Apple's upload processing outlasts the job.
 
 ## Notes
 

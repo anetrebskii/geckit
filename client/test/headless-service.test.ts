@@ -260,17 +260,17 @@ it('executes authenticated Manager settings, team and cron commands through its 
 it('runs Manager Done/archive/resume through real CLI, preserves transcript across restart and terminates the canceled worker process', async () => {
   await cli('manager', 'configure', JSON.stringify({ enabled: true, provider: 'plugin:fixture', delegation: 'automatic' }))
   let sequence = 0
-  const execute = async (args: readonly string[]): Promise<string> => {
+  const execute = async (args: readonly string[], expectedState: ManagerView['activity'][number]['state'] = 'done'): Promise<string> => {
     const id = `lifecycle-${String(++sequence)}`
     await cli('manager', 'send', `fixture-command:${JSON.stringify({ id, args })}`)
     const view = await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.activity.some((one) => one.id === id && one.state !== 'running'))
     const result = view.activity.find((one) => one.id === id)
-    expect(result).toMatchObject({ state: 'done' })
+    expect(result, result?.result).toMatchObject({ state: expectedState })
     await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.state === 'idle')
     return result?.result ?? ''
   }
-  const started: Pick<ChatSession, 'id'> = JSON.parse(await execute(['sessions', 'start', '--project', project, '--text', 'lifecycle-original', '--goal', 'Original result is present'])) as Pick<ChatSession, 'id'>
-  const worker = started.id
+  const worker = await send('lifecycle-original')
+  await execute(['sessions', 'attach', '--id', worker])
   const row = async (): Promise<ChatSession | undefined> => (await read<ChatSession[]>('sessions', 'list')).find((one) => one.id === worker)
   await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-original'))
   expect((await row())?.status).not.toBe('done')
@@ -281,7 +281,7 @@ it('runs Manager Done/archive/resume through real CLI, preserves transcript acro
   expect((await row())?.status).toBeUndefined()
   await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-correction'))
   await execute(['sessions', 'send', '--id', worker, '--text', 'hang'])
-  const workerPid = Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))
+  const workerPid = Number(await readFile(join(directory, `fixture-child-${encodeURIComponent(worker)}.pid`), 'utf8'))
   expect(() => process.kill(workerPid, 0)).not.toThrow()
   await execute(['sessions', 'send', '--id', worker, '--text', 'must-not-run-after-cancellation'])
   expect((await row())?.queued).toHaveLength(1)
@@ -302,6 +302,7 @@ it('runs Manager Done/archive/resume through real CLI, preserves transcript acro
   const independent: Pick<ChatSession, 'id'> = JSON.parse(await execute(['sessions', 'start', '--project', project, '--text', 'independent-lifecycle-task', '--goal', 'Separate result'])) as Pick<ChatSession, 'id'>
   expect(independent.id).not.toBe(worker)
   await eventually(() => items(independent.id), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:independent-lifecycle-task'))
+  expect(await execute(['sessions', 'mark', '--id', independent.id, '--status', 'done'], 'failed')).toContain('goal or checklist is incomplete')
   expect((await items(worker)).some((one) => one.kind === 'theirs' && one.text.includes('independent-lifecycle-task'))).toBe(false)
   await cli('manager', 'configure', JSON.stringify({ enabled: false }))
 }, 30_000)
@@ -389,7 +390,8 @@ it('preserves program-request approval, settings and history through a clean res
   const before = await read<ChatSession[]>('sessions', 'list')
   const id = await send('hang')
   await eventually(() => read<ChatSession[]>('sessions', 'list'), (all) => all.some((one) => one.id === id))
-  const child = Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))
+  const childFile = join(directory, `fixture-child-${encodeURIComponent(id)}.pid`)
+  const child = Number(await readFile(childFile, 'utf8'))
   expect((await stat(join(directory, 'find-model-fetch-started'))).isFile()).toBe(true)
   const exited = once(running!, 'exit')
   expect(await cli('shutdown')).toBe('GeckIt service stopped.')
@@ -406,7 +408,7 @@ it('preserves program-request approval, settings and history through a clean res
   const after = await read<ChatSession[]>('sessions', 'list')
   expect(after.map((one) => one.id)).toEqual(expect.arrayContaining(before.map((one) => one.id)))
   expect(after.some((one) => one.id === id)).toBe(true)
-  expect(Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))).toBe(child)
+  expect(Number(await readFile(childFile, 'utf8'))).toBe(child)
   const exitedAgain = once(running!, 'exit'); running?.kill('SIGTERM'); await exitedAgain
   expect(running?.exitCode).toBe(0)
 }, 20_000)

@@ -19,7 +19,7 @@ function chromeWorker() {
   const update = vi.fn(async (_id, { url }) => { tab.url = url })
   const run = runInNewContext(`${worker}\nrun`, {
     chrome: {
-      storage: { session: { get: async () => ({}), set: save }, local: { get: async () => ({}) } },
+      storage: { session: { get: async () => ({}), set: save }, local: { get: async () => ({}) }, onChanged: event },
       runtime: { onMessage: event, onStartup: event, onInstalled: event },
       alarms: { create() {}, onAlarm: event },
       windows: { onFocusChanged: event },
