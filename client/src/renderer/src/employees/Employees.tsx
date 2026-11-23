@@ -157,7 +157,7 @@ export function EmployeeAssignment({ chat }: { readonly chat: Pick<Chat, 'sessio
   const employee = session.employeeId === undefined ? undefined : chat.employeesById.get(session.employeeId)
   return <span className="employee-assignment no-drag">
     <button type="button" className={`employee-chip${employee === undefined ? ' none' : ''}${anchor === undefined ? '' : ' open'}`} disabled={pending} aria-haspopup="menu" aria-expanded={anchor !== undefined} aria-label={`Employee: ${employee?.name ?? 'None'}`} onClick={(event) => setAnchor(event.currentTarget.getBoundingClientRect())}>
-      {employee === undefined ? <><span className="employee-chip-blank"><Icon name="plus" size={9} /></span>No employee</> : <><EmployeeAvatar employee={employee} /><span>{employee.name}</span>{employee.role === '' ? null : <small>{employee.role}</small>}{employee.archived ? <small>Archived</small> : null}</>}
+      {employee === undefined ? <><span className="employee-chip-blank"><Icon name="plus" size={9} /></span><span className="employee-chip-label">No employee</span></> : <><EmployeeAvatar employee={employee} /><span className="employee-chip-label">{employee.name}</span>{employee.role === '' ? null : <small className="employee-chip-label">{employee.role}</small>}{employee.archived ? <small className="employee-chip-label">Archived</small> : null}</>}
       <Icon name="down" size={10} />
     </button>
     {error ? <span className="employee-alert" role="alert">Could not change employee. Try again.</span> : null}

@@ -838,6 +838,21 @@ export function Chat(): React.JSX.Element {
                     if (chat.session !== undefined) chat.mark(chat.session.id, value === '' ? undefined : (value as SessionStatus))
                   }}
                 />
+                {popsOut() ? (
+                  <button
+                    type="button"
+                    className="icon-button no-drag head-pop-out"
+                    title="Open in new window"
+                    aria-label="Open in new window"
+                    onClick={() => {
+                      if (chat.session === undefined) return
+                      window.geckit.chat.popOut(chat.session.id)
+                      chat.open({ kind: 'new' })
+                    }}
+                  >
+                    <Icon name="external" />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="icon-button no-drag"

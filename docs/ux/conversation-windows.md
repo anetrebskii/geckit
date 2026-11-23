@@ -24,6 +24,8 @@ Today a conversation can only be read inside the Chat window, over or below the 
 | Surface | What appears | When visible |
 |---|---|---|
 | Conversation header, More menu (existing) | "Open in new window" | A conversation on This computer is open in Chat |
+| Conversation header, icon button (existing header) | "Open in new window" button beside Find, the same action as the More item | The conversation is at least 900 px wide; narrower, only More has it |
+| Conversation header, narrow (existing) | As in a macOS toolbar: the title shortens first and the controls keep their size; below 720 px the employee shows only its picture; below 560 px the project and work tags leave the head | Always, by the conversation's width |
 | Board card and list row context menu (existing) | "Open in new window" | One card on This computer is targeted (not several) |
 | Conversation window (new) | The conversation's header, transcript, composer and status line; no sidebar, board or top bar; no "Back to the board" button | Opened from either item, or reopened by itself |
 | Board card (existing) | Pressed while its conversation has its own window: that window comes to the front instead of opening the conversation in Chat | Always while the window exists |
@@ -112,6 +114,9 @@ Not applicable, because nothing waits or counts: windows open, close and come ba
 |---|---|---|
 | New window size | 760 x 760 | Chat's minimum width keeps the header on one line |
 | Windows at once | No limit | Each is a conversation the person opened; the conversation queue already limits what works at once |
+| Pop-out button shown from | 900 px | Below it the head has no room left beside Status, Find, More and Checklist without shortening the title to a few letters |
+| Employee label hidden below | 720 px | The width at which the title would drop below about 20 characters |
+| Project and tags hidden below | 560 px | Below it the title and the controls alone fill the head |
 
 ## 7. Wording
 
@@ -138,6 +143,7 @@ Not applicable, because nothing waits or counts: windows open, close and come ba
 | A board or sidebar in the conversation window | Its point is one conversation on another desktop; the board stays in Chat |
 | A mark on cards whose conversation has its own window | See section 5 |
 | A keyboard shortcut | Rare action; the menu item is enough until asked |
+| An overflow (>>) menu for header items that do not fit | The items that go are information (project, tags) or keep their control (employee picture); the window title and Chat still show the project |
 | Opening the conversation in Chat and its window at the same time | Two composers and two read marks for one conversation |
 
 ## 10. Forks
