@@ -26,7 +26,7 @@ const START: TaskChecklist = { from: { id: 'c1', name: 'Feature flow' }, items: 
   { id: 'i5', title: 'Pushed to main', check: 'none' },
 ] }
 const transcript: readonly SessionItem[] = [
-  { kind: 'mine', id: 'original', text: 'Add checklists to tasks.\n\nChecklist (Feature flow), worked one item at a time: GeckIt sets each item as the goal in turn and ticks it when the goal is met.\n1. UX doc approved\n2. Tests pass\n3. Lint clean\n4. UI checked in light and dark\n5. Pushed to main' },
+  { kind: 'mine', id: 'original', text: 'Add checklists to tasks.' },
   { kind: 'theirs', id: 'reply', text: 'Working on the tests now.' },
 ]
 

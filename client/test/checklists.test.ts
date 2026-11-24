@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Checklist } from '../src/shared/checklists'
-import { checklistContext, checklistDone, checklistGoal, checklistItems, checklistMet, checklistsFor, copyChecklist, defaultChecklist, itemCondition, nextCondition, shortcutChecklist, taskPlan } from '../src/shared/checklists'
+import { checklistDone, checklistGoal, checklistItems, checklistMet, checklistsFor, copyChecklist, defaultChecklist, itemCondition, nextCondition, shortcutChecklist, taskPlan } from '../src/shared/checklists'
 import type { Settings } from '../src/shared/api'
 import { DEFAULT_SETTINGS } from '../src/shared/api'
 import { checklistsCommand } from '../src/main/checklists-cli'
@@ -122,7 +122,6 @@ describe('a running task checklist', () => {
     const task = copyChecklist(feature)
     expect(checklistMet(task, 'something else')).toBeUndefined()
     expect(itemCondition({ id: 'x', title: 'Tests pass.', check: 'none' })).toBe('Tests pass')
-    expect(checklistContext({ items: [{ id: 'x', title: 'Only', check: 'none' }] })).toBe('')
     expect(taskPlan([feature], '/work/app', { items: ['a', 'b'] }).checklist?.items.map((one) => one.title)).toEqual(['a', 'b'])
     expect(taskPlan([feature], '/work/app', {}).checklist?.from?.name).toBe('Feature flow')
   })

@@ -1162,7 +1162,7 @@ describe('a task checklist', () => {
       { id: 'c', title: 'Docs updated', check: 'none' },
     ] } })
     built.fake.hear({ signals: [{ kind: 'started', session: id, key: false }] })
-    expect(built.fake.sent[0]?.text).toContain('1. Tests pass\n2. Lint clean - check: ready for the person to approve; do not ask them, GeckIt does\n3. Docs updated')
+    expect(built.fake.sent[0]?.text).toBe('do the thing')
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Tests pass' }))
 

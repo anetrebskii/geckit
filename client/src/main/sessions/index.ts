@@ -11,7 +11,7 @@ import { basename } from 'node:path'
 
 import { letGo, taken } from '../lineup'
 import type { ChecklistEdit, ChecklistItem, TaskChecklist } from '../../shared/checklists'
-import { awaitingApproval, checklistContext, checklistMet, currentItem, isPersonGoal, nextCondition, personTurn, taskChecklist } from '../../shared/checklists'
+import { awaitingApproval, checklistMet, currentItem, isPersonGoal, nextCondition, personTurn, taskChecklist } from '../../shared/checklists'
 import { importedNote } from '../session-migration'
 import type { Standing } from '../lineup'
 
@@ -1024,27 +1024,26 @@ export class Sessions {
     return true
   }
 
-  /** A new task with a checklist: the list goes with the first message, and its first item is the goal. */
+  /** A new task with a checklist: its first item is the goal; the rest follow one at a time. */
   async #startChecklist(message: SessionMessage, go: boolean, guardSource?: string, queued?: Queued['id'], delegateFrom?: Live['id'], guardAttempt?: GuardAttempt, delivery?: DeliveryAttempt): Promise<string> {
     const { checklist: given, ...rest } = message
     const checklist = taskChecklist(given ?? { items: [] })
     const first = currentItem(checklist)
-    const context = checklistContext(checklist)
     if (first?.check === 'person') {
-      const sent = await this.send({ ...rest, text: [rest.text, context, personTurn(first)].filter((one) => one !== '').join('\n\n') }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
+      const sent = await this.send({ ...rest, text: [rest.text, personTurn(first)].filter((one) => one !== '').join('\n\n') }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
       this.#note(sent, { checklist, personItem: first.id })
       this.#changed()
       return sent
     }
     const goal = nextCondition(checklist)
     if (goal === undefined) {
-      const waiting = await this.send({ ...rest, text: context === '' ? rest.text : `${rest.text}\n\n${context}` }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
+      const waiting = await this.send(rest, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
       if (checklist.items.length > 0) this.#note(waiting, { checklist })
       this.#changed()
       return waiting
     }
     const codex = rest.provider !== undefined && isCodexProvider(rest.provider)
-    const sent = await this.send({ ...rest, text: context === '' ? rest.text : `${rest.text}\n\n${context}`, ...(codex ? { goal } : {}) }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
+    const sent = await this.send({ ...rest, ...(codex ? { goal } : {}) }, go, guardSource, queued, delegateFrom, guardAttempt, delivery)
     this.#note(sent, { checklist })
     if (!codex) {
       if (isCodexProvider(providerOf(sent))) await this.#sendGoal(sent, goal)
@@ -2404,12 +2403,10 @@ export class Sessions {
       // A planned task's goal goes with its first message, as New task sends one.
       const goal = this.#deps.notes.all()[id]?.status === 'todo' ? this.#deps.notes.all()[id]?.goal?.condition : undefined
       const provider = message.provider ?? providerOf(id)
-      const planned = this.#deps.notes.all()[id]?.checklist
-      const context = planned === undefined ? '' : checklistContext(planned)
       this.#preparedSending.add(id)
       try {
         const employeeId = this.#deps.notes.all()[id]?.employeeId
-        const sent = await this.send({ ...first, ...(context === '' ? {} : { text: `${first.text}\n\n${context}` }), ...(employeeId === undefined ? {} : { employeeId }), ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
+        const sent = await this.send({ ...first, ...(employeeId === undefined ? {} : { employeeId }), ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
         if (goal !== undefined && !isCodexProvider(provider)) await this.send({ session: sent, root: message.root, mode: message.mode, text: `/goal ${goal}`, ...(message.model === undefined ? {} : { model: message.model }) })
         return sent
       } finally { this.#preparedSending.delete(id) }

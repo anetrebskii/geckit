@@ -228,13 +228,5 @@ export const checklistProgress = (checklist: TaskChecklist): { readonly passed: 
   return { passed: items.filter((one) => one.state === 'passed').length, all: items.length }
 }
 
-/** Said with the first message of a task with several items, so the assistant knows what comes after the goal it has now. */
-export function checklistContext(checklist: TaskChecklist): string {
-  const items = filled(checklist.items)
-  if (items.length < 2) return ''
-  const person = items.some((item) => item.check === 'person') ? ' For an item the person approves, stop when it is ready and say so; do not ask them to approve it, GeckIt asks them and sends any changes as a message.' : ''
-  return [`Checklist${checklist.from === undefined ? '' : ` (${checklist.from.name})`}, worked one item at a time: GeckIt sets each item as the goal in turn and ticks it when the goal is met.${person}`, ...items.map((item, at) => `${String(at + 1)}. ${itemCondition(item)}`)].join('\n')
-}
-
 /** A task's checklist as kept: filled items only, a typed one plain. */
 export const taskChecklist = (checklist: TaskChecklist): TaskChecklist => ({ ...(checklist.from === undefined ? {} : { from: checklist.from }), items: filled(checklist.items).map((one) => ({ ...one, title: one.title.trim() })), ...(checklist.rechecked === true ? { rechecked: true } : {}) })
