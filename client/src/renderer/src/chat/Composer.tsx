@@ -29,6 +29,8 @@ import { projectLabel } from './project'
 import { queueWhy } from './Queued'
 import type { Chat } from './useChat'
 
+const DESKTOP_FILE_PICKER = !ON_PHONE && !document.documentElement.classList.contains('remote-workspace-page')
+
 /** A path offered after @, as its name and the folder it is in. */
 // A queued picture is drawn as a small square and fills the screen when pressed; each size is asked for once.
 const SQUARE = 44 * 3
@@ -129,7 +131,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
   const providers = selectableProviders(chat.settings)
   const assistant = providerInfo.shortName
   const field = useRef<HTMLTextAreaElement>(null)
-  const photos = useRef<HTMLInputElement>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
   const offered = useRef<HTMLDivElement>(null)
   // Where the caret is, so the @ being typed can be found; and where to put it once a path is in.
   const [caret, setCaret] = useState(0)
@@ -810,29 +812,30 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
             )}
           </div>
         )}
+        {ON_PHONE || DESKTOP_FILE_PICKER ? (
+          <input
+            ref={fileInput}
+            type="file"
+            accept={ON_PHONE ? 'image/*' : undefined}
+            multiple
+            hidden
+            onChange={(event) => {
+              const input = event.currentTarget
+              if (input.files?.length) addFiles([...input.files])
+              input.value = ''
+            }}
+          />
+        ) : null}
         {ON_PHONE ? (
-          <>
-            <button
-              type="button"
-              className="photo-pick"
-              disabled={chat.root === undefined}
-              aria-label="Add a photo"
-              onClick={() => photos.current?.click()}
-            >
-              <Icon name="photo" size={18} />
-            </button>
-            <input
-              ref={photos}
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={(event) => {
-                addFiles([...(event.target.files ?? [])])
-                event.target.value = ''
-              }}
-            />
-          </>
+          <button
+            type="button"
+            className="photo-pick"
+            disabled={chat.root === undefined}
+            aria-label="Add a photo"
+            onClick={() => fileInput.current?.click()}
+          >
+            <Icon name="photo" size={18} />
+          </button>
         ) : null}
         <textarea
           ref={field}
@@ -921,7 +924,18 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
         />
         <DictatingStrip dictation={dictation} />
         <div className="composer-bar">
-
+          {DESKTOP_FILE_PICKER ? (
+            <button
+              type="button"
+              className="icon-button"
+              disabled={chat.root === undefined}
+              title="Attach files"
+              aria-label="Attach files"
+              onClick={() => fileInput.current?.click()}
+            >
+              <Icon name="paperclip" size={15} />
+            </button>
+          ) : null}
           {!chat.showProviders ? null : (
             <Picker label={providerInfo.name} title="Assistant" chosen={chat.provider} disabled={chat.session !== undefined} choices={providers.map((one) => ({ value: one.family, label: one.name, icon: one.icon, ...(one.localOnly ? { disabled: chat.root !== undefined && isRemote(chat.root) } : {}), ...(one.family === 'codex' ? { says: ON_PHONE ? 'Your ChatGPT plan, on the paired host' : 'Your ChatGPT plan, on this computer' } : {}) }))} onPick={(value) => chat.setProvider(value as SessionProvider)} />
           )}
