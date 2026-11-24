@@ -1,4 +1,5 @@
 import type { ChatSession } from '../shared/api'
+import type { Employee } from '../shared/employees'
 import type { ManagerThread, ManagerView } from '../shared/manager'
 import { awaitingApproval } from '../shared/checklists'
 import { containsSecret } from '../shared/channel-safety'
@@ -7,6 +8,7 @@ import type { Speech } from './manager-voice'
 
 export interface ThreadWorker {
   readonly id: ChatSession['id']
+  readonly title?: ChatSession['title']
   readonly line: string
   readonly active: boolean
 }
@@ -45,13 +47,15 @@ function workerSaid(worker: ChatSession, speech?: Speech): { readonly said: stri
 
 const running = (worker: ChatSession): NonNullable<ChatSession['tasks']> => (worker.tasks ?? []).filter((task) => task.status === 'running' || task.status === 'asks')
 const clip = (text: string, limit: number): string => text.length > limit ? `${text.slice(0, limit - 1)}…` : text
-const titled = (title: string, speech?: Speech): string => containsSecret(title) ? say(speech).task : clip(title, TITLE)
+const oneLine = (text: string): string => text.replace(/[\r\n]+/g, ' ').trim()
+const titled = (title: string, speech?: Speech): string => containsSecret(title) ? say(speech).task : clip(oneLine(title), TITLE) || say(speech).task
 
-function workerLine(worker: ChatSession, speech?: Speech): string {
+function workerLine(worker: ChatSession, title: ChatSession['title'], employeeName: Employee['name'] | undefined, speech?: Speech): string {
   const words = say(speech)
   const doing = worker.state === 'working' ? workerDoing(worker.stands.split('\n')[0] ?? '', speech) : undefined
   const said = doing === undefined || containsSecret(doing) ? workerSaid(worker, speech).said : clip(doing, STANDS)
-  const lines = [`• ${titled(worker.title, speech)}: ${said}`]
+  const name = employeeName === undefined || containsSecret(employeeName) ? '' : clip(oneLine(employeeName), TITLE)
+  const lines = [`• ${title} - ${name === '' ? said : words.namedWorker(name, said)}`]
   const tasks = running(worker)
   for (const task of tasks.slice(0, TASKS)) {
     const what = task.command !== undefined && task.what.trim() === task.command.split('\n')[0]?.trim() ? commandSaid(task.command, speech) : task.what
@@ -61,7 +65,7 @@ function workerLine(worker: ChatSession, speech?: Speech): string {
   return lines.join('\n')
 }
 
-export function threadActivity(view: ManagerView, id: ManagerThread['id'], now = Date.now()): ThreadActivity | undefined {
+export function threadActivity(view: ManagerView, id: ManagerThread['id'], now = Date.now(), employees: readonly Pick<Employee, 'id' | 'name'>[] = []): ThreadActivity | undefined {
   const thread = view.threads?.find((one) => one.id === id)
   if (thread === undefined || thread.closed !== undefined) return undefined
   const reason = (thread.error ?? '').split('\n')[0]?.slice(0, REASON) ?? ''
@@ -69,11 +73,14 @@ export function threadActivity(view: ManagerView, id: ManagerThread['id'], now =
   const asks = view.decisions.some((one) => one.thread === id)
   const speech = thread.language
   const words = say(speech)
-  const manager = failed ? words.stopped(reason) : asks ? words.asks : words.idle
+  const manager = failed ? words.stopped(reason) : asks ? words.asks : words.progress
   const ending = failed ? words.stopped(reason) : asks ? words.asks : words.done
   const workers = thread.owns.flatMap((worker) => {
     const found = view.workers.find((one) => one.id === worker)
-    return found === undefined ? [] : [{ id: worker, line: workerLine(found, speech), active: workerSaid(found).active }]
+    if (found === undefined) return []
+    const title = titled(found.title, speech)
+    const name = found.employeeId === undefined ? undefined : employees.find((one) => one.id === found.employeeId)?.name
+    return [{ id: worker, title, line: workerLine(found, title, name, speech), active: workerSaid(found).active }]
   })
   const active = !failed && thread.manager !== undefined
   const doing = thread.manager === 'received' ? words.doing.starting : thread.note ?? workerDoing(thread.conversation?.stands.split('\n')[0] ?? '', speech) ?? words.doing.thinking
@@ -84,6 +91,7 @@ export function threadActivity(view: ManagerView, id: ManagerThread['id'], now =
 }
 
 export interface StatusPoster {
+  format?(text: string, bold?: boolean): string
   post(text: string): Promise<string>
   edit(id: string, text: string): Promise<void>
   remove(id: string): Promise<void>
@@ -100,7 +108,7 @@ export class StatusMessage {
   readonly #failed: (error: unknown) => void
   #stretch = false
   readonly #seen: string[] = []
-  readonly #lines = new Map<string, string>()
+  readonly #lines = new Map<ThreadWorker['id'], ThreadWorker>()
   #id: string | undefined
   #left: string | undefined
   #shown = ''
@@ -124,7 +132,9 @@ export class StatusMessage {
   update(activity: ThreadActivity | undefined): void {
     if (activity === undefined) { this.#stretch = false; this.#id = undefined; this.#shown = ''; this.#want = undefined; this.#closing = false; return }
     if (activity.active) this.#drop()
-    const answering = activity.active ? activity.answering : undefined
+    const answering = activity.active && activity.answering !== undefined
+      ? this.#format(activity.answering)
+      : undefined
     const working = activity.workers.some((one) => one.active)
     if (!this.#stretch) {
       if (!working) {
@@ -138,7 +148,7 @@ export class StatusMessage {
     this.#closing = false
     for (const worker of activity.workers) {
       if (worker.active && !this.#seen.includes(worker.id)) this.#seen.push(worker.id)
-      if (this.#seen.includes(worker.id)) this.#lines.set(worker.id, worker.line)
+      if (this.#seen.includes(worker.id)) this.#lines.set(worker.id, worker)
     }
     // Manager's turn is over: its line goes, and the workers' status comes back below what it sent.
     if (this.#answering && answering === undefined && this.#id !== undefined) this.#lower = true
@@ -170,9 +180,19 @@ export class StatusMessage {
   }
 
   #text(first: string, speech: Speech | undefined): string {
-    const workers = this.#seen.slice(0, WORKERS).map((id) => this.#lines.get(id) ?? '')
+    const workers = this.#seen.slice(0, WORKERS).map((id) => {
+      const worker = this.#lines.get(id)
+      if (worker === undefined) return ''
+      if (worker.title === undefined) return this.#format(worker.line)
+      const prefix = `• ${worker.title}`
+      return `• ${this.#format(worker.title, true)}${this.#format(worker.line.slice(prefix.length))}`
+    })
     const more = this.#seen.length - WORKERS
-    return [first, ...workers, ...(more > 0 ? [say(speech).more(more)] : [])].join('\n')
+    return [this.#format(first, first === say(speech).progress), ...workers, ...(more > 0 ? [say(speech).more(more)] : [])].join('\n')
+  }
+
+  #format(text: string, bold?: boolean): string {
+    return this.#poster.format?.(text, bold) ?? text
   }
 
   async #flush(): Promise<void> {

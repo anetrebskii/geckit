@@ -286,8 +286,19 @@ export function useChat(): Chat {
   const [itemsFor, setItemsFor] = useState('new')
   const [earlier, setEarlier] = useState({ id: '', left: 0 })
   const [drafts, setDrafts] = useState<Record<string, string>>(keptDrafts)
+  // Only what this window changed is written, so a conversation's own window and Chat keep each other's drafts.
+  const draftsWritten = useRef(drafts)
   useEffect(() => {
-    localStorage.setItem(DRAFTS, JSON.stringify(Object.fromEntries(Object.entries(drafts).filter(([, text]) => text.trim() !== ''))))
+    const was = draftsWritten.current
+    draftsWritten.current = drafts
+    const stored = keptDrafts()
+    for (const key of new Set([...Object.keys(was), ...Object.keys(drafts)])) {
+      const text = drafts[key]
+      if (was === drafts || was[key] === text) continue
+      if (text !== undefined && text.trim() !== '') stored[key] = text
+      else Reflect.deleteProperty(stored, key)
+    }
+    localStorage.setItem(DRAFTS, JSON.stringify(Object.fromEntries(Object.entries(stored).filter(([, kept]) => kept.trim() !== ''))))
   }, [drafts])
   const [pictures, setPictures] = useState<Record<string, readonly SessionImage[]>>({})
   const [trouble, setTrouble] = useState('')
@@ -494,6 +505,10 @@ export function useChat(): Chat {
   )
 
   const managerIds = useRef(new Set<string>())
+  // Conversations in windows of their own: opening one brings its window to the front instead.
+  const ownWindows = useRef(new Set<string>())
+  // Optional: a window drawn against an older preload, as the dev app after a hot reload, has no such call.
+  useEffect(() => window.geckit.chat.onWindows?.((ids) => { ownWindows.current = new Set(ids) }), [])
   useEffect(() => { if (manager?.session !== undefined) managerIds.current.add(manager.session.id) }, [manager?.session])
 
   const draftEdits = useRef(new Map<string, number>())
@@ -502,6 +517,7 @@ export function useChat(): Chat {
   const open = useCallback((next: Shown): void => {
     restoring.current = undefined
     if (next.kind === 'session' && managerIds.current.has(next.id)) return
+    if (next.kind === 'session' && ownWindows.current.has(next.id)) { window.geckit.chat.popOut(next.id); return }
     const before = shownRef.current
     shownRef.current = next
     loadingItems.current = undefined

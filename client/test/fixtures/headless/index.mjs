@@ -37,7 +37,7 @@ export function create() {
     hold: (options, hear, left) => {
       const child = spawn(process.execPath, [fileURLToPath(new URL('./worker.mjs', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe'] })
       children.add(child)
-      writeFileSync(join(directory, 'fixture-child.pid'), String(child.pid))
+      writeFileSync(join(directory, `fixture-child-${encodeURIComponent(options.id)}.pid`), String(child.pid))
       let rest = ''
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', (part) => {

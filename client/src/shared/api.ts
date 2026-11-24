@@ -987,6 +987,11 @@ export interface Bounds {
   readonly height: number
 }
 
+export interface ConversationWindow {
+  readonly id: string
+  readonly bounds?: Bounds
+}
+
 /** Which application opens a kind of file pressed in a conversation. */
 export interface OpenRule {
   /** Extensions, as `ts tsx` or `.md, .txt`. `*` is anything no other rule names. */
@@ -1234,6 +1239,8 @@ export interface Settings {
   readonly openWith: readonly OpenRule[]
   readonly transcriptions: readonly Transcription[]
   readonly chatBounds?: Bounds
+  /** Conversations open in windows of their own on this computer, and where each was left; kept while Chat shows another computer and across restarts. */
+  readonly conversationWindows?: readonly ConversationWindow[]
   readonly panelBounds?: Bounds
   /** Where the floating gecko was dragged to. */
   readonly geckoBounds?: Bounds
@@ -1333,6 +1340,8 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly lastRun?: number
   /** The conversation the last run started. */
   readonly lastSession?: string
+  /** The conversations its runs started, newest first, at most 50: what Runs lists. */
+  readonly runSessions?: readonly { readonly session: string; readonly at: number }[]
 }
 
 export type ShortcutOutcome =

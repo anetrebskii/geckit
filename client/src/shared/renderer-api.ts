@@ -392,6 +392,12 @@ return {
     onSpotlight: (said: (again: boolean) => void): (() => void) => rendererTransport.listen('chat:spotlight', said),
     /** Everything above is listened for: what main held while the window loaded can come now. */
     listening: (): void => rendererTransport.send('chat:listening'),
+    /** A conversation on This computer in a window of its own, or that window brought to the front. */
+    popOut: (id: string): void => rendererTransport.send('chat:popOut', id),
+    /** Chat shows another computer, or This computer again: the conversation windows close, or come back. */
+    away: (away: boolean): void => rendererTransport.send('chat:away', away),
+    /** The conversations that have windows of their own, told to Chat whenever one opens or closes. */
+    onWindows: (said: (ids: readonly string[]) => void): (() => void) => rendererTransport.listen('chat:windows', said),
   },
 
   /** The tasks waiting for fewer conversations to be working, and how full the conversations working are. */

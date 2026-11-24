@@ -14,6 +14,8 @@ const LIFE = 15 * 60_000
 const hash = (text) => createHash('sha256').update(text).digest('hex')
 const text = (value, max) => typeof value === 'string' && value.length <= max ? value : undefined
 const doc = (id) => getFirestore().doc(`secretRequests/${id}`)
+// Where the computer listens to hear a value was saved: only it knows the owner token this is made from, and the note holds nothing but the time.
+const ready = (ownerHash) => getFirestore().doc(`secretReady/${hash(`ready:${ownerHash}`)}`)
 
 function cardOf(body) {
   const card = body.card ?? {}
@@ -58,6 +60,7 @@ export const secret = onRequest({ region: 'europe-west1', maxInstances: 10 }, as
           if (held.state !== 'sent') return [409, 'already-used']
           if (held.expiresAt.toMillis() < now) return [410, 'expired']
           work.update(doc(id), { state: 'saved', ciphertext: { epk: sealed.epk, iv: sealed.iv, data: sealed.data }, lifetime: body.lifetime, user: held.card.kind === 'website' && (held.card.user ?? '') === '' ? user : '', device: text(String(request.get('user-agent') ?? ''), 300) ?? '', savedAt: Timestamp.fromMillis(now) })
+          work.set(ready(held.owner), { at: Timestamp.fromMillis(now) })
           return [200, held.card.computer]
         })
         if (answer[0] !== 200) { response.status(answer[0]).json({ error: answer[1] }); return }
@@ -86,5 +89,6 @@ export const secret = onRequest({ region: 'europe-west1', maxInstances: 10 }, as
 
 export const secretCleanup = onSchedule({ region: 'europe-west1', schedule: 'every 60 minutes' }, async () => {
   const old = await getFirestore().collection('secretRequests').where('expiresAt', '<', Timestamp.fromMillis(Date.now() - 60 * 60_000)).limit(500).get()
-  await Promise.all(old.docs.map((one) => one.ref.delete()))
+  const told = await getFirestore().collection('secretReady').where('at', '<', Timestamp.fromMillis(Date.now() - 60 * 60_000)).limit(500).get()
+  await Promise.all([...old.docs, ...told.docs].map((one) => one.ref.delete()))
 })

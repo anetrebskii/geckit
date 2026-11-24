@@ -193,15 +193,15 @@ it('posts and edits worker status with Discord list formatting', async () => {
     run.message('500000000000000001', ALLOWED, `<@${BOT}> check the redirect`)
     await vi.advanceTimersByTimeAsync(0)
     const watch = run.watchers.get('channel:discord:500000000000000001')
-    const activity = { manager: 'Running:', ending: 'Done:', active: false }
-    const workers = [{ id: 'worker', line: '• Redirect: checking\n  - Tests: running', active: true }]
+    const activity = { manager: 'In progress', ending: 'Done.', active: false }
+    const workers = [{ id: 'worker', title: 'Redirect', line: '• Redirect - checking\n  - Tests: running', active: true }]
     watch?.({ kind: 'status', activity: { ...activity, workers } })
     await vi.advanceTimersByTimeAsync(0)
-    expect(run.posts().at(-1)?.body['content']).toBe('Running:\n\n- Redirect: checking\n  - Tests: running')
+    expect(run.posts().at(-1)?.body['content']).toBe('**In progress**\n\n- **Redirect** - checking\n  - Tests: running')
 
-    watch?.({ kind: 'status', activity: { ...activity, workers: [{ id: 'worker', line: '• Redirect: done', active: false }] } })
+    watch?.({ kind: 'status', activity: { ...activity, workers: [{ id: 'worker', title: 'Redirect', line: '• Redirect - done', active: false }] } })
     await vi.advanceTimersByTimeAsync(3_000)
-    expect(run.calls.findLast((call) => call.method === 'PATCH')?.body['content']).toBe('Done:\n\n- Redirect: done')
+    expect(run.calls.findLast((call) => call.method === 'PATCH')?.body['content']).toBe('Done.\n\n- **Redirect** - done')
   } finally {
     vi.useRealTimers()
     await run.channel.stop()
@@ -270,6 +270,18 @@ it('passes a repeated or replayed event to Manager once, and a known thread only
   expect(run.sent.map(([, message]) => message.text)).toEqual(['deploy preview', 'status?'])
   expect(run.calls.filter((one) => one.path.endsWith('/threads'))).toHaveLength(1)
   await again.stop()
+})
+
+it('links a project file named in an approval card', async () => {
+  const run = harness()
+  Object.assign(run.context, { projects: () => [{ root: '/srv/seo-ops' }], shares: { open: async () => ({ id: 's1', key: 'k'.repeat(43), title: 'report.html', expiresAt: 36, again: false }) } })
+  await run.channel.start()
+  run.ready()
+  run.message('530000000000000001', ALLOWED, `<@${BOT}> start the migration`)
+  await run.settle()
+  run.watchers.get('channel:discord:530000000000000001')?.({ kind: 'decisions', decisions: [{ id: 'one', title: 'Accept /srv/seo-ops/report.html?', choices: [{ label: 'Accept', value: 'accept' }] }] })
+  await run.settle()
+  expect(run.posts().at(-1)?.body['content']).toMatch(/^\*\*Accept \[\/srv\/seo-ops\/report\.html\]\(https:\/\/geckit-signal\.web\.app\/#k+\.10\)\?\*\*/)
 })
 
 it('asks a question with buttons bound to the person, the thread, the message and the choice', async () => {

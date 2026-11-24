@@ -310,7 +310,6 @@ button,
 .no-drag {
   -webkit-app-region: no-drag;
 }
-
 .spacer {
   flex: 1;
 }
@@ -3651,6 +3650,63 @@ button.tag.work {
   border-bottom: 1px solid var(--border);
 }
 
+/* A conversation in a window of its own: no board, sidebar or top bar, so its head is the window's bar, as tall as Chat's so the title lines up with the traffic lights and starts past them. See docs/ux/conversation-windows.md. */
+.chat.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chat.solo .talk-head {
+  height: 45px;
+}
+
+html:not(.framed) .chat.solo .talk-head {
+  padding-left: 84px;
+}
+
+/* The head gives way the way a macOS toolbar does as the conversation narrows: the title shortens first, the controls keep their size, then the employee keeps only its picture and the project goes. The button that opens the conversation in its own window shows only where there is room; More always has it. */
+html:not(.phone) .talk {
+  container: talk / inline-size;
+}
+
+.talk-head > .picker,
+.talk-head > .icon-button,
+.talk-head > .employee-assignment {
+  flex-shrink: 0;
+}
+
+.talk-head > .title,
+.talk-head > .title-field {
+  flex-shrink: 1;
+  min-width: 48px;
+}
+
+.talk-head > .tinted {
+  max-width: 160px;
+}
+
+.talk-head .head-pop-out {
+  display: none;
+}
+
+@container talk (min-width: 900px) {
+  .talk-head .head-pop-out {
+    display: inline-flex;
+  }
+}
+
+@container talk (max-width: 720px) {
+  .talk-head .employee-chip-label {
+    display: none;
+  }
+}
+
+@container talk (max-width: 560px) {
+  .talk-head > .tinted,
+  .talk-head > .tag {
+    display: none;
+  }
+}
+
 /* Everything in the head stays on its one line; the title gives way first, then the project, never a second line. */
 .talk-head > * {
   white-space: nowrap;
@@ -5282,6 +5338,7 @@ html:not(.phone) .composer-bar > .composer-hint {
 .talk-status .stat:has(.branch) {
   flex-shrink: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .talk-status .act {

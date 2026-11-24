@@ -239,7 +239,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   process.once('exit', () => launch.virtual?.stop())
   let savedMedia: string | undefined
   try { savedMedia = readFileSync(join(dir, MEDIA_FILE), 'utf8') } catch { savedMedia = undefined }
-  const prefs = { 'gfx.bundled-fonts.activate': 0, ...mediaPrefs(savedMedia) }
+  const prefs = { 'gfx.bundled-fonts.activate': 0, 'browser.link.open_newwindow': 3, 'browser.link.open_newwindow.disabled_in_fullscreen': false, ...mediaPrefs(savedMedia) }
   const context = await firefox.launchPersistentContext(dir, {
     executablePath: binary.path,
     headless: launch.headless,
@@ -255,6 +255,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   const base = 900_000_000 + process.pid * 100_000
   let counter = 0
   const targets = new Map<number, Page>()
+  const windowTabs = new Set<Page>()
   const pendingTabs = new Map<number, Promise<void>>()
   let spare = context.pages().find((page) => page.url() === 'about:blank')
   const startupUntil = Date.now() + 10_000
@@ -305,6 +306,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     page.on('close', () => {
       if (page === spare) spare = undefined
       targets.delete(id)
+      windowTabs.delete(page)
       ids.delete(page)
       held.delete(id)
       openers.delete(id)
@@ -669,14 +671,32 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     } else if (input.type === 'back') await page.goBack({ waitUntil: 'domcontentloaded' })
     return {}
   }
-  const openPage = async (): Promise<Page> => {
-    const reusable = spare?.url() === 'about:blank' ? spare : undefined
+  const openPage = async (inWindow: boolean): Promise<Page> => {
+    let page = spare?.url() === 'about:blank' ? spare : undefined
     if (spare !== undefined) {
       owners.tabs.set(track(spare), null)
       spare = undefined
     }
-    const page = reusable ?? await context.newPage()
-    owners.tabs.set(track(page), activeOwner)
+    if (page === undefined && inWindow) {
+      for (const anchor of windowTabs) {
+        if (anchor === viewPage || viewOpeners.includes(anchor) || dialogs.has(anchor)) continue
+        const blank = `about:blank#${randomUUID()}`
+        const opened = context.waitForEvent('page', (candidate) => candidate.url() === blank).catch(() => undefined)
+        const asked = await anchor.evaluate(`void window.open(${JSON.stringify(blank)}, '_blank', 'noopener')`).then(() => true, () => false)
+        const candidate = asked ? await Promise.race([opened, wait(2_000).then(() => undefined)]) : undefined
+        if (candidate !== undefined && await candidate.waitForLoadState('load').then(() => !candidate.isClosed(), () => false)) {
+          page = candidate
+          break
+        }
+        void opened.then((late) => late?.close().catch(() => undefined))
+      }
+    }
+    page ??= await context.newPage()
+    windowTabs.add(page)
+    const id = track(page)
+    owners.tabs.set(id, activeOwner)
+    await pendingTabs.get(id)
+    openers.delete(id)
     return page
   }
   const stop = (): void => {
@@ -689,7 +709,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       case 'ping': return { version: `Camoufox ${binary.version}` }
       case 'start': {
         const own = [...targets].find(([tab, page]) => owners.tabs.get(tab) === activeOwner && page !== viewPage && !viewOpeners.includes(page))
-        const page = own?.[1] ?? await openPage()
+        const page = own?.[1] ?? await openPage(true)
         if (activeOwner === null) await page.bringToFront()
         return describe(page, track(page))
       }
@@ -708,7 +728,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
         })))
       }
       case 'open': {
-        const page = await openPage()
+        const page = await openPage(!/^data:/i.test(request.url ?? ''))
         try {
           await navigate(page, request.url)
           return await describe(page, track(page))
@@ -817,7 +837,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       }
       case 'view-open': {
         const current = viewPage?.isClosed() === false ? viewPage : undefined
-        const page = current ?? await openPage()
+        const page = current ?? await openPage(false)
         if (current === undefined) {
           viewOpeners.length = 0
           viewPage = page

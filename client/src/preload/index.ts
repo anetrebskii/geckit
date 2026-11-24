@@ -61,13 +61,8 @@ const geckit = {
       return () => { ipcRenderer.off('peer:scale', on) }
     },
     scaled: (id: string, image: SessionImage | undefined): void => ipcRenderer.send('peer:scaled', id, image ?? null),
-    /** The rooms of the links shared now, each with its own key. */
-    shares: (): Promise<readonly { readonly id: string; readonly key: string }[]> => ipcRenderer.invoke('peer:shares'),
     tabVideos: (): Promise<readonly (readonly [string, string | undefined])[]> => ipcRenderer.invoke('peer:tabVideos'),
     onTabVideo: (said: (event: TabVideoEvent) => void): (() => void) => transport.listen('peer:tabVideo', said),
-    onShares: (said: (rooms: readonly { readonly id: string; readonly key: string }[]) => void): (() => void) => transport.listen('peer:shares', said),
-    /** A call from a link page, answered for its own link only. */
-    share: (id: string, name: string, args: readonly unknown[]): Promise<unknown> => ipcRenderer.invoke('peer:share', id, name, args),
     /** Which screen to capture for a phone, or why this Mac will not let it be. */
     screen: (): Promise<{ readonly id?: string; readonly error?: string }> => ipcRenderer.invoke('peer:screen'),
   },

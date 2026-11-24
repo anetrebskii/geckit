@@ -7,6 +7,7 @@ on:
     paths:
       - 'client/**'
       - 'mobile/**'
+      - 'skills/**'
       - '.github/workflows/publish.yml'
 
 permissions:
@@ -186,10 +187,12 @@ jobs:
             if [ "$GECKIT_SIGNED" = true ]; then spctl --assess --type execute --verbose=4 "$app"; fi
           done
 
-  # The iPhone app is built here so a change that breaks it fails the run; it goes to App Store Connect from the Mac, by hand.
   ios:
     needs: version
     runs-on: macos-26
+    environment: testflight
+    outputs:
+      artifact-id: ${{ steps.ipa.outputs.artifact-id }}
     defaults:
       run:
         working-directory: mobile
@@ -208,15 +211,64 @@ jobs:
           npm run build
           npx cap sync ios
 
-      - name: Archive
-        run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/GeckIt.xcarchive" archive CODE_SIGNING_ALLOWED=NO MARKETING_VERSION=${{ needs.version.outputs.version }} CURRENT_PROJECT_VERSION=${{ github.run_number }}
+      - name: Archive and export the signed iOS package
+        env:
+          IOS_APP_PROFILE: ${{ secrets.IOS_APP_PROFILE }}
+          IOS_EXTENSION_PROFILE: ${{ secrets.IOS_EXTENSION_PROFILE }}
+          IOS_SIGNING_P12: ${{ secrets.IOS_SIGNING_P12 }}
+          IOS_SIGNING_P12_PASSWORD: ${{ secrets.IOS_SIGNING_P12_PASSWORD }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          : "${IOS_SIGNING_P12:?Configure IOS_SIGNING_P12 in the testflight environment}"
+          : "${IOS_SIGNING_P12_PASSWORD:?Configure IOS_SIGNING_P12_PASSWORD in the testflight environment}"
+          umask 077
+          signing=$(mktemp -d "$RUNNER_TEMP/ios-signing.XXXXXX")
+          keychain="$signing/ios.keychain-db"
+          trap 'security delete-keychain "$keychain" 2>/dev/null || true; rm -r "$signing"' EXIT
+          unlock=$(openssl rand -hex 24)
+          printf '%s' "$IOS_SIGNING_P12" | base64 --decode > "$signing/signing.p12"
+          security create-keychain -p "$unlock" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$unlock" "$keychain"
+          security import "$signing/signing.p12" -k "$keychain" -P "$IOS_SIGNING_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$unlock" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          unset IOS_SIGNING_P12 IOS_SIGNING_P12_PASSWORD
+          bash scripts/export-ios.sh "$VERSION" "$GITHUB_RUN_NUMBER"
+
+      - name: Retain the signed IPA
+        id: ipa
+        uses: actions/upload-artifact@v7
+        with:
+          name: geckit-ios-${{ needs.version.outputs.version }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/GeckIt.ipa
+          if-no-files-found: error
+          retention-days: 90
+
+  android:
+    needs: version
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.version.outputs.version }}
 
   # Published only once every build is in it, which is when the installed copies see it. A prerelease is the Development channel; Promote is what makes one Latest, which is Stable and what the website links at.
   release:
-    needs: [version, publish]
+    needs: [version, publish, ios, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: geckit-android-${{ needs.version.outputs.version }}
+          path: android
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --draft=false --prerelease --latest=false
+          VERSION: ${{ needs.version.outputs.version }}
+          IOS_ARTIFACT_ID: ${{ needs.ios.outputs.artifact-id }}
+        run: |
+          : "${IOS_ARTIFACT_ID:?Publish did not produce an iOS artifact}"
+          jq -n --arg version "$VERSION" --arg build "$GITHUB_RUN_NUMBER" --arg source "$GITHUB_SHA" --arg artifactId "$IOS_ARTIFACT_ID" \
+            '{version: $version, build: $build, source: $source, artifactId: $artifactId}' > ios-build.json
+          gh release upload "v$VERSION" ios-build.json android/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false

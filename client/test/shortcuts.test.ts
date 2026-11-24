@@ -72,6 +72,19 @@ describe('the shortcuts', () => {
     expect(held.shortcuts[1]).toMatchObject({ since: at('2026-09-22T09:00'), lastSession: 'session-1' })
   })
 
+  it('keeps the conversations its runs started, newest first, and keeps them through a save', async () => {
+    const { cron: _cron, ...byHand } = morning
+    held.shortcuts = [{ ...byHand, runSessions: [{ session: 'older', at: 1 }] }]
+    startShortcuts({ start, rename, busy: () => busy })
+    start.mockResolvedValueOnce('session-2')
+    await runShortcut('m', 'hand')
+    await runShortcut('m', 'hand')
+    const now = at('2026-09-22T09:00:10')
+    expect(held.shortcuts[0]?.runSessions).toEqual([{ session: 'session-1', at: now }, { session: 'session-2', at: now }, { session: 'older', at: 1 }])
+    saveShortcut({ ...byHand, name: 'Renamed' })
+    expect(held.shortcuts[0]?.runSessions).toHaveLength(3)
+  })
+
   it('starts each run with its checklist, and an older goal as a one-item checklist', async () => {
     const checklist = { items: [{ id: 'a', title: 'Inbox read', check: 'none' as const }, { id: 'b', title: 'Plan written', check: 'person' as const }] }
     held.shortcuts = [{ ...morning, checklist }]

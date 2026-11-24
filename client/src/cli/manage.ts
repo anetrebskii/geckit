@@ -3,7 +3,7 @@ import { askedEndpoint } from './endpoint'
 
 import type { ManagerCliAnswered, ManagerCliAsked } from '../shared/manager'
 
-export const managerCommand = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): boolean => env['GECKIT_MANAGER_SESSION'] !== undefined && ['help', '--help', 'capabilities', 'computers', 'hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'providers', 'projects', 'files', 'sessions', 'settings', 'checklists', 'attachments', 'telegram', 'employees', 'speech', 'browser-config'].includes(args[0] ?? '')
+export const managerCommand = (args: readonly string[], env: NodeJS.ProcessEnv = process.env): boolean => env['GECKIT_MANAGER_SESSION'] !== undefined && ['help', '--help', 'capabilities', 'computers', 'hosts', 'channels', 'manager', 'shortcuts', 'devices', 'access', 'providers', 'projects', 'files', 'sessions', 'settings', 'checklists', 'attachments', 'links', 'telegram', 'employees', 'speech', 'browser-config'].includes(args[0] ?? '')
 
 export function manage(args: readonly string[], directory: string, env: NodeJS.ProcessEnv = process.env): Promise<{ readonly said: string; readonly ok: boolean }> {
   const session = env['GECKIT_MANAGER_SESSION']

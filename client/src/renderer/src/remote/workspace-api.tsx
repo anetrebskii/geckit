@@ -151,7 +151,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
         return
       }
       if (channel === 'errors:hold') { console.error(...args); return }
-      if (['chat:open', 'chat:listening', 'voice:form', 'errors:answer'].includes(channel)) return
+      if (['chat:open', 'chat:listening', 'chat:popOut', 'chat:away', 'voice:form', 'errors:answer'].includes(channel)) return
       void transport.invoke(channel, ...args).catch(() => undefined)
     },
     listen: <Value,>(channel: string, said: (value: Value) => void): (() => void) => {

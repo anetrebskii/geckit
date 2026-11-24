@@ -32,7 +32,7 @@ function extension(url: string, incognito: boolean, paused = false) {
   }
   runInNewContext(worker, {
     chrome: {
-      storage: { session: { get: async () => ({}), set: noop }, local: { get: async () => ({ paused }) } },
+      storage: { session: { get: async () => ({}), set: noop }, local: { get: async () => ({ paused }) }, onChanged: event },
       runtime: { onMessage: event, onStartup: event, onInstalled: event, connectNative: () => port },
       alarms: { create: noop, onAlarm: event },
       windows: { onFocusChanged: event },

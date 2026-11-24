@@ -155,6 +155,19 @@ stateDiagram-v2
 - The person's Chrome is not running at all: test browsers still work; `ask` no longer needs the extension's host to be alive.
 - Windows: not yet, as with the extension.
 
+### Opening several pages in the project window
+
+`browser open <url> --profile geckit` returns the new page's tab ID. When the command starts the profile, it uses the startup tab. Later opens add a tab to the same window, including when another conversation in the profile makes the request. Each new tab belongs to the requesting conversation and can be closed or released independently.
+
+| From | Event | To | What the person sees |
+| --- | --- | --- | --- |
+| No managed tabs | A conversation opens a page | First managed tab | The page appears in the profile window. |
+| A managed tab is available | A conversation opens another page | More managed tabs | The page appears in another tab in that window. |
+| No managed tab can open another | A conversation opens a page while every managed tab blocks new tabs, is in a sign-in handoff or has an open dialog | More managed tabs | The page opens in a separate window so the conversation can continue. |
+| A window is already open | A conversation opens a `data:` address | More managed tabs | The page opens in a separate window because Camoufox can close grouped tabs that use `data:` addresses. |
+
+Pages opened by a website can still use their own popup windows. Closing a managed tab leaves the other managed tabs available for subsequent opens. Windows already open are kept where they are.
+
 ## Deliberately not
 
 - No port. A `--remote-debugging-port` lets any program on the computer drive a browser holding the person's sign-ins.

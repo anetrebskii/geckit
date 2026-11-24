@@ -5,7 +5,7 @@ owner: Alex
 created: 2026-11-06
 ---
 
-# UX: Manager status in Telegram and Slack
+# UX: Manager status in Telegram, Slack and Discord
 
 ## 1. Why
 
@@ -23,7 +23,7 @@ Alex writes to Manager from Telegram and Slack and then sees nothing until an an
 | Surface | What appears | When |
 |---|---|---|
 | Telegram chat paired with Manager | One status message, sent silently (no notification), edited as state changes | A worker the Telegram thread tracks is active and Manager is not working on a message |
-| Slack thread with the bot | One status message in the thread, edited as state changes | A worker the Slack thread tracks is active and Manager is not working on a message |
+| Slack thread or Discord conversation with the bot | One status message, edited as state changes | A tracked chat is active and Manager is not working on a message |
 | Telegram chat, Slack thread or Discord conversation with the bot | The status message "⏳ Working on it · N min" with the line Manager last wrote for the thread below it, edited as Manager works | While Manager works on a message, until it sends something |
 | Slack or Discord message Manager took | An :eyes: / 👀 reaction on it | From the moment Manager takes it until Manager answers or finishes |
 
@@ -33,15 +33,15 @@ While Manager prepares an answer, the status message in Telegram, Slack and Disc
 
 Every line is in the language of the last message a person wrote in this thread (`docs/ux/manager-voice.md`): Russian when it was Russian, English otherwise. Manager speaks of itself in the first person. Shown here in English, then Russian.
 
-First line: what Manager is doing. Then one block per worker of this conversation that was active during this stretch, in the order they became active, at most 8; past 8, "and 3 more" / "и ещё 3".
+The first line is the status heading. Below it, list one entry per tracked chat that was active during this stretch, in the order each chat became active. Show up to 8 chats, followed by "and 3 more" / "и ещё 3" when additional chats are tracked.
 
 | First line | Russian | When |
 |---|---|---|
-| "While I wait, here is what is going on:" | "Пока жду, вот что сейчас идёт:" | Manager is free and workers run |
+| **In progress** | **В работе** | Manager is free and workers run |
 | "Waiting for your answer above." | "Жду ответа выше." | A decision for this thread is open |
 | "I can't go on: <reason>" | "Не могу продолжить: <reason>" | This thread's Manager session failed; reason as GeckIt shows it, first line, at most 200 characters |
 
-A worker block is its line "• <title>: <what it is doing>", then up to 3 of its running background jobs as "  - <what it is>: running" / "идёт" or "waiting for an answer" / "ждёт ответа", and "  - and 2 more in the background" / "и ещё 2 в фоне" past 3.
+Each entry starts with the bold chat title, followed by a hyphen and the activity. If the chat has an assigned employee, include their name on that entry. Repeat the name when the same employee has several chats. Up to 3 running background jobs follow their chat as indented lines, with "running" / "идёт" or "waiting for an answer" / "ждёт ответа". Additional jobs appear as "and 2 more in the background" / "и ещё 2 в фоне".
 
 While the worker works, "<what it is doing>" is the activity GeckIt already reads from its conversation (the `Working - ...` line of its card, from Claude Code over stream or tmux, and from Codex), said in words:
 
@@ -79,12 +79,18 @@ A working worker with no known activity says "working" / "в работе". The 
 
 A background job shows by its description; a command job with no description of its own shows as what the command does, as in the table above.
 
-```text
-Пока жду, вот что сейчас идёт:
-• Ответы менеджера: запускает тесты
-• Следить за CI #71: работает в фоне
+**In progress**
+
+- **Login fix** - Sam is running the tests
+- **Settings redesign** - Sam is checking the code
+- **Release build** - Jordan is running in the background
+  - CI run 42: running
+
+**В работе**
+
+- **Ответы менеджера** - Саша: запускает тесты
+- **Следить за CI #71** - работает в фоне
   - CI run 42: идёт
-```
 
 The final edit, when nothing is active: the first line becomes "Done." / "Готово." (or the "I can't go on" line, or "Waiting for your answer above."), and the worker blocks keep their last state. It stays until Manager sends something into the conversation or the person writes, and then it is deleted.
 
@@ -144,7 +150,7 @@ A worker waiting for an answer counts as not active for the final edit: the stre
 ## 7. Numbers
 
 - 3 s between edits: Slack's `chat.update` and Telegram's `editMessageText` both rate-limit per chat; three seconds keeps a busy stretch to about 20 edits a minute and still reads as live.
-- 8 worker lines: a status should fit a phone screen; more goes into "and N more".
+- 8 chat entries: a status should fit a phone screen; more goes into "and N more".
 - 200 characters for a reason: one line of an error, not a stack.
 
 ## 8. Edge cases

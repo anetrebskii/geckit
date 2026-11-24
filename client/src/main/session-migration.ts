@@ -101,7 +101,7 @@ export function sessionMigration(notes: Readonly<Record<string, SessionNote>>, s
     ...settings,
     ...(settings.favorites === undefined ? {} : { favorites }),
     ...(settings.progressOrder === undefined ? {} : { progressOrder }),
-    ...(settings.shortcuts === undefined ? {} : { shortcuts: settings.shortcuts.map((shortcut) => shortcut.lastSession === undefined ? shortcut : { ...shortcut, lastSession: settingsIds.get(shortcut.lastSession) ?? shortcut.lastSession }) }),
+    ...(settings.shortcuts === undefined ? {} : { shortcuts: settings.shortcuts.map((shortcut) => ({ ...shortcut, ...(shortcut.lastSession === undefined ? {} : { lastSession: settingsIds.get(shortcut.lastSession) ?? shortcut.lastSession }), ...(shortcut.runSessions === undefined ? {} : { runSessions: shortcut.runSessions.map((run) => ({ ...run, session: settingsIds.get(run.session) ?? run.session })) }) })) }),
   }
   return { notes: migrated, settings: next, report: { imports: imports.length, migrated: changed, unchanged: imports.length - changed - missing, missing, favorites: (settings.favorites ?? []).filter((id) => settingsIds.has(id)).length, order: (settings.progressOrder ?? []).filter((id) => settingsIds.has(id)).length, dryRun } }
 }

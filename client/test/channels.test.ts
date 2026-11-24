@@ -530,20 +530,20 @@ it('Slack: the status shows while workers run, leaves while Manager answers and 
   await run.settle()
   const watch = run.watchers.get('channel:slack:C1:3.0')
   const posts = run.posted.length
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: true, workers: [] } })
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: true, workers: [] } })
   await run.settle()
   expect(run.posted).toHaveLength(posts)
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
-  await vi.waitFor(() => expect(run.posted.at(-1)?.text).toMatch(/^While I wait, here is what is going on:\n• Fix &lt;login&gt;: working$/))
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: false, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - working', active: true }] } })
+  await vi.waitFor(() => expect(run.posted.at(-1)?.text).toMatch(/^\*In progress\*\n• \*Fix &lt;login&gt;\* - working$/))
   const status = `9.${String(run.posted.length)}`
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: true, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: true, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - working', active: true }] } })
   await vi.waitFor(() => expect(run.deleted.at(-1)).toEqual({ channel: 'C1', ts: status }))
   watch?.({ kind: 'answer', text: 'Still on it.' })
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: working', active: true }] } })
-  await vi.waitFor(() => expect(run.posted.slice(-2).map((one) => one.text.split('\n')[0])).toEqual(['Still on it.', 'While I wait, here is what is going on:']))
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: false, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - working', active: true }] } })
+  await vi.waitFor(() => expect(run.posted.slice(-2).map((one) => one.text.split('\n')[0])).toEqual(['Still on it.', '*In progress*']))
   const again = `9.${String(run.posted.length)}`
-  watch?.({ kind: 'status', activity: { manager: 'While I wait, here is what is going on:', ending: 'Done.', active: false, workers: [{ id: 'w1', line: '• Fix <login>: finished', active: false }] } })
-  await vi.waitFor(() => expect(run.updated.at(-1)).toMatchObject({ ts: again, text: expect.stringMatching(/^Done\.\n• Fix &lt;login&gt;: finished$/) }), { timeout: 5_000 })
+  watch?.({ kind: 'status', activity: { manager: 'In progress', ending: 'Done.', active: false, workers: [{ id: 'w1', title: 'Fix <login>', line: '• Fix <login> - finished', active: false }] } })
+  await vi.waitFor(() => expect(run.updated.at(-1)).toMatchObject({ ts: again, text: expect.stringMatching(/^Done\.\n• \*Fix &lt;login&gt;\* - finished$/) }), { timeout: 5_000 })
   await run.channel.stop()
 }, 15_000)
 
@@ -854,6 +854,19 @@ it('does not forward a stale or other-thread decision ID to Manager through deci
   expect(await context.conversations.decide?.(thread, 'missing', 'yes')).toBe('This request is no longer pending. Use /status to see current requests.')
   expect(answered).toEqual([])
   await channels.dispose()
+})
+
+it('Slack: an approval card turns a project path into a GeckIt link and keeps hosted links clickable', async () => {
+  const run = slackHarness()
+  Object.assign(run.context, { projects: () => [{ root: '/srv/seo-ops' }], shares: { open: async () => ({ id: 's1', key: 'k'.repeat(43), title: 'report.html', expiresAt: 36, again: false }) } })
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> work' })
+  await run.settle()
+  run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'decisions', decisions: [{ id: 'one', title: 'Accept https://github.com/acme/site/pull/18 & /srv/seo-ops/report.html?', choices: [{ label: 'Accept', value: 'accept' }] }] })
+  await run.settle()
+  const section = (run.posted.at(-1)?.blocks?.[0] as { text?: { type: string; text: string } } | undefined)?.text
+  expect(section?.type).toBe('mrkdwn')
+  expect(section?.text).toMatch(/^Accept https:\/\/github\.com\/acme\/site\/pull\/18 &amp; <https:\/\/geckit-signal\.web\.app\/#k+\.10\|\/srv\/seo-ops\/report\.html>\?/)
 })
 
 it('Slack: a slow approval in one thread does not block another thread', async () => {

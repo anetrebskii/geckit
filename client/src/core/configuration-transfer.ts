@@ -72,7 +72,7 @@ export function importableConfiguration(text: string): Configuration {
     if (Array.isArray(json.shortcuts)) for (const shortcut of json.shortcuts) {
       const sample = Array.isArray(samples.shortcuts) ? samples.shortcuts[0] : undefined
       if (!object(shortcut) || sample === undefined || !sameShape({ ...shortcut, since: 0 }, sample)) throw new Error(INVALID)
-      if (['since', 'lastRun', 'lastSession'].some((key) => Object.hasOwn(shortcut, key))) throw new Error(INVALID)
+      if (['since', 'lastRun', 'lastSession', 'runSessions'].some((key) => Object.hasOwn(shortcut, key))) throw new Error(INVALID)
       if (['goal', 'model', 'employeeId', 'cron', 'provider', 'reasoning'].some((key) => shortcut[key] !== undefined && typeof shortcut[key] !== 'string')) throw new Error(INVALID)
       if (shortcut.checklist !== undefined && !(object(shortcut.checklist) && Array.isArray(shortcut.checklist.items) && shortcut.checklist.items.every((item) => object(item) && typeof item.id === 'string' && typeof item.title === 'string' && ['none', 'command', 'review', 'person'].includes(String(item.check))))) throw new Error(INVALID)
       if (!['manual', 'auto', 'plan'].includes(String(shortcut.mode)) || shortcut.target !== undefined && shortcut.target !== 'manager') throw new Error(INVALID)

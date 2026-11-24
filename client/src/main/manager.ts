@@ -29,6 +29,7 @@ import type { ManagerApproval } from './manager-approvals'
 import { managerOutput, INVALID_MANAGER_COMMAND, MANAGER_INSTRUCTIONS } from './manager-protocol'
 import type { ManagerCommand } from './manager-protocol'
 import type { NotesStore, Sessions } from './sessions'
+import type { Shares } from './shares'
 import { limitReply } from './sessions/wording'
 import { carriesOn, COMPACT_AT_INVALID, groupUpdates, isMilestone, mergeUpdates, shouldCompact, updateLine, validCompactAt } from './manager-economy'
 
@@ -176,10 +177,11 @@ export interface ManagerDeps {
   readonly restoreRecord?: (record: Json) => Json
   readonly threadAllowed?: (thread: string) => boolean
   readonly syncInstructions?: (instructions: ManagerConfig['instructions']) => Promise<void>
-  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam'>
+  readonly employees?: Pick<Employees, 'command' | 'active' | 'rename' | 'get' | 'editTeam' | 'list'>
   readonly directory: string
   readonly intake?: Pick<ManagerIntakeDeps, 'adapters' | 'classify' | 'pairing' | 'now'>
   readonly attachments?: ChannelAttachments
+  readonly shares?: Pick<Shares, 'open' | 'list' | 'stop'>
   readonly channelFile?: (thread: string) => ChannelFileSender
   readonly ownerThread?: (thread: string) => boolean
   readonly fileLimit?: (thread: string) => number | undefined

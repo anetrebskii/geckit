@@ -41,8 +41,8 @@ const STUN: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:st
 const FRESH = 60_000
 // What is left in a room is deleted by Firestore's TTL some time after this.
 const KEPT = 3600_000
-// The relay is handed only to a room whose Mac said it was waiting within the last minute.
-const SEEN = 30_000
+// The relay is handed only to a room whose Mac said it was waiting within the last five minutes; each saying is a billed write.
+const SEEN = 4 * 60_000
 // Past this, the routes found so far are enough.
 const GATHERING = 4000
 // Once a route through a NAT is found, this long for the relay's; one of them is how a phone off the Mac's network gets through.
@@ -56,15 +56,15 @@ const SCREEN_BITRATE = 3_000_000
 const KEEP = 12 * 3600_000
 // A function waking from cold takes seconds; much more than that and it is not coming.
 const POSTING = 15_000
-const kept = new Map<string, { readonly servers: RTCIceServer[]; readonly until: number }>()
+const kept = new Map<string, { readonly servers: RTCIceServer[]; readonly until: number; readonly turn: boolean }>()
 
 async function iceServers(pairing: Pairing, room: string): Promise<RTCIceServer[]> {
   const held = kept.get(room)
   if (held !== undefined && held.until > Date.now()) return held.servers
   try {
     const answer = await inTime(POSTING, (signal) => fetch(`${pairing.signal}/ice?room=${room}`, { signal }))
-    const said = (await answer.json()) as { readonly iceServers: RTCIceServer[] }
-    kept.set(room, { servers: said.iceServers, until: Date.now() + KEEP })
+    const said = (await answer.json()) as { readonly iceServers: RTCIceServer[]; readonly turn?: boolean }
+    kept.set(room, { servers: said.iceServers, until: Date.now() + KEEP, turn: said.turn !== false })
     return said.iceServers
   } catch {
     return STUN
@@ -296,7 +296,11 @@ export function listen(pairing: Pairing, joined: (link: Link) => void, trouble: 
   const unreachable = 'The pairing service did not answer. Phones cannot find this computer until it does.'
   void roomOf(pairing.key).then((room) => {
     if (stopped) return
-    const seen = (): void => void setDoc(doc(firestore(), 'rooms', room), { seen: serverTimestamp() }).catch(() => undefined)
+    // Presence only buys a relay, so with none to hand out it is not written: each write is billed.
+    const seen = (): void => void iceServers(pairing, room).then(() => {
+      if (kept.get(room)?.turn === false) return
+      return setDoc(doc(firestore(), 'rooms', room), { seen: serverTimestamp() })
+    }).catch(() => undefined)
     seen()
     const timer = window.setInterval(seen, SEEN)
     stops.push(() => window.clearInterval(timer))
