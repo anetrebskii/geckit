@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { hostname } from 'node:os'
 
 import { VIEWER } from '../shared/share'
+import { watchSecretReady } from '../shared/remote/listen'
 import { keyHashOf, type SealedValue } from '../shared/secret-seal'
 import { SECRET_NAME, placesValid, type SecretEntry } from '../shared/secrets'
 
@@ -11,6 +12,8 @@ import { BrokerRefusal, type BrokerOps, type RunChunk, type RunRequest, type Sec
 export const SECRET_KINDS: readonly SecretKind[] = ['website', 'http', 'command', 'ssh']
 const LINK_LIFE = 15 * 60_000
 const POLL = 3_000
+// With a listener for the saved note, the relay is asked only in case a note is missed; each ask is a billed function call.
+const FALLBACK = 60_000
 
 export interface SecretAsk {
   readonly name: string
@@ -28,11 +31,14 @@ export interface SecretsHost {
   readonly broker: () => BrokerOps & { run(request: RunRequest, onChunk: (chunk: RunChunk) => void): Promise<{ exit: number }> }
   readonly notify: (taskId: string, title: string, body: string) => void
   readonly relay?: (body: object) => Promise<{ status: number; json: Record<string, unknown> }>
+  /** Told when a link's value was saved, so the relay is asked once rather than every few seconds. */
+  readonly ready?: (owner: string, saved: () => void) => () => void
   readonly computer?: () => string
   readonly now?: () => number
 }
 
 const token = (): string => randomBytes(16).toString('base64url')
+const readyFromSignal = (owner: string, saved: () => void): (() => void) => watchSecretReady(owner, saved, (error) => { console.warn(`Secret listener unavailable: ${error.message}`) })
 const relayUrl = (): string => `${process.env['GECKIT_SIGNAL_URL'] ?? VIEWER}/api/secret`
 
 async function postRelay(body: object): Promise<{ status: number; json: Record<string, unknown> }> {
@@ -58,12 +64,13 @@ export const setRunningSecrets = (secrets: Secrets | undefined): void => { runni
 
 export class Secrets {
   private readonly waiting = new Map<string, NodeJS.Timeout>()
+  private readonly listening = new Map<string, () => void>()
   private readonly asked = new Map<string, { readonly ask: SecretAsk; readonly expiresAt: number }>()
   constructor(private readonly host: SecretsHost) {}
 
   private now(): number { return this.host.now?.() ?? Date.now() }
 
-  async request(ask: SecretAsk): Promise<{ readonly link?: string; readonly expiresAt?: number; readonly existing?: SecretMetadata }> {
+  async request(ask: SecretAsk, onSaved?: () => void): Promise<{ readonly link?: string; readonly expiresAt?: number; readonly existing?: SecretMetadata }> {
     if (!SECRET_NAME.test(ask.name)) throw new BrokerRefusal('name', 'Name the secret with lowercase letters, digits and hyphens, such as openai-key.')
     const wrong = placesValid(ask.kind, ask.places)
     if (wrong !== undefined) throw new BrokerRefusal('place', wrong)
@@ -81,17 +88,31 @@ export class Secrets {
     if (opened.status !== 200) throw new BrokerRefusal('relay', `The secret link could not be made (${String(opened.json['error'] ?? opened.status)}).`)
     const expiresAt = Number(opened.json['expiresAt'] ?? this.now() + LINK_LIFE)
     this.asked.set(id, { ask, expiresAt })
-    this.watch(id, owner, ask, expiresAt)
+    this.watch(id, owner, ask, expiresAt, onSaved)
     return { link: `${process.env['GECKIT_SIGNAL_URL'] ?? VIEWER}/s/#${id}.${linkKey}.${await keyHashOf(brokerKey)}`, expiresAt }
   }
 
-  private watch(id: string, owner: string, ask: SecretAsk, expiresAt: number): void {
+  private watch(id: string, owner: string, ask: SecretAsk, expiresAt: number, onSaved: (() => void) | undefined): void {
+    const listening = this.host.ready ?? (this.host.relay === undefined ? readyFromSignal : undefined)
+    const every = listening === undefined ? POLL : FALLBACK
+    let busy = false
+    // A saved note heard while an ask is under way asks again right after it.
+    let again = false
+    let unwatch: (() => void) | undefined
     const tick = async (): Promise<void> => {
+      if (busy) { again = true; return }
+      busy = true
+      clearTimeout(this.waiting.get(id))
       this.waiting.delete(id)
+      try { await collect() } finally { busy = false }
+      if (again && this.asked.has(id)) { again = false; void tick() }
+    }
+    const collect = async (): Promise<void> => {
       let answer: { status: number; json: Record<string, unknown> }
       try { answer = await (this.host.relay ?? postRelay)({ action: 'collect', id, owner }) } catch { answer = { status: 0, json: {} } }
       const state = answer.json['state']
       if (state === 'saved') {
+        unwatch?.()
         this.asked.delete(id)
         try {
           const typed = ask.kind === 'website' && (ask.user ?? '') === '' && typeof answer.json['user'] === 'string' ? answer.json['user'].trim().slice(0, 200) : ''
@@ -101,13 +122,17 @@ export class Secrets {
           this.host.notify(ask.taskId, `${ask.name} was entered`, `${ask.name} is ready (${ask.kind}, ${ask.places.join(', ')}${(ask.user ?? '') !== '' ? ` as ${ask.user ?? ''}` : typed === '' ? '' : ` as ${typed}`}), ${until}.${device === '' ? '' : ` Entered from ${device}.`}`)
         } catch (error) {
           this.host.notify(ask.taskId, `${ask.name} was not saved`, error instanceof Error ? error.message : String(error))
+          return
         }
+        onSaved?.()
         return
       }
-      if (state === 'expired' || state === 'collected' || answer.status === 404 || this.now() > expiresAt + 60_000) { this.asked.delete(id); return }
-      this.waiting.set(id, setTimeout(() => { void tick() }, POLL))
+      if (state === 'expired' || state === 'collected' || answer.status === 404 || this.now() > expiresAt + 60_000) { unwatch?.(); this.asked.delete(id); return }
+      this.waiting.set(id, setTimeout(() => { void tick() }, every))
     }
-    this.waiting.set(id, setTimeout(() => { void tick() }, POLL))
+    const stop = listening?.(owner, () => { void tick() })
+    if (stop !== undefined) { unwatch = () => { stop(); this.listening.delete(id) }; this.listening.set(id, unwatch) }
+    this.waiting.set(id, setTimeout(() => { void tick() }, every))
   }
 
   private async entryChecked(entry: SecretEntry): Promise<SecretMetadata | undefined> {
@@ -150,5 +175,5 @@ export class Secrets {
   clean(text: string): Promise<string> { return this.host.broker().clean({ text }).then((one) => one.text) }
   run(request: RunRequest, onChunk: (chunk: RunChunk) => void): Promise<{ exit: number }> { return this.host.broker().run(request, onChunk) }
 
-  dispose(): void { for (const timer of this.waiting.values()) clearTimeout(timer); this.waiting.clear(); this.asked.clear() }
+  dispose(): void { for (const timer of this.waiting.values()) clearTimeout(timer); for (const stop of [...this.listening.values()]) stop(); this.waiting.clear(); this.asked.clear() }
 }

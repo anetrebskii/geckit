@@ -1,4 +1,4 @@
-import { shownChecklist, TaskChecklistEditor } from './TaskChecklist'
+import { canStartChecklistGoal, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
 import { Servers } from '../remote/Servers'
 import { readSignIn } from '../../../shared/live-view'
 import type { SignInLink } from '../../../shared/live-view'
@@ -53,6 +53,7 @@ import { Consent } from '../ui/Consent'
 import { EmployeeAssignment, TEAM_EVENT } from '../employees/Employees'
 import { Team } from '../employees/Team'
 import { useChat } from './useChat'
+import { SOLO, popsOut } from './solo'
 
 interface Recently {
   readonly list: readonly ChatSession[]
@@ -88,6 +89,21 @@ export function Chat(): React.JSX.Element {
   const [signIn, setSignIn] = useState<SignInLink>()
   useEffect(() => window.geckit.signIn?.onOpen((url) => { const link = readSignIn(url); if (link !== undefined) { setSignIn(link); setServers(link.computer) } }), [])
   const chat = useChat()
+  // This computer's conversation windows close while Chat shows another computer, and come back with it.
+  const away = servers !== undefined && remote
+  // Optional: a window drawn against an older preload has no such call.
+  useEffect(() => { if (popsOut()) window.geckit.chat.away?.(away) }, [away])
+  // A conversation's own window opens on it, and closes once it is deleted or its folder leaves GeckIt.
+  const { goTo } = chat
+  useEffect(() => { if (SOLO !== undefined) goTo(SOLO) }, [goTo])
+  const soloListed = useRef(false)
+  const soloHere = SOLO !== undefined && (chat.everyone.some((one) => one.id === SOLO) || chat.questions.some((one) => one.id === SOLO))
+  useEffect(() => {
+    if (SOLO === undefined) return
+    if (soloHere) soloListed.current = true
+    else if (soloListed.current) window.close()
+  }, [soloHere])
+  useEffect(() => { if (SOLO !== undefined && chat.session !== undefined) document.title = chat.session.title }, [chat.session])
   registerProviderInfo(chat.settings.providerPlugins)
   const providerInfo = llmProviderInfo(chat.provider, chat.transport)
   const assistant = providerInfo.name
@@ -186,7 +202,7 @@ export function Chat(): React.JSX.Element {
   const [more, setMore] = useState<DOMRect | undefined>()
   // The board's New task form is open.
   // Which form is open, New task or Ask a question; never both.
-  const [form, setForm] = useState<'task' | 'question' | undefined>(() => (keptTask(false) !== undefined ? 'task' : keptTask(true) !== undefined ? 'question' : undefined))
+  const [form, setForm] = useState<'task' | 'question' | undefined>(() => (SOLO !== undefined ? undefined : keptTask(false) !== undefined ? 'task' : keptTask(true) !== undefined ? 'question' : undefined))
   const making = form === 'task'
   const asking = form === 'question'
   const [infoing, setInfoing] = useState(false)
@@ -410,6 +426,23 @@ export function Chat(): React.JSX.Element {
         toRecent(undefined)
         return
       }
+      if (SOLO !== undefined) {
+        const meta = event.metaKey || event.ctrlKey
+        if (meta && !event.shiftKey && event.key === 'f' && chat.shown.kind === 'session') {
+          event.preventDefault()
+          setFinding({ id: chat.shown.id, at: Date.now() })
+        } else if (event.key === 'F2' && chat.session !== undefined) {
+          event.preventDefault()
+          setNaming(chat.session.id)
+        } else if (meta && event.key === 'r') {
+          event.preventDefault()
+          chat.refresh()
+        } else if (((meta && event.key === '.') || event.key === 'Escape') && chat.working) {
+          event.preventDefault()
+          chat.stop()
+        }
+        return
+      }
       if (event.ctrlKey && event.key === 'Tab') {
         event.preventDefault()
         const by = event.shiftKey ? -1 : 1
@@ -548,7 +581,7 @@ export function Chat(): React.JSX.Element {
   // The board stands where the list does, and a conversation opened from it
   // comes up over it rather than beside it.
   // The phone has no list, whichever view the Mac is on.
-  const board = chat.settings.chatView === 'board' || ON_PHONE
+  const board = SOLO === undefined && (chat.settings.chatView === 'board' || ON_PHONE)
   const overBoard = board && chat.shown.kind === 'session'
   // Below the board rather than over it: the board stays as a strip across the top, and the conversation takes the rest. The phone has no room for both.
   const below = board && !ON_PHONE && chat.settings.conversationPlace === 'below'
@@ -576,7 +609,7 @@ export function Chat(): React.JSX.Element {
     {servers !== undefined && remote ? null : (
     <div
       ref={frame}
-      className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE ? '' : ' topped'}${over && !making && !asking ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
+      className={`chat${board ? ' boarded' : ''}${docked ? ' docked' : ''}${ON_PHONE || SOLO !== undefined ? '' : ' topped'}${SOLO === undefined ? '' : ' solo'}${over && !making && !asking ? ' dropping' : ''}${holding ? ' holding' : ''}${sizing === undefined ? '' : ' sizing'}`}
       style={{ '--side': `${String(sizing ?? chat.settings.sidebarWidth)}px`, '--dock': `${String(chat.settings.boardHeight)}px` } as React.CSSProperties}
       // The whole window takes a drop. Anywhere else on the page, a dropped
       // file is a page the window would go to instead.
@@ -598,7 +631,7 @@ export function Chat(): React.JSX.Element {
         addFiles([...event.dataTransfer.files])
       }}
     >
-      {ON_PHONE ? null : (
+      {ON_PHONE || SOLO !== undefined ? null : (
         <TopBar
           chat={chat}
           onNew={() => setForm('task')}
@@ -618,7 +651,7 @@ export function Chat(): React.JSX.Element {
         />
       ) : board ? (
         <Board chat={chat} onShortcutFrom={shortcutFrom} />
-      ) : (
+      ) : SOLO !== undefined ? null : (
         <Sidebar
           chat={chat}
           orderRef={order}
@@ -644,7 +677,7 @@ export function Chat(): React.JSX.Element {
       {/* There is no sidebar to make wider on the board. */}
       <div
         className="side-grip"
-        hidden={board}
+        hidden={board || SOLO !== undefined}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId)
           const edge = event.currentTarget.getBoundingClientRect()
@@ -805,6 +838,21 @@ export function Chat(): React.JSX.Element {
                     if (chat.session !== undefined) chat.mark(chat.session.id, value === '' ? undefined : (value as SessionStatus))
                   }}
                 />
+                {popsOut() ? (
+                  <button
+                    type="button"
+                    className="icon-button no-drag head-pop-out"
+                    title="Open in new window"
+                    aria-label="Open in new window"
+                    onClick={() => {
+                      if (chat.session === undefined) return
+                      window.geckit.chat.popOut(chat.session.id)
+                      chat.open({ kind: 'new' })
+                    }}
+                  >
+                    <Icon name="external" />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="icon-button no-drag"
@@ -842,6 +890,7 @@ export function Chat(): React.JSX.Element {
                           ]
                         : []),
                       ...(overBoard ? [{ value: 'place', label: below ? 'Open conversations over the board' : 'Open conversations below the board', icon: below ? 'over' : 'below' }] : []),
+                      ...(popsOut() ? [{ value: 'window', label: 'Open in new window', icon: 'external' }] : []),
                     ]}
                     onPick={(value) => {
                       setMore(undefined)
@@ -857,6 +906,10 @@ export function Chat(): React.JSX.Element {
                       else if (value === 'top' && topOrder !== undefined) chat.change({ progressOrder: topOrder })
                       else if (value === 'bottom' && bottomOrder !== undefined) chat.change({ progressOrder: bottomOrder })
                       else if (value === 'place') chat.change({ conversationPlace: below ? 'over' : 'below' })
+                      else if (value === 'window') {
+                        window.geckit.chat.popOut(id)
+                        chat.open({ kind: 'new' })
+                      }
                     }}
                     onClose={() => setMore(undefined)}
                   />
@@ -987,17 +1040,18 @@ export function Chat(): React.JSX.Element {
             <TaskChecklistEditor
               key={chat.session.id}
               panel
+              canStart={canStartChecklistGoal(chat.session)}
               checklist={shownChecklist(chat.session.checklist, chat.session.goal?.condition, chat.session.goalMet)}
-              goal={chat.session.goal?.condition}
+              goal={chat.session.goal?.state === undefined ? chat.session.goal?.condition : undefined}
               personItem={chat.session.personItem}
-              onSave={(next, typing) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, typing) }}
+              onSave={(next, edit) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, edit) }}
               onClear={() => { if (chat.session === undefined) return; chat.setChecklist(chat.session.id, { items: [] }); if (chat.session.goal !== undefined) chat.say('/goal clear') }}
               onClose={() => showChecklist(false)}
             />
           ) : null}
         </div>
 
-        {ON_PHONE ? null : <TalkStatus chat={chat} onClear={() => setClearing(true)} />}
+        {ON_PHONE ? null : <TalkStatus chat={chat} {...(SOLO === undefined ? { onClear: () => setClearing(true) } : {})} />}
       </div>
 
       <Status chat={chat} />
@@ -1124,12 +1178,18 @@ export function Chat(): React.JSX.Element {
     </>
   )
 
-  if (ON_PHONE) return content
+  if (ON_PHONE || SOLO !== undefined) return content
   // A GeckIt computer's workspace is that computer's own Chat window in a frame, with its own sidebar; the tree keeps its shape so the connection is not remounted.
-  const away = servers !== undefined && remote
 
   return (
-    <div className={away ? 'app-away' : `app${place === 'tasks' ? '' : ' placed'}${place === 'questions' ? ' on-questions' : ''}${asking ? ' asking' : ''}`}>
+    <div
+      className={away ? 'app-away' : `app${place === 'tasks' ? '' : ' placed'}${place === 'questions' ? ' on-questions' : ''}${asking ? ' asking' : ''}`}
+      // The rail is outside the scrim, so a press on it puts away an open conversation the same way.
+      onMouseDownCapture={(event) => {
+        if (making || asking || !(event.target instanceof Element) || event.target.closest('.app-nav') === null) return
+        if ((raised && place !== 'questions') || (overBoard && !below)) chat.open({ kind: 'new' })
+      }}
+    >
       {away ? null : <AppNav chat={chat} place={place} rail={rail} over={navOver} onPlace={go} onToggle={toggleNames} reading={servers ?? ''} onComputer={(id) => { go('tasks'); setServers(id ?? ':add') }} />}
       {!away && navOver ? <div className="nav-catch" onMouseDown={() => { setNavOver(false) }} /> : null}
       <div className="app-main">

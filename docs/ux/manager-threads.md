@@ -7,6 +7,25 @@ created: 2026-11-05
 
 # UX: Manager threads
 
+## Employees, tasks and tracking
+
+- An employee may work on multiple tasks at the same time. One Manager thread can start several task cards for the same employee from one request. It can also use one card for work with a shared outcome.
+- A task is one GeckIt chat and one board card. Manager can create any number of task cards. GeckIt's execution queue determines when each task starts.
+- A task has at most one tracking Manager thread. The tracking thread receives updates until it stops tracking the task. Changing the assigned employee leaves tracking in place.
+
+## Employee assignment from a shared or scheduled thread
+
+In a shared thread or a scheduled result thread, a person can ask the bot to give work to an active employee by name. Manager uses the roster to find the employee. It starts a worker owned by that thread or assigns the employee to the thread's existing worker for the same task. Reassignment saves the new employee on the worker without sending a new message. A person can change that assignment again in the same thread. Use the existing reply and worker status for feedback.
+
+| From | Event | To | What the user sees |
+| --- | --- | --- | --- |
+| Ready | The person names an active employee for new work | Worker created | Manager names the employee and reports the worker's observed status. |
+| Ready | The person names an active employee for an existing worker owned by this thread | Assignment saved | Manager confirms the employee and worker. |
+| Ready | The employee name is missing from the active roster or matches multiple employees | Clarification needed | Manager asks the person to name an available employee or distinguish the matching employees. |
+| Ready | The requested worker belongs to another thread | Assignment refused | Manager explains that the worker belongs to another thread and directs the person to its owning thread. |
+
+The roster provides the employee's name and role for selection. Employee memory and team administration stay outside the thread's Manager interface. The same assignment rules apply on first use and when returning to a digest. Feedback stays in the original thread and uses the existing progress message and approval rules. This reversible assignment adds no settings, notifications, timing thresholds or visual controls.
+
 ## 1. Why
 
 Manager is one conversation today. Telegram, every channel and the Manager window all write into it, a message from Slack arrives as "[Via Slack · Maria]" in the middle of a desktop request, and Manager's answer goes to every place at once. Two people writing from two Slack threads read each other's answers, a Telegram group and a private chat share one context, and nothing says later which person or which thread started a piece of work. Alex wants Manager to keep one conversation per place where people write: one per Telegram chat, one per Slack thread, and the Manager window showing all of them; and a channel to label what it started, so a conversation can be traced back to the person and the thread it came from.

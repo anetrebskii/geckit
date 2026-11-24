@@ -26,6 +26,9 @@ let directory: string
 let project: string
 let env: NodeJS.ProcessEnv
 let running: ChildProcess | undefined
+// Every service started here, so a failed or interrupted run leaves none behind.
+const started = new Set<ChildProcess>()
+process.once('exit', () => { for (const one of started) one.kill('SIGKILL') })
 let output = ''
 
 async function eventually<T>(read: () => Promise<T>, check: (value: T) => boolean, timeout = 8_000): Promise<T> {
@@ -41,6 +44,9 @@ async function eventually<T>(read: () => Promise<T>, check: (value: T) => boolea
 async function start(): Promise<void> {
   output = ''
   running = spawn(process.execPath, ['--import', join(import.meta.dirname, 'fixtures', 'headless', 'stall-fetch.mjs'), join(folder, 'service', 'service.js'), '--data', directory], { cwd: client, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  const one = running
+  started.add(one)
+  one.once('exit', () => started.delete(one))
   running.stdout?.on('data', (part: Buffer) => { output += part.toString() })
   running.stderr?.on('data', (part: Buffer) => { output += part.toString() })
   await eventually(async () => output, (value) => value.includes('GeckIt service ready.'))
@@ -106,6 +112,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (running?.exitCode === null && running.signalCode === null) { const closed = once(running, 'exit'); running.kill('SIGTERM'); await closed }
+  for (const one of started) one.kill('SIGKILL')
   if (folder !== undefined) await rm(folder, { recursive: true, force: true })
 }, 20_000)
 
@@ -203,7 +210,7 @@ it('saves, postpones and refuses Scheduled prompts through the real CLI, and run
   await agent('employees', 'shortcut', 'remove', saved.id)
 }, 45_000)
 
-it('executes authenticated Manager settings and saved-shortcut commands through its real subprocess CLI without decisions', async () => {
+it('executes authenticated Manager settings, team and cron commands through its real subprocess CLI without decisions', async () => {
   await cli('manager', 'configure', JSON.stringify({ enabled: true, provider: 'plugin:fixture', delegation: 'approve' }))
   let sequence = 0
   const execute = async (args: readonly string[]): Promise<ManagerView> => {
@@ -218,15 +225,38 @@ it('executes authenticated Manager settings and saved-shortcut commands through 
   await execute(['settings', 'edit', '--patch', '{"theme":"light","workingAtOnce":4}'])
   expect(await read('settings', 'get')).toMatchObject({ theme: 'light', workingAtOnce: 4 })
   await execute(['settings', 'manager-edit', '--instructions', 'Saved without decision', '--expected-instructions', ''])
-  await execute(['employees', 'shortcut', 'add', 'none', '--name', 'Manager-created task', '--project', 'project', '--prompt', 'manager-created-shortcut', '--provider', 'plugin:fixture'])
+  const capabilities = await execute(['capabilities'])
+  expect(capabilities.activity.find((one) => one.id === `agent-settings-${String(sequence)}`)?.result).toContain('"schedulerTimeZone":')
+  await execute(['employees', 'shortcut', 'add', 'none', '--name', 'Manager-created task', '--project', project, '--prompt', 'manager-created-shortcut', '--provider', 'plugin:fixture', '--cron', '0 9 1 1 *', '--vary', 'off'])
   const all = await read<Shortcut[]>('employees', 'shortcuts', '--json')
   const shortcut = all.find((one) => one.name === 'Manager-created task')
   if (shortcut === undefined) throw new Error('Manager shortcut missing')
-  await execute(['employees', 'shortcut', 'edit', shortcut.id, '--prompt', 'manager-edited-shortcut'])
+  expect(shortcut).toMatchObject({ root: project, cron: '0 9 1 1 *', on: true })
+  await execute(['employees', 'shortcut', 'pause', shortcut.id])
+  await execute(['employees', 'shortcut', 'edit', shortcut.id, '--prompt', 'manager-edited-shortcut', '--cron', '5 9 1 1 *'])
   await execute(['employees', 'shortcuts', '--json'])
+  expect((await read<Shortcut[]>('employees', 'shortcuts', '--json')).find((one) => one.id === shortcut.id)).toMatchObject({ cron: '5 9 1 1 *', on: false })
   await execute(['employees', 'shortcut', 'run', shortcut.id])
   const ran = (await read<Shortcut[]>('employees', 'shortcuts', '--json')).find((one) => one.id === shortcut.id)
   await eventually(() => items(ran?.lastSession ?? ''), (current) => current.some((one) => one.kind === 'theirs' && one.text === 'fixture:manager-edited-shortcut'))
+  const draft = { name: 'Alternate cron command', root: project, prompt: 'Scheduled task', mode: 'auto', on: false, provider: 'plugin:fixture', cron: '0 9 1 2 *' }
+  await execute(['shortcuts', 'save', '--draft', JSON.stringify(draft), '--expected', 'null'])
+  const alternate = (await read<Shortcut[]>('employees', 'shortcuts', '--json')).find((one) => one.name === draft.name)
+  if (alternate === undefined) throw new Error('Alternate shortcut missing')
+  expect(alternate).toMatchObject(draft)
+  await execute(['shortcuts', 'remove', '--id', alternate.id])
+  expect((await read<Shortcut[]>('employees', 'shortcuts', '--json')).some((one) => one.id === alternate.id)).toBe(false)
+  await execute(['employees', 'create', '--name', 'Manager setup worker', '--role', 'Setup', '--description', 'Install the requested tool.\nVerify it on this computer.'])
+  const employee = (await read<EmployeesView>('employees', 'list')).employees.find((one) => one.name === 'Manager setup worker')
+  if (employee === undefined) throw new Error('Missing employee')
+  expect(employee).toMatchObject({ role: 'Setup', description: 'Install the requested tool.\nVerify it on this computer.' })
+  await execute(['employees', 'edit', employee.id, '--role', 'Host setup'])
+  await execute(['employees', 'archive', employee.id])
+  expect(await read('employees', 'show', employee.id)).toMatchObject({ role: 'Host setup', description: employee.description, archived: true })
+  await execute(['employees', 'restore', employee.id])
+  expect(await read('employees', 'show', employee.id)).toMatchObject({ archived: false })
+  await execute(['employees', 'rename', '--id', employee.id, '--name', 'Host setup worker', '--expected-name', employee.name])
+  expect(await read('employees', 'show', employee.id)).toMatchObject({ name: 'Host setup worker' })
   await execute(['employees', 'shortcut', 'remove', shortcut.id])
   expect((await read<Shortcut[]>('employees', 'shortcuts', '--json')).some((one) => one.id === shortcut.id)).toBe(false)
   expect(parseConfiguration(await readFile(join(directory, 'settings.json'), 'utf8')).manager?.instructions).toBe('Saved without decision')
@@ -237,17 +267,17 @@ it('executes authenticated Manager settings and saved-shortcut commands through 
 it('runs Manager Done/archive/resume through real CLI, preserves transcript across restart and terminates the canceled worker process', async () => {
   await cli('manager', 'configure', JSON.stringify({ enabled: true, provider: 'plugin:fixture', delegation: 'automatic' }))
   let sequence = 0
-  const execute = async (args: readonly string[]): Promise<string> => {
+  const execute = async (args: readonly string[], expectedState: ManagerView['activity'][number]['state'] = 'done'): Promise<string> => {
     const id = `lifecycle-${String(++sequence)}`
     await cli('manager', 'send', `fixture-command:${JSON.stringify({ id, args })}`)
     const view = await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.activity.some((one) => one.id === id && one.state !== 'running'))
     const result = view.activity.find((one) => one.id === id)
-    expect(result).toMatchObject({ state: 'done' })
+    expect(result, result?.result).toMatchObject({ state: expectedState })
     await eventually(() => read<ManagerView>('manager', 'view'), (current) => current.state === 'idle')
     return result?.result ?? ''
   }
-  const started: Pick<ChatSession, 'id'> = JSON.parse(await execute(['sessions', 'start', '--project', project, '--text', 'lifecycle-original', '--goal', 'Original result is present'])) as Pick<ChatSession, 'id'>
-  const worker = started.id
+  const worker = await send('lifecycle-original')
+  await execute(['sessions', 'attach', '--id', worker])
   const row = async (): Promise<ChatSession | undefined> => (await read<ChatSession[]>('sessions', 'list')).find((one) => one.id === worker)
   await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-original'))
   expect((await row())?.status).not.toBe('done')
@@ -258,7 +288,7 @@ it('runs Manager Done/archive/resume through real CLI, preserves transcript acro
   expect((await row())?.status).toBeUndefined()
   await eventually(() => items(worker), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:lifecycle-correction'))
   await execute(['sessions', 'send', '--id', worker, '--text', 'hang'])
-  const workerPid = Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))
+  const workerPid = Number(await readFile(join(directory, `fixture-child-${encodeURIComponent(worker)}.pid`), 'utf8'))
   expect(() => process.kill(workerPid, 0)).not.toThrow()
   await execute(['sessions', 'send', '--id', worker, '--text', 'must-not-run-after-cancellation'])
   expect((await row())?.queued).toHaveLength(1)
@@ -279,6 +309,7 @@ it('runs Manager Done/archive/resume through real CLI, preserves transcript acro
   const independent: Pick<ChatSession, 'id'> = JSON.parse(await execute(['sessions', 'start', '--project', project, '--text', 'independent-lifecycle-task', '--goal', 'Separate result'])) as Pick<ChatSession, 'id'>
   expect(independent.id).not.toBe(worker)
   await eventually(() => items(independent.id), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:independent-lifecycle-task'))
+  expect(await execute(['sessions', 'mark', '--id', independent.id, '--status', 'done'], 'failed')).toContain('goal or checklist is incomplete')
   expect((await items(worker)).some((one) => one.kind === 'theirs' && one.text.includes('independent-lifecycle-task'))).toBe(false)
   await cli('manager', 'configure', JSON.stringify({ enabled: false }))
 }, 30_000)
@@ -318,6 +349,30 @@ it('keeps working after the operator disconnects and requires an explicit native
   expect(await proposed).toMatchObject({ ok: true, result: expect.stringContaining('Created employee Requested employee') })
 }, 20_000)
 
+it('accepts a background task request from a provider session between turns', async () => {
+  const parent = await send('find follow-up work')
+  const rows = () => read<ChatSession[]>('sessions', 'list')
+  await eventually(rows, (all) => all.some((one) => one.id === parent && one.state === 'unread' && one.held === true))
+  const requested = exec(process.execPath, [join(folder, 'service', 'cli.js'), 'start', '--project', 'project', '--json', 'handle follow-up work'], {
+    cwd: client, env: { ...env, CLAUDE_CODE_SESSION_ID: parent.slice('plugin:fixture:'.length) }, timeout: 10_000,
+  }).catch((error) => {
+    if (error instanceof Error && 'stdout' in error) throw new Error(String(error.stdout).trim() || error.message, { cause: error })
+    throw error
+  })
+  const pending = await Promise.race([
+    eventually(() => read<SessionItem[]>('sessions', 'pending', parent), (all) => all.some((one) => one.kind === 'request')),
+    requested.then(() => { throw new Error('Task request completed before approval.') }),
+  ])
+  const request = pending.find((one) => one.kind === 'request')
+  if (request === undefined) throw new Error('Task approval card is missing.')
+  expect((await rows()).some((one) => one.parent === parent)).toBe(false)
+  await cli('sessions', 'answer-request', parent, request.id, JSON.stringify({ start: [true], notes: [''] }))
+  const child = (await rows()).find((one) => one.parent === parent)
+  if (child === undefined) throw new Error('Approved task was not created.')
+  expect(JSON.parse((await requested).stdout)).toMatchObject({ tasks: [{ answer: 'started', id: child.id }] })
+  await eventually(() => items(child.id), (all) => all.some((one) => one.kind === 'theirs' && one.text === 'fixture:handle follow-up work'))
+}, 20_000)
+
 it('preserves program-request approval, settings and history through a clean restart', async () => {
   await cli('manager', 'configure', JSON.stringify({ instructions: 'Headless test instructions', delegation: 'approve' }))
   expect((await read<ManagerView>('manager', 'view')).config.instructions).toBe('Headless test instructions')
@@ -342,7 +397,8 @@ it('preserves program-request approval, settings and history through a clean res
   const before = await read<ChatSession[]>('sessions', 'list')
   const id = await send('hang')
   await eventually(() => read<ChatSession[]>('sessions', 'list'), (all) => all.some((one) => one.id === id))
-  const child = Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))
+  const childFile = join(directory, `fixture-child-${encodeURIComponent(id)}.pid`)
+  const child = Number(await readFile(childFile, 'utf8'))
   expect((await stat(join(directory, 'find-model-fetch-started'))).isFile()).toBe(true)
   const exited = once(running!, 'exit')
   expect(await cli('shutdown')).toBe('GeckIt service stopped.')
@@ -359,7 +415,7 @@ it('preserves program-request approval, settings and history through a clean res
   const after = await read<ChatSession[]>('sessions', 'list')
   expect(after.map((one) => one.id)).toEqual(expect.arrayContaining(before.map((one) => one.id)))
   expect(after.some((one) => one.id === id)).toBe(true)
-  expect(Number(await readFile(join(directory, 'fixture-child.pid'), 'utf8'))).toBe(child)
+  expect(Number(await readFile(childFile, 'utf8'))).toBe(child)
   const exitedAgain = once(running!, 'exit'); running?.kill('SIGTERM'); await exitedAgain
   expect(running?.exitCode).toBe(0)
 }, 20_000)

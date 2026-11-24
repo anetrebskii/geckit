@@ -7,7 +7,7 @@ import { stringifyRemote } from '../src/shared/remote/codec'
 import { REMOTE_PROTOCOL, requestOf } from '../src/shared/remote/protocol'
 import type { RemoteChannel, RemoteIdentity, RemoteRequest, RemoteResponse, RemoteTrust } from '../src/shared/remote/protocol'
 
-vi.mock('../src/renderer/src/remote/transport', () => ({ remoteDial: vi.fn() }))
+vi.mock(import('../src/renderer/src/remote/transport'), async (original) => ({ ...await original(), remoteDial: vi.fn() }))
 vi.mock('../src/renderer/src/remote/storage', () => ({ devicePublicKey: vi.fn(), signDevice: vi.fn(), rememberServer: vi.fn(async () => undefined) }))
 
 function channel() {
@@ -41,6 +41,51 @@ async function authenticate(link: ReturnType<typeof channel>, server: RemoteIden
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks() })
 
 describe('remote workspace calls', () => {
+  it('retries one unanswered HTML file read while other calls still return', async () => {
+    const server = await identity()
+    const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    vi.mocked(devicePublicKey).mockResolvedValue(btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey('spki', keys.publicKey)))))
+    vi.mocked(signDevice).mockImplementation(async (text) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(text))))))
+    const trust: RemoteTrust = { server: { id: 'server', name: 'Server', publicKey: server.publicKey }, device: 'device', key: 'a'.repeat(43), signal: 'http://127.0.0.1:47932', projects: [], manager: true, full: true }
+    const first = channel()
+    vi.mocked(remoteDial).mockResolvedValueOnce(first.link)
+    const connection = connectRemote(trust, 'Client', () => undefined, trust)
+    const files = (path: string) => first.requests.filter((request) => request.type === 'core-call' && request.call.method === 'chat:file' && request.call.args[1] === path)
+    try {
+      await vi.waitFor(() => expect(remoteDial).toHaveBeenCalledTimes(1))
+      await authenticate(first, server, trust)
+      vi.useFakeTimers()
+      const html = connection.call('chat:file', '/project', 'review.html')
+      void html.catch(() => undefined)
+      const markdown = connection.call('chat:file', '/project', 'review.md')
+      const original = files('review.html')[0]
+      const notes = files('review.md')[0]
+      if (original?.type !== 'core-call' || notes?.type !== 'core-call') throw new Error('File read was not sent')
+      first.deliver({ type: 'core-result', id: notes.id, value: { kind: 'markdown', text: '# Review' } })
+      await expect(markdown).resolves.toEqual({ kind: 'markdown', text: '# Review' })
+
+      await vi.advanceTimersByTimeAsync(20_000)
+      const retried = files('review.html')[1]
+      if (retried?.type !== 'core-call') throw new Error('HTML read was not retried')
+      first.deliver({ type: 'core-result', id: retried.id, value: { kind: 'page', html: '<h1>Review</h1>' } })
+      await expect(html).resolves.toEqual({ kind: 'page', html: '<h1>Review</h1>' })
+
+      const large = connection.call('chat:file', '/project', 'large.html')
+      const slow = files('large.html')[0]
+      if (slow?.type !== 'core-call') throw new Error('Large file read was not sent')
+      await vi.advanceTimersByTimeAsync(21_000)
+      first.deliver({ type: 'core-result', id: slow.id, value: { kind: 'page', html: '<h1>Large file</h1>' } })
+      await expect(large).resolves.toEqual({ kind: 'page', html: '<h1>Large file</h1>' })
+      expect(files('large.html')).toHaveLength(2)
+
+      const missing = connection.call('chat:file', '/project', 'missing.html')
+      const failure = expect(missing).rejects.toThrow('The computer did not finish sending the file. Try again.')
+      await vi.advanceTimersByTimeAsync(120_000)
+      await failure
+      expect(files('missing.html')).toHaveLength(2)
+    } finally { connection.close() }
+  })
+
   it('rejects an uncertain action on disconnect and never replays it after reconnecting', async () => {
     const server = await identity()
     const keys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
@@ -58,6 +103,8 @@ describe('remote workspace calls', () => {
       vi.useFakeTimers()
       const uncertain = connection.call('chat:rename', 'session', 'Changed title')
       const rejection = expect(uncertain).rejects.toThrow(LINK_DOWN)
+      const preview = connection.call('chat:file', '/project', 'review.html')
+      void preview.catch(() => undefined)
       first.link.close()
       await rejection
       const waiting = connection.call('chat:rename', 'session', 'Asked while down')
@@ -65,7 +112,12 @@ describe('remote workspace calls', () => {
       expect(remoteDial).toHaveBeenCalledTimes(2)
       vi.useRealTimers()
       await authenticate(second, server, trust)
-      expect(first.requests.filter((request) => request.type === 'core-call')).toHaveLength(1)
+      expect(first.requests.filter((request) => request.type === 'core-call')).toHaveLength(2)
+      const reopenedFile = second.requests.find((one) => one.type === 'core-call' && one.call.method === 'chat:file')
+      if (reopenedFile?.type !== 'core-call') throw new Error('The file read did not resume')
+      first.deliver({ type: 'core-result', id: reopenedFile.id, value: { kind: 'page', html: 'old connection' } })
+      second.deliver({ type: 'core-result', id: reopenedFile.id, value: { kind: 'page', html: '<h1>Review</h1>' } })
+      await expect(preview).resolves.toEqual({ kind: 'page', html: '<h1>Review</h1>' })
       const renames = (requests: readonly RemoteRequest[]) => requests.filter((one) => one.type === 'core-call' && one.call.method === 'chat:rename')
       await vi.waitFor(() => expect(renames(second.requests)).toHaveLength(1))
       const held = renames(second.requests)[0]

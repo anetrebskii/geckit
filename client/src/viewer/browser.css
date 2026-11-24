@@ -1,0 +1,55 @@
+.secret-page .live-view-scrim {
+  padding: 0;
+}
+
+.secret-page .live-view {
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.secret-page .live-view-done,
+.secret-page .live-view-tool,
+.secret-page .live-view-zoom button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.secret-page .live-view-stage {
+  flex: 1;
+}
+
+.secret-page .live-view-page {
+  margin-inline: auto;
+}
+
+html.phone .live-view.handoff .live-view-screen {
+  touch-action: pan-x;
+}
+
+.secret-page .live-view-keys {
+  font-size: 16px;
+}
+
+.live-view-picture > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.live-view-picture > video.playing {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-view.handoff .live-view-caret {
+    animation: none;
+  }
+}

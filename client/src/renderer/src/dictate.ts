@@ -26,11 +26,19 @@ export interface Voice {
 /** Listens to how loud the microphone is, 0 to 1; returns what stops listening. */
 export type Level = (said: (level: number) => void) => () => void
 
+declare global {
+  interface Window {
+    geckitDictate?: Dictate
+    geckitVoice?: Voice
+    geckitLevel?: Level
+  }
+}
+
 /** How loud the microphone is while on, for the mic to swell with the voice. */
 export function useLevel(on: boolean): number {
   const [level, setLevel] = useState(0)
   useEffect(() => {
-    const listen = (window as { geckitLevel?: Level }).geckitLevel
+    const listen = window.geckitLevel
     if (!on || listen === undefined) return
     const stop = listen(setLevel)
     return () => {
@@ -49,8 +57,7 @@ const EAR = 'geckit.dictation-ear'
 export const ear = (): Ear => (localStorage.getItem(EAR) === 'phone' ? 'phone' : 'host')
 export const setEar = (chosen: Ear): void => localStorage.setItem(EAR, chosen)
 
-const iphone = (): Dictate | undefined => (window as { geckitDictate?: Dictate }).geckitDictate
-export const voice = (): Voice | undefined => (window as { geckitVoice?: Voice }).geckitVoice
+export const voice = (): Voice | undefined => window.geckitVoice
 
 /** The last recording the host did not write down, kept on the phone until it does, so it can be tried again after the app was closed. */
 export interface Unheard {
@@ -127,7 +134,7 @@ const onHost = (mic: Voice): Dictate => {
 
 export const dictate = (): Dictate | undefined => {
   const mic = voice()
-  return ear() === 'host' && mic !== undefined ? onHost(mic) : iphone()
+  return ear() === 'host' && mic !== undefined ? onHost(mic) : window.geckitDictate
 }
 
 const CODES: Readonly<Partial<Record<string, string>>> = {

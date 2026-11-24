@@ -14,7 +14,7 @@ These were settled with Alex in conversation and are not open questions:
 
 - A profile that needs a signed-in account is created and signed into on the computer that will use it. It is never copied from another computer: the browser encrypts its sign-in data with a key held by the operating system, so a copied profile arrives signed out, and many sites distrust a session that moves to a new device.
 - Signing in happens through a live view of that computer's test browser, shown in a paired GeckIt app. Passwords and sign-in data never leave the computer that owns the profile.
-- A sign-in link opens only in a paired GeckIt app (the desktop client or the phone). There is no plain web link.
+- A profile sign-in link opens in a paired GeckIt app. The existing-tab handoff below adds a private, one-time HTTPS link scoped to one already open tab.
 - The AI, the CLI and the UI all do the same things, and the how for the AI ships inside GeckIt's own built-in skills.
 - Build order: driving another computer from the CLI, then profiles with notes on another computer, then the live view and the link.
 
@@ -177,3 +177,14 @@ Every AI conversation GeckIt starts, locally or on another computer, already kno
 - Phone and desktop clients both need to handle `geckit://` links; the phone app already registers the scheme for pairing.
 - Copying sign-in data from the Mac to another computer is out of scope.
 - Sites that bind a session to one IP address may still ask again; that is the site's rule, not a defect.
+
+## Existing tab handoff
+
+Alex taps a link from GeckIt or a private Slack message to take over the same managed browser tab where the assistant reached a sign-in or site check. The link opens in a standard browser on phone or desktop, with the current page ready for input. Done or closing the window releases that tab back to the assistant and leaves it open with its page state intact. The existing profile setup flow stays available through paired GeckIt clients.
+
+- The host grants only the conversation's existing tab and its sign-in popups. While the user has control, the assistant cannot inspect or operate those pages.
+- A link can be claimed once within 15 minutes and can control only that one session. Slack's link preview cannot claim it. After use, expiry, disconnect or close, opening it shows no tab. A fresh link is needed.
+- The link itself grants access and is sent privately. The web viewer has no access to GeckIt workspaces, unrelated tabs or the host's desktop. Only the page image and input cross the live connection.
+- Site dialogs rendered in the page are included. Operating system passkey sheets are outside the page view and depend on the host and site.
+
+Independent test: reach a site check in a managed tab, open the HTTPS link in an ordinary phone browser, complete the check, close the viewer and continue in the original tab. Also open the same link from a second browser, check a preview fetch and test that a foreign tab cannot be shared.

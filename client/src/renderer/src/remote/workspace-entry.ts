@@ -13,18 +13,24 @@ function scopedStorage(storage: Storage, prefix: string): Storage {
 }
 
 let mounted = false
-window.mountRemoteWorkspace = async ({ connection, server, phone, source }: WorkspaceMount): Promise<void> => {
+window.mountRemoteWorkspace = async ({ connection, server, phone, source, onSignIn }: WorkspaceMount): Promise<void> => {
   if (mounted) return
   mounted = true
   document.documentElement.classList.toggle('phone', phone)
   document.documentElement.classList.toggle('framed', phone || window.parent.document.documentElement.classList.contains('framed'))
   document.documentElement.classList.add('remote-workspace-page')
+  if (phone) {
+    const app = window.parent
+    if (app.geckitDictate !== undefined) window.geckitDictate = app.geckitDictate
+    if (app.geckitVoice !== undefined) window.geckitVoice = app.geckitVoice
+    if (app.geckitLevel !== undefined) window.geckitLevel = app.geckitLevel
+  }
   Object.defineProperty(window, 'localStorage', { value: scopedStorage(window.localStorage, `remote:${server.id}:`) })
   Object.defineProperty(window, 'sessionStorage', { value: scopedStorage(window.sessionStorage, `remote:${server.id}:`) })
   window.updateRemoteComputer = (computer) => { window.geckitRemoteComputer = computer; window.dispatchEvent(new Event('geckit:computer')) }
   if (source !== undefined) window.updateRemoteComputer(source)
   const { workspaceApi } = await import('./workspace-api')
-  const api = await workspaceApi(connection, server, phone)
+  const api = await workspaceApi(connection, server, phone, onSignIn)
   Object.defineProperty(window, 'geckit', { value: api })
   await import('../chat/main')
 }

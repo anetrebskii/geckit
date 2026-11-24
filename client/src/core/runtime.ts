@@ -109,8 +109,12 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
     team: {
       settings: getSettings,
       project: (name) => {
-        const root = getSettings().projects.find((one) => projectSaid(one, hostNamed) === name)
-        if (root === undefined) throw new Error(`No folder called ${name}.`)
+        const projects = managerProjects(getSettings())
+        if (projects.includes(name)) return name
+        const matches = projects.filter((root) => projectSaid(root, hostNamed) === name)
+        const [root] = matches
+        if (root === undefined) throw new Error(`No folder called ${name}. Run projects list and use the registered project root.`)
+        if (matches.length > 1) throw new Error(`Several folders are called ${name}. Use the full registered project root.`)
         return root
       },
       projectName: (root) => projectSaid(root, hostNamed),
@@ -203,7 +207,7 @@ export async function createRuntime(cliScript: string, options: RuntimeOptions =
       pairing: () => channels?.pairing(),
       adapters: () => (view.config.intake ?? DEFAULT_MANAGER_INTAKE).sources.filter((source) => source.enabled).map((source) => { const key = JSON.stringify(source); let adapter = sources.get(key); if (adapter === undefined) { adapter = new VoiceMemosSource(source, { transcribe: transcribeInstalledFile, transcription: () => localTranscriptionReadiness({ cli: whisperCli(), model: installedSpeechModel() }) }); sources.set(key, adapter) }; return adapter }),
       classify: (text) => classifyIntake(text, { config: () => view.config, settings: getSettings, check: () => checkVpnIp(getSettings), correct }),
-    }, target: (host, args, authorized) => { if (cliTargets === undefined) throw new Error('Host targeting is unavailable. No command ran locally.'); return cliTargets.run(host, args, authorized) }, product: (args) => { if (cliTargets === undefined) throw new Error('Product CLI is unavailable in this host runtime.'); return cliTargets.local(args) }, computers: () => cliTargets?.list() ?? [], providerSettings: (args) => providerSettings(args, { read: getSettings, save: setSettings, inUse: (provider) => started.providerInUse(provider), manager: () => view.config }), employees, channelFile: (thread) => { if (channels === undefined) throw new Error('Channels are not ready yet.'); return channels.fileSender(thread) }, ownerThread: (thread) => channels?.owner(thread) === true, fileLimit: (thread) => channels?.fileLimit(thread), sessions: started, notes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, cliScript, args, context) })
+    }, target: (host, args, authorized) => { if (cliTargets === undefined) throw new Error('Host targeting is unavailable. No command ran locally.'); return cliTargets.run(host, args, authorized) }, product: (args) => { if (cliTargets === undefined) throw new Error('Product CLI is unavailable in this host runtime.'); return cliTargets.local(args) }, computers: () => cliTargets?.list() ?? [], providerSettings: (args) => providerSettings(args, { read: getSettings, save: setSettings, inUse: (provider) => started.providerInUse(provider), manager: () => view.config }), employees, shares, channelFile: (thread) => { if (channels === undefined) throw new Error('Channels are not ready yet.'); return channels.fileSender(thread) }, ownerThread: (thread) => channels?.owner(thread) === true, fileLimit: (thread) => channels?.fileLimit(thread), sessions: started, notes, settings: getSettings, saveSettings: setSettings, cli: (args, context) => runManagerCli(process.execPath, cliScript, args, context) })
     manager = coordinator
     if (coordinator.instructions().trim() !== '') void syncInstructions(coordinator.instructions()).catch((error: Error) => { console.warn('Could not write Manager instructions', error) })
     let view: ManagerView = await coordinator.view()

@@ -1,4 +1,4 @@
-import type { TaskChecklist } from './checklists'
+import type { ChecklistEdit, TaskChecklist } from './checklists'
 import type { ShortcutRun } from './shortcut-runs'
 import type { ShortcutDestinationChannel } from './shortcut-destinations'
 import type {
@@ -70,6 +70,8 @@ import type { EmployeeDraft, EmployeeMemory, EmployeesApi, EmployeesView } from 
 import type { SessionListStatus } from './session-list'
 
 export type RendererArgument = object | string | number | boolean | null | undefined
+
+export type BrowserViewFrameReply = ViewFrame | Pick<Error, 'message'>
 
 export interface RendererTransport {
   invoke<Result>(channel: string, ...args: readonly RendererArgument[]): Promise<Result>
@@ -324,7 +326,7 @@ return {
     transport: (id: string, transport: ClaudeTransport): void => rendererTransport.send('chat:transport', id, transport),
     assignEmployee: (id: string, employeeId: string | null): Promise<void> => rendererTransport.invoke('chat:assignEmployee', id, employeeId),
     rename: (id: string, title: string): void => rendererTransport.send('chat:rename', id, title),
-    setChecklist: (id: string, checklist: TaskChecklist, typing?: boolean): void => rendererTransport.send('chat:setChecklist', id, checklist, typing),
+    setChecklist: (id: string, checklist: TaskChecklist, edit?: ChecklistEdit): void => rendererTransport.send('chat:setChecklist', id, checklist, edit),
     mark: (id: string, status: SessionStatus | undefined): void => rendererTransport.send('chat:mark', id, status ?? null),
     hide: (id: string): void => rendererTransport.send('chat:hide', id),
     /** Keeps a general question for good, or lets it go a day after its last answer again. */
@@ -390,6 +392,12 @@ return {
     onSpotlight: (said: (again: boolean) => void): (() => void) => rendererTransport.listen('chat:spotlight', said),
     /** Everything above is listened for: what main held while the window loaded can come now. */
     listening: (): void => rendererTransport.send('chat:listening'),
+    /** A conversation on This computer in a window of its own, or that window brought to the front. */
+    popOut: (id: string): void => rendererTransport.send('chat:popOut', id),
+    /** Chat shows another computer, or This computer again: the conversation windows close, or come back. */
+    away: (away: boolean): void => rendererTransport.send('chat:away', away),
+    /** The conversations that have windows of their own, told to Chat whenever one opens or closes. */
+    onWindows: (said: (ids: readonly string[]) => void): (() => void) => rendererTransport.listen('chat:windows', said),
   },
 
   /** The tasks waiting for fewer conversations to be working, and how full the conversations working are. */

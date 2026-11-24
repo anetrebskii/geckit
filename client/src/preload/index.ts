@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { createRendererApi } from '../shared/renderer-api'
-import type { RendererArgument, RendererTransport } from '../shared/renderer-api'
+import type { BrowserViewFrameReply, RendererArgument, RendererTransport } from '../shared/renderer-api'
 import type { Pairing } from '../shared/pairing'
 import type { ConnectionStorage } from '../shared/remote/storage'
 import type { SessionImage } from '../shared/api'
+import type { TabVideoEvent } from '../shared/live-view'
 
 const connectionStorage: ConnectionStorage = {
   publicKey: () => ipcRenderer.invoke('remote:storage', 'publicKey'),
@@ -24,13 +25,23 @@ const transport: RendererTransport = {
   },
 }
 
+const rendererApi = createRendererApi(transport, {
+  platform: process.platform,
+  home: process.env['HOME'] ?? '',
+  pathFor: (file) => webUtils.getPathForFile(file),
+})
+
 const geckit = {
   connectionStorage,
-  ...createRendererApi(transport, {
-    platform: process.platform,
-    home: process.env['HOME'] ?? '',
-    pathFor: (file) => webUtils.getPathForFile(file),
-  }),
+  ...rendererApi,
+  browser: {
+    ...rendererApi.browser,
+    viewFrame: async (name: string) => {
+      const reply = await transport.invoke<BrowserViewFrameReply>('browser:viewFrame', name)
+      if ('message' in reply) throw new Error(reply.message)
+      return reply
+    },
+  },
   /** The hidden window the phone is answered in, and nothing else, uses these. */
   peer: {
     pairing: (): Promise<Pairing | undefined> => ipcRenderer.invoke('peer:pairing'),
@@ -50,11 +61,8 @@ const geckit = {
       return () => { ipcRenderer.off('peer:scale', on) }
     },
     scaled: (id: string, image: SessionImage | undefined): void => ipcRenderer.send('peer:scaled', id, image ?? null),
-    /** The rooms of the links shared now, each with its own key. */
-    shares: (): Promise<readonly { readonly id: string; readonly key: string }[]> => ipcRenderer.invoke('peer:shares'),
-    onShares: (said: (rooms: readonly { readonly id: string; readonly key: string }[]) => void): (() => void) => transport.listen('peer:shares', said),
-    /** A call from a link page, answered for its own link only. */
-    share: (id: string, name: string, args: readonly unknown[]): Promise<unknown> => ipcRenderer.invoke('peer:share', id, name, args),
+    tabVideos: (): Promise<readonly (readonly [string, string | undefined])[]> => ipcRenderer.invoke('peer:tabVideos'),
+    onTabVideo: (said: (event: TabVideoEvent) => void): (() => void) => transport.listen('peer:tabVideo', said),
     /** Which screen to capture for a phone, or why this Mac will not let it be. */
     screen: (): Promise<{ readonly id?: string; readonly error?: string }> => ipcRenderer.invoke('peer:screen'),
   },

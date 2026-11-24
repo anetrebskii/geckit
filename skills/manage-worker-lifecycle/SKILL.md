@@ -7,7 +7,7 @@ description: Coordinate a GeckIt Manager worker from a request through verified 
 
 ## Purpose
 
-Turn a request into an owned worker assignment and close it when the requested outcome is verified. This is a Manager coordination workflow; workers keep their implementation work.
+Decide which task cards a request needs and who should do each task. Close each card when its outcome is verified. Delegate implementation to the assigned workers.
 
 ## Inputs
 
@@ -16,8 +16,8 @@ Read the latest request, corrections, project, employee constraints and original
 ## Work
 
 1. List workers before creating one. Search active assignments and Done or Archived candidates from the prior request when the request corrects previous work. Read each candidate's latest request and replies with `sessions show`. Matching project, employee or keywords alone does not establish the same outcome.
-2. Reuse a worker for the same outcome, clarification or correction. Respect an explicit request to continue a named worker. For an independent outcome, or when continuity cannot be established, start a new worker. Never revive a completed task merely because its topic matches.
-3. Look up employees before assigning. Use the requested active employee's ID; ask when identity is ambiguous. If no employee fits, report an unassigned worker. Keep an existing worker's provider; for a new worker follow explicit provider, project preference, then configured default. Never silently substitute an unavailable provider.
+2. Decide which cards to create. Keep steps with one shared outcome on one card. Create separate cards when outcomes need separate delivery or tracking, or when the person requests them. Reuse a card for a clarification or correction to its outcome. Honor an explicit request to continue a named card. A shared topic alone is insufficient to reopen a completed card.
+3. Look up active employees. Honor the person's choice when they name one. Otherwise choose who fits each task based on role and prior work on the request. If several fit, choose one and proceed. You may assign the same employee to several cards that run in parallel. Ask only if the named employee is ambiguous or unavailable, or a missing requirement would change the assignment. If no employee fits and none was requested, proceed unassigned and say so. Keep an existing worker's provider. For a new worker, use the requested provider, project preference, then configured default. Never silently substitute an unavailable provider.
 4. Give the worker a self-contained request: outcome, source context, constraints, original request and latest corrections, and a checkable goal. Read `checklists list --project <project>` and pass a saved checklist that fits with `--checklist`; when none fits and the outcome has several results, write `--items` for this task; a single condition stays `--goal`. Save a checklist only when the person asks for a reusable one. A checklist runs one item at a time; `sessions list` shows its progress. Change a running task's items with `sessions checklist` when the person changes scope. A `waitsForPerson` item is the person's to approve: tell them, never approve it yourself. Delegate implementation, research and deliverable writing. Attach or follow existing workers only within the person's coordination request and thread ownership.
 5. For a correction while working, inspect fresh `canInject` and use `sessions steer`. An unsupported or blocked steer is a blocker; do not substitute Send. Use Send for a subsequent turn on the same outcome. Retry means retrying a held operation, not submitting a new assignment.
 6. A correction to Done or Archived can use that worker after checking continuity. Inspect the receipt and fresh state: an accepted send may resume it, while a queued or failed request does not prove resumed execution.

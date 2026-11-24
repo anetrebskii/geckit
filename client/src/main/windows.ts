@@ -1,8 +1,8 @@
 import { join } from 'node:path'
 
-import { BrowserWindow, screen, shell } from 'electron'
+import { app, BrowserWindow, screen, shell } from 'electron'
 
-import type { Bounds } from '../shared/api'
+import type { Bounds, ConversationWindow } from '../shared/api'
 import { GECKO_SIDE, geckoRing, geckoSide, keptIn } from '../shared/gecko'
 import type { GeckoItem, GeckoRing } from '../shared/gecko'
 import { getSettings, setSettings } from './store'
@@ -116,6 +116,7 @@ export function tellChat(channel: string, value: unknown): void {
 
 export function chatListening(): void {
   listening = true
+  tellWindows()
   for (const [channel, value] of held) shownChat()?.webContents.send(channel, value)
   held = []
 }
@@ -154,7 +155,108 @@ export function chatWindow(): BrowserWindow {
   return chat
 }
 
+/** Conversations open in windows of their own, by id; only This computer's, since another computer's are read through Chat's own link to it. */
+const conversations = new Map<string, BrowserWindow>()
+/** Windows closed by GeckIt rather than the person, as Chat going to another computer or the app quitting: they stay remembered and come back. */
+const putAway = new WeakSet<BrowserWindow>()
+let chatAway = false
+app.on('before-quit', () => { for (const window of conversations.values()) putAway.add(window) })
+
+const keptWindows = (): readonly ConversationWindow[] => getSettings().conversationWindows ?? []
+
+const keepWindow = (id: string, bounds?: Bounds): void => {
+  const kept = keptWindows()
+  const next = kept.some((one) => one.id === id)
+    ? kept.map((one) => (one.id === id && bounds !== undefined ? { id, bounds } : one))
+    : [...kept, { id, ...(bounds === undefined ? {} : { bounds }) }]
+  setSettings({ conversationWindows: next })
+}
+
+const tellWindows = (): void => { shownChat()?.webContents.send('chat:windows', [...conversations.keys()]) }
+
+function conversationWindow(id: string, bounds: Bounds | undefined, front: boolean): BrowserWindow {
+  const open = conversations.get(id)
+  if (open !== undefined && !open.isDestroyed()) return open
+  const window = new BrowserWindow({
+    width: 760,
+    height: 760,
+    minWidth: 480,
+    minHeight: 420,
+    show: false,
+    title: 'Chat',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 16 } } : {}),
+    backgroundColor: '#ffffff',
+    webPreferences: { preload, sandbox: false },
+    ...onScreen(bounds),
+  })
+  conversations.set(id, window)
+  load(window, 'chat', { conversation: id })
+  outside(window)
+  window.once('ready-to-show', () => { if (front) window.show(); else window.showInactive() })
+  let soon: NodeJS.Timeout | undefined
+  const keep = (): void => {
+    clearTimeout(soon)
+    soon = setTimeout(() => {
+      if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return
+      keepWindow(id, window.getBounds())
+    }, 400)
+  }
+  window.on('resize', keep)
+  window.on('move', keep)
+  window.on('closed', () => {
+    clearTimeout(soon)
+    if (conversations.get(id) === window) conversations.delete(id)
+    if (!putAway.has(window)) setSettings({ conversationWindows: keptWindows().filter((one) => one.id !== id) })
+    tellWindows()
+  })
+  tellWindows()
+  return window
+}
+
+/** A conversation in a window of its own, or that window brought to the front where it already has one. */
+export function openConversationWindow(id: string): void {
+  const open = conversations.get(id)
+  if (open !== undefined && !open.isDestroyed()) {
+    if (open.isMinimized()) open.restore()
+    open.show()
+    open.focus()
+    return
+  }
+  if (chatAway) return
+  const kept = keptWindows().find((one) => one.id === id)
+  if (kept === undefined) keepWindow(id)
+  conversationWindow(id, kept?.bounds, true)
+}
+
+/** Chat shows another computer, or This computer again: the conversation windows close and are remembered, or come back where they were, behind Chat. */
+export function chatShowsAway(away: boolean): void {
+  chatAway = away
+  if (away) {
+    for (const window of conversations.values()) {
+      putAway.add(window)
+      window.close()
+    }
+    return
+  }
+  for (const one of keptWindows()) conversationWindow(one.id, one.bounds, false)
+}
+
+export const conversationWindows = (): BrowserWindow[] => [...conversations.values()].filter((one) => !one.isDestroyed())
+
+/** The window showing this page: Chat, or a conversation's own. */
+export const isChatPage = (contents: Electron.WebContents): boolean =>
+  contents === shownChat()?.webContents || conversationWindows().some((one) => one.webContents === contents)
+
+/** Chat and the conversation windows, the one in front first. */
+export const chatPages = (): BrowserWindow[] => [...(shownChat() === undefined ? [] : [shownChat() as BrowserWindow]), ...conversationWindows()]
+
 export const openChat = (session?: string): void => {
+  const own = session === undefined ? undefined : conversations.get(session)
+  if (own !== undefined && !own.isDestroyed()) {
+    openConversationWindow(session as string)
+    return
+  }
   const window = chatWindow()
   if (window.isMinimized()) window.restore()
   window.show()
@@ -167,6 +269,9 @@ export const shownChat = (): BrowserWindow | undefined =>
 
 /** Whether the person is looking at the chat window right now. */
 export const watchingChat = (): boolean => shownChat()?.isFocused() === true
+
+/** Chat or a conversation's own window, whichever the person is looking at. */
+export const focusedChat = (): BrowserWindow | undefined => chatPages().find((one) => one.isFocused())
 
 /** How far above the bottom of the screen the capsule stands, clear of the Dock and of what is being shown. */
 const CAPSULE_FROM_BOTTOM = 24

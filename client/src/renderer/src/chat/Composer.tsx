@@ -12,14 +12,14 @@ import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu, Picker } from '../ui/Menu'
 import { Sheet } from '../ui/Sheet'
-import { checklistLabel, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
+import { canStartChecklistGoal, checklistLabel, shownChecklist, TaskChecklistEditor } from './TaskChecklist'
 import { awaitingApproval, currentItem } from '../../../shared/checklists'
 import { MOD } from '../ui/Shortcuts'
 import { hostOf, isRemote } from '../../../shared/hosts'
 import { Chrome } from './Chrome'
 import { HostDot } from './HostParts'
 import { Mcp } from './Mcp'
-import { DictatingStrip, fitField, KeptRecording, SendControls, useDictation } from './MessageControls'
+import { DictatingStrip, fitField, KeptRecording, PhoneDictationStatus, SendControls, useDictation } from './MessageControls'
 import { computerName, needsComputer } from './PhoneHosts'
 import { Preview } from './Preview'
 import { Tasks } from './Tasks'
@@ -109,6 +109,10 @@ const TASKS = /^\s*\/(tasks|bashes)\s*$/
 const MCP = /^\s*\/mcp\s*$/
 const GOAL = /^\s*\/goal(\s|$)/
 const COMPACT = /^\s*\/compact(\s|$)/
+
+function checklistHasFocus(): boolean {
+  return document.activeElement?.closest('.task-checklist-panel') != null
+}
 
 /**
  * The field a message is written in, with what it will be sent to under it.
@@ -260,12 +264,12 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
 
   // On the phone a focused field is a keyboard over half the conversation, so it waits for a tap.
   useEffect(() => {
-    if (!ON_PHONE) field.current?.focus()
+    if (!ON_PHONE && !checklistHasFocus()) field.current?.focus()
   }, [chat.focusSeed])
 
   // Once /compact is answered, the caret is back in the field, where a no leaves what was typed.
   useEffect(() => {
-    if (chat.compacting === undefined && !ON_PHONE) field.current?.focus()
+    if (chat.compacting === undefined && !ON_PHONE && !checklistHasFocus()) field.current?.focus()
   }, [chat.compacting])
 
   useLayoutEffect(() => {
@@ -346,6 +350,8 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
   const { addFiles } = chat
 
   const goal = chat.session?.goal
+  const goalState = goal?.state === 'stopped' ? 'Goal stopped' : goal?.state === 'paused' ? 'Goal paused' : undefined
+  const goalPicker = `picker goal-picker goal-control${goalState === undefined ? '' : ' inactive'}`
   const taskList = shownChecklist(chat.session?.checklist, goal?.condition, chat.session?.goalMet)
   const approval = ON_PHONE || !checklistShown ? awaitingApproval(chat.session?.checklist) : undefined
   const approve = (): void => {
@@ -374,6 +380,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
     const action = retained?.querySelector<HTMLButtonElement>('button[data-inject]:not(:disabled)') ?? retained?.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? queueList.current?.querySelector<HTMLButtonElement>('button[data-inject]:not(:disabled)')
     queueFocus.current = undefined
     queueNeighbor.current = undefined
+    if (checklistHasFocus()) return
     if (action !== undefined && action !== null) action.focus()
     else field.current?.focus()
   }, [queued, queueLocked])
@@ -420,10 +427,11 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
     <div className="composer">
       {chat.session !== undefined && editingGoal === chat.session.id ? (
         <TaskChecklistEditor
+          canStart={!cannot && canStartChecklistGoal(chat.session)}
           checklist={taskList}
-          goal={goal?.condition}
+          goal={goalState === undefined ? goal?.condition : undefined}
           personItem={chat.session.personItem}
-          onSave={(next, typing) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, typing) }}
+          onSave={(next, edit) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, edit) }}
           onClear={() => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, { items: [] }); if (goal !== undefined) chat.say('/goal clear'); setEditingGoal(undefined) }}
           onClose={() => setEditingGoal(undefined)}
         />
@@ -993,20 +1001,20 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
               Checklist
             </button>
           ) : chat.session?.checklist === undefined && goal !== undefined ? (
-            <button type="button" className="picker goal-picker goal-control" title={`Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`} aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}>
-              <span className="remote-dot" />
-              <span className="goal-text">{`Goal: ${goal.condition}`}</span>
+            <button type="button" className={goalPicker} title={goalState === undefined ? `Until ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}` : `${goalState}: ${goal.condition}`} aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}>
+              {goalState === undefined ? <span className="remote-dot" /> : <span className="goal-state">{goalState}</span>}
+              <span className="goal-text">{goalState === undefined ? `Goal: ${goal.condition}` : `· ${goal.condition}`}</span>
               <Icon name="down" size={11} />
             </button>
           ) : (
             <button
               type="button"
-              className={`picker goal-picker goal-control${currentItem(taskList)?.state === 'approval' ? ' approval' : ''}`}
-              title={goal === undefined ? checklistLabel(taskList) : `Now: ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}`}
+              className={`${goalPicker}${currentItem(taskList)?.state === 'approval' ? ' approval' : ''}`}
+              title={goal === undefined ? checklistLabel(taskList) : goalState === undefined ? `Now: ${goal.condition.replace(/[.\s]+$/, '')}. ${checked}` : `${goalState}: ${goal.condition}`}
               aria-expanded={onChecklist === undefined ? undefined : checklistShown} onClick={() => { if (onChecklist !== undefined) onChecklist(); else setEditingGoal(chat.session?.id) }}
             >
-              {goal === undefined ? null : <span className="remote-dot" />}
-              <span className="goal-text">{checklistLabel(taskList)}</span>
+              {goalState !== undefined ? <span className="goal-state">{goalState}</span> : goal === undefined ? null : <span className="remote-dot" />}
+              <span className="goal-text">{goalState === undefined ? '' : '· '}{checklistLabel(taskList)}</span>
               <Icon name="down" size={11} />
             </button>
           )}
@@ -1057,6 +1065,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
             stopTitle={chat.settings.chatView === 'board' ? `Stop (${MOD}+.)` : `Stop (Esc, ${MOD}+.)`}
           />
         </div>
+        <PhoneDictationStatus dictation={dictation} />
         {/* The chip row has no room for the hint, so on the phone it has a line of its own over the field. */}
         {held && host !== undefined ? (
           <div className="phone-hint away">

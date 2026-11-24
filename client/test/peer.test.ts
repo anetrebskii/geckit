@@ -4,12 +4,9 @@ import type { Link } from '../src/renderer/src/link'
 import type { LinkMessage } from '../src/shared/pairing'
 
 let joined: (link: Link) => void = () => undefined
-const shareJoins = new Map<string, (link: Link) => void>()
-const shareCalls: unknown[][] = []
 vi.mock('../src/renderer/src/link', () => ({
   listen: (pairing: { readonly key: string }, join: (link: Link) => void) => {
     if (pairing.key === 'k') joined = join
-    else shareJoins.set(pairing.key, join)
     return () => undefined
   },
 }))
@@ -51,12 +48,8 @@ describe('what the peer window tells phones', () => {
             tell = said
           },
           pairing: () => Promise.resolve({ key: 'k', signal: 's' }),
-          shares: () => Promise.resolve([{ id: 'link-1', key: 'link-key' }]),
-          onShares: () => () => undefined,
-          share: (...args: unknown[]) => {
-            shareCalls.push(args)
-            return Promise.resolve({ kind: 'file', title: 'report.html', expiresAt: 1 })
-          },
+          tabVideos: () => Promise.resolve([]),
+          onTabVideo: () => () => undefined,
         },
       },
     })
@@ -67,21 +60,6 @@ describe('what the peer window tells phones', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
-  })
-
-  it('answers a link page only about its own link, and nothing a phone may ask', async () => {
-    const page = phone()
-    shareJoins.get('link-key')?.(page.link)
-    page.say({ t: 'call', id: 1, name: 'chat.items', args: ['any'] })
-    page.say({ t: 'call', id: 2, name: 'manager.view', args: [] })
-    page.say({ t: 'call', id: 3, name: 'share.about', args: [] })
-    await vi.runAllTimersAsync()
-    expect(page.sent).toEqual([
-      { t: 'reply', id: 1, error: 'Not shared' },
-      { t: 'reply', id: 2, error: 'Not shared' },
-      { t: 'reply', id: 3, value: { kind: 'file', title: 'report.html', expiresAt: 1 } },
-    ])
-    expect(shareCalls).toEqual([['link-1', 'share.about', []]])
   })
 
   it('answers the obsolete old phone link only about the screen, and tells it to pair again for anything else', async () => {

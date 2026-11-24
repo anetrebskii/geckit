@@ -72,7 +72,7 @@ export async function secrets(rest: readonly string[]): Promise<SecretsAnswer> {
       if (!told.ok) return refused(told.error)
       if (typeof told['link'] !== 'string') return { ok: true, said: `${name} is already saved (${String(told['kept'])}); nothing was sent. Add --replace to send a link anyway.` }
       const minutes = Math.max(1, Math.round((Number(told['expiresAt']) - Date.now()) / 60_000))
-      return { ok: true, said: `${told['link']}\nPut this link, as it is, in your final reply to the person in this turn, not only in a note between steps, which the chat folds away. It works for ${minutes} minutes, once; they type the secret there${kind === 'website' ? ', the username or email too, so send no other link for this sign-in' : ''}. Then run geckit secrets wait ${name}. You never see the value: use it by name with geckit secrets run or geckit browser type --secret.` }
+      return { ok: true, said: `${told['link']}\nInclude this link as printed in the final private reply. It works once within ${minutes} minutes. The person enters the secret there${kind === 'website' ? ' along with their username or email if needed' : ''}. End the turn: GeckIt resumes this conversation once the secret is saved. Do not start a timer or run secrets wait. Use the secret by name with geckit secrets run or geckit browser type --secret.` }
     }
     case 'wait': {
       const name = words[0]

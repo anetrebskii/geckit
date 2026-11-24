@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
+import { watch } from 'node:fs'
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -8,10 +9,12 @@ import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import { WebSocket } from 'ws'
-import { afterAll, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 
+import { serveAsks } from '../src/cli/browser'
+import { TEST_BROWSER_CLOSING } from '../src/cli/browser-lifecycle'
 import { ANYWHERE } from '../src/shared/api'
-import type { ChatSession, SessionItem, Settings } from '../src/shared/api'
+import type { ChatSession, SessionItem, Settings, ViewFrame } from '../src/shared/api'
 
 interface Target { readonly type: string; readonly url: string; readonly webSocketDebuggerUrl: string }
 interface CdpReply {
@@ -111,7 +114,7 @@ async function startDesktop(): Promise<<T>(expression: string) => Promise<T>> {
   return evaluate
 }
 
-afterAll(async () => {
+afterEach(async () => {
   await stopDesktop()
   if (folder === undefined) return
   let pid: number | undefined
@@ -119,9 +122,11 @@ afterAll(async () => {
   try { await cli('shutdown') } catch { if (pid !== undefined) { try { process.kill(pid, 'SIGTERM') } catch { /* The service already exited. */ } } }
   if (pid !== undefined) await until(async () => { try { process.kill(pid, 0); return false } catch { return true } }, Boolean)
   await rm(folder, { recursive: true, force: true })
+  folder = undefined
+  output = ''
 }, 30_000)
 
-it.skipIf(process.platform !== 'darwin' || process.env['GECKIT_DESKTOP_INTEGRATION'] !== '1')('uses the built desktop as a service client and reattaches while its task continues', async () => {
+async function prepareDesktop() {
   folder = await mkdtemp(join(tmpdir(), 'geckit-desktop-core-'))
   data = join(folder, 'data')
   const home = join(folder, 'home')
@@ -130,9 +135,16 @@ it.skipIf(process.platform !== 'darwin' || process.env['GECKIT_DESKTOP_INTEGRATI
   const plugin = join(data, 'provider-plugins', 'plugin-fixture')
   await cp(join(import.meta.dirname, 'fixtures', 'headless'), plugin, { recursive: true })
   await writeFile(join(plugin, 'geckit-plugin.json'), JSON.stringify({ apiVersion: 1, entry: 'index.mjs', provider: { id: 'plugin:fixture', family: 'plugin:fixture', name: 'Fixture', shortName: 'Fixture', icon: 'terminal', browser: 'none', loginCommand: '', planName: '' } }))
-  await writeFile(join(data, 'settings.json'), JSON.stringify({ projects: [project], chatProviders: ['plugin:fixture'], chatProvider: 'plugin:fixture', vpnIpCheck: false, guideClaude: false, guideCodex: false, workingAtOnce: 0, phone: false, autoUpdate: false, showGecko: false, analyticsAsked: true, analytics: false, sendErrors: false, anywhereOff: Object.keys(ANYWHERE), flashFor: 'never', soundFor: 'never' }))
+  await writeFile(join(data, 'settings.json'), JSON.stringify({ projects: [project], chatProviders: ['plugin:fixture'], chatProvider: 'plugin:fixture', vpnIpCheck: false, guideClaude: false, guideCodex: false, chromeBridge: false, chromeBridgeDefault: 1, workingAtOnce: 0, phone: false, autoUpdate: false, showGecko: false, analyticsAsked: true, analytics: false, sendErrors: false, anywhereOff: Object.keys(ANYWHERE), flashFor: 'never', soundFor: 'never' }))
   env = { ...process.env, GECKIT_DATA: data, GECKIT_VAULT_KEY: Buffer.alloc(32, 23).toString('base64'), HOME: home, CODEX_HOME: join(folder, 'codex'), CLAUDE_CONFIG_DIR: join(folder, 'claude') }
   for (const key of ['ELECTRON_RUN_AS_NODE', 'ELECTRON_RENDERER_URL', 'CODEX_THREAD_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE', 'GECKIT_MANAGER_SESSION', 'GECKIT_MANAGER_TOKEN', 'GECKIT_MANAGER_OPERATION', 'GECKIT_SOURCE_CLI', 'GECKIT_SOURCE_GUIDE', 'GECKIT_SOURCE_CODEX_GUIDE']) delete env[key]
+  return { project, home }
+}
+
+const desktopTest = it.skipIf(process.platform !== 'darwin' || process.env['GECKIT_DESKTOP_INTEGRATION'] !== '1')
+
+desktopTest('uses the built desktop as a service client and reattaches while its task continues', async () => {
+  const { project } = await prepareDesktop()
   const evaluate = await startDesktop()
   const owner = JSON.parse(await readFile(join(data, 'service-owner.json'), 'utf8')) as { readonly pid: number }
   expect(owner.pid).not.toBe(desktop?.pid)
@@ -161,3 +173,28 @@ it.skipIf(process.platform !== 'darwin' || process.env['GECKIT_DESKTOP_INTEGRATI
   expect((await reattached<Settings>('window.geckit.settings.get()')).nativeLanguage).toBe('German')
   expect((await reattached<SessionItem[]>(`window.geckit.chat.items(${JSON.stringify(slow)})`)).some((item) => item.kind === 'theirs' && item.text === 'fixture:slow')).toBe(true)
 }, 60_000)
+
+desktopTest('passes a closing browser preview to the renderer without logging an IPC handler error', async () => {
+  const { project, home } = await prepareDesktop()
+  const evaluate = await startDesktop()
+  expect((await evaluate<Settings>('window.geckit.settings.get()')).projects).toContain(project)
+  const browser = join(home, '.geckit', 'browser')
+  const bin = join(home, '.geckit', 'bin')
+  await Promise.all([mkdir(join(browser, 'hosts'), { recursive: true }), mkdir(bin, { recursive: true })])
+  await writeFile(join(bin, 'geckit-browser-host'), '')
+  await writeFile(join(browser, 'hosts', `${process.pid}.json`), JSON.stringify({ pid: process.pid, label: 'geckit:preview', engine: 'camoufox', tabs: [1], focused: 1, t: Date.now() }))
+  const frame: ViewFrame = { jpeg: 'fixture', width: 1280, height: 800, title: 'Preview', url: 'about:blank' }
+  let closing = false
+  const watcher = watch(browser, serveAsks(browser, (pid) => pid === process.pid, async () =>
+    closing ? { ok: false, error: TEST_BROWSER_CLOSING } : { ok: true, result: frame }))
+  try {
+    expect(await evaluate<ViewFrame>('window.geckit.browser.viewFrame("preview")')).toEqual(frame)
+    closing = true
+    const failure = await evaluate<string>('window.geckit.browser.viewFrame("preview").catch(error => error.message)')
+    await stopDesktop()
+    expect(output).not.toContain("Error occurred in handler for 'browser:viewFrame'")
+    expect(failure).toBe(TEST_BROWSER_CLOSING)
+  } finally {
+    watcher.close()
+  }
+}, 30_000)

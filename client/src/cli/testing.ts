@@ -1,4 +1,5 @@
 import type { Dialog, Download, Frame, Page } from 'playwright-core'
+import WebSocket from 'ws'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
@@ -7,8 +8,10 @@ import { basename, extname, join } from 'node:path'
 import type { TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
-import { signInLink } from './live-view'
-import { addressOf } from '../shared/live-view'
+import { signInLink, tabHandoffLink } from './live-view'
+import type { TabHandoffTarget } from './live-view'
+import { addressOf, TAB_HANDOFF_LEASE, TAB_HANDOFF_TTL } from '../shared/live-view'
+import type { TabHandoffPngFrame } from '../shared/live-view'
 import { serveSecretFiles } from './secrets-serve'
 import { receiver, type SealedValue } from '../shared/secret-seal'
 import { alive, camoufoxLibraries, camoufoxSupported, downloading, migrateChromeProfiles, prepareCamoufox, profilesFolder, testingCamoufox, testingFolder } from './camoufox'
@@ -16,7 +19,7 @@ import { prepareLaunch } from './launch'
 import { MEDIA_FILE, mediaPrefs } from './launch-settings'
 import { HIDDEN_SCRIPT, PAINT_SCRIPT, type PictureJob } from './hidden-page'
 import { isServer, presentationOf, setPresentation } from './desktop-identity'
-import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TestTabOwners } from './browser-lifecycle'
+import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TEST_BROWSER_CLOSING, TEST_TAB_READ_ONLY, TestTabOwners } from './browser-lifecycle'
 
 export { profilesFolder, testingFolder, testingCamoufox, camoufoxHeadless, downloading } from './camoufox'
 export const testLog = (name: string, root?: string): string => join(testingFolder(root), `${name}.log`)
@@ -54,7 +57,7 @@ export function scrubSecrets(value: PageValue, secrets: readonly string[]): Page
   return JSON.parse(text) as PageValue
 }
 interface ViewSettings { readonly width?: number; readonly height?: number; readonly phone?: boolean; readonly scheme?: 'light' | 'dark'; readonly motion?: 'reduce' | 'no-preference' }
-interface Request { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly count?: number; readonly button?: 'left' | 'right'; readonly append?: boolean; readonly files?: readonly string[]; readonly folder?: string; readonly to?: string; readonly offset?: { readonly x: number; readonly y: number }; readonly load?: boolean; readonly gone?: string; readonly accept?: boolean; readonly kind?: string; readonly setting?: string; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: ViewSettings; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string; readonly input?: ViewInput; readonly keyId?: string; readonly sealed?: SealedValue }
+export interface TestBrowserRequest { readonly conversation?: string; readonly cmd: string; readonly tab?: number; readonly url?: string; readonly ref?: string | null; readonly real?: boolean; readonly text?: string; readonly by?: number; readonly count?: number; readonly button?: 'left' | 'right'; readonly append?: boolean; readonly files?: readonly string[]; readonly folder?: string; readonly to?: string; readonly offset?: { readonly x: number; readonly y: number }; readonly load?: boolean; readonly gone?: string; readonly accept?: boolean; readonly kind?: string; readonly setting?: string; readonly key?: string; readonly code?: string; readonly pointer?: boolean; readonly reset?: boolean; readonly set?: ViewSettings; readonly ms?: number; readonly slow?: number; readonly then?: { readonly cmd: string; readonly ref?: string; readonly key?: string }; readonly query?: string; readonly input?: ViewInput; readonly keyId?: string; readonly sealed?: SealedValue; readonly patches?: boolean }
 type Center = { readonly x: number; readonly y: number; readonly label: string }
 type Box = Omit<Center, 'label'> & { readonly width: number; readonly height: number; readonly scrollX: number; readonly scrollY: number }
 const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms))
@@ -124,19 +127,38 @@ export const CARET_SCRIPT = `(() => {
   const style = view.getComputedStyle(field)
   if (field.tagName === 'INPUT') {
     const box = field.getBoundingClientRect()
-    const pen = new OffscreenCanvas(1, 1).getContext('2d')
-    pen.font = style.font || (style.fontWeight + ' ' + style.fontSize + ' ' + style.fontFamily)
-    if ('letterSpacing' in pen && style.letterSpacing !== 'normal') pen.letterSpacing = style.letterSpacing
-    const text = field.type === 'password' ? '\u2022'.repeat(field.value.length) : field.value
-    const before = pen.measureText(text.slice(0, field.selectionStart ?? text.length)).width
-    const whole = pen.measureText(text).width
+    const doc = field.ownerDocument
+    const mirror = doc.createElement('span')
+    Object.assign(mirror.style, { all: 'initial', position: 'fixed', visibility: 'hidden', pointerEvents: 'none', top: '0', left: '0', whiteSpace: 'pre', unicodeBidi: 'isolate' })
+    for (const name of ['font', 'fontKerning', 'fontFeatureSettings', 'fontVariationSettings', 'fontOpticalSizing', 'letterSpacing', 'wordSpacing', 'textTransform', 'direction']) mirror.style[name] = style[name]
+    const text = doc.createTextNode(field.type === 'password' ? '\\u2022'.repeat(field.value.length) : field.value)
+    mirror.appendChild(text)
+    doc.body.appendChild(mirror)
+    const range = doc.createRange()
+    range.setStart(text, field.selectionStart)
+    range.collapse(true)
+    const line = mirror.getBoundingClientRect()
+    const before = text.length === 0 ? 0 : range.getBoundingClientRect().left - line.left
+    mirror.remove()
     const edge = (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.paddingLeft) || 0)
     const inner = box.width - edge - (parseFloat(style.borderRightWidth) || 0) - (parseFloat(style.paddingRight) || 0)
-    const align = style.textAlign === 'center' ? Math.max(0, (inner - whole) / 2) : style.textAlign === 'right' || style.textAlign === 'end' ? Math.max(0, inner - whole) : 0
-    const left = edge + align + before - field.scrollLeft
+    const rtl = style.direction === 'rtl'
+    const alignRight = style.textAlign === 'right' || (style.textAlign === 'end' && !rtl) || (style.textAlign === 'start' && rtl)
+    const room = inner - line.width
+    const align = style.textAlign === 'center' ? Math.max(0, room / 2) : alignRight ? (rtl ? room : Math.max(0, room)) : 0
+    let left = edge + align + before - field.scrollLeft
     const size = parseFloat(style.fontSize) || 16
     const height = Math.min(parseFloat(style.lineHeight) || size * 1.2, size * 1.3)
     if (left < 0 || left > box.width) return null
+    if (text.length > 0) {
+      try {
+        const hit = doc.caretPositionFromPoint?.(box.left + left, box.top + box.height / 2)
+        if (hit?.offsetNode === field && hit.offset === field.selectionStart) {
+          const native = hit.getClientRect()
+          if (native?.height > 0) left = native.left - box.left
+        }
+      } catch { /* Firefox can omit a rectangle for a focused input. */ }
+    }
     return done({ left: box.left + left, top: box.top + (box.height - height) / 2, width: 0, height }, height)
   }
   const mirror = field.ownerDocument.createElement('div')
@@ -164,18 +186,29 @@ export const CARET_SCRIPT = `(() => {
 export const FIELDS_SCRIPT = `(() => {
   const kinds = new Set(['', 'text', 'search', 'url', 'tel', 'email', 'password', 'number'])
   const found = []
-  const look = (doc, dx, dy) => {
+  let focusedField
+  const look = (doc, dx, dy, focused) => {
     for (const one of doc.querySelectorAll('input, textarea, [contenteditable=""], [contenteditable="true"], iframe')) {
       if (found.length >= 80) return
       const box = one.getBoundingClientRect()
       if (box.width <= 0 || box.height <= 0 || box.bottom + dy < 0 || box.top + dy > innerHeight || box.right + dx < 0 || box.left + dx > innerWidth) continue
-      if (one.tagName === 'IFRAME') { try { if (one.contentDocument) look(one.contentDocument, dx + box.left, dy + box.top) } catch {} continue }
+      const active = focused && one === doc.activeElement
+      if (one.tagName === 'IFRAME') { try { if (one.contentDocument) look(one.contentDocument, dx + box.left, dy + box.top, active) } catch {} continue }
       if (one.disabled || one.readOnly || (one.tagName === 'INPUT' && !kinds.has(one.type))) continue
-      found.push({ x: Math.round(dx + box.left), y: Math.round(dy + box.top), width: Math.round(box.width), height: Math.round(box.height) })
+      const field = { x: Math.round(dx + box.left), y: Math.round(dy + box.top), width: Math.round(box.width), height: Math.round(box.height) }
+      found.push(field)
+      if (active) focusedField = field
     }
   }
-  look(document, 0, 0)
-  return found
+  look(document, 0, 0, true)
+  return { fields: found, focusedField }
+})()`
+
+const FRAME_METADATA = `(() => {
+  const metadata = { title: document.title }
+  try { metadata.caret = ${CARET_SCRIPT} ?? undefined } catch {}
+  try { Object.assign(metadata, ${FIELDS_SCRIPT}) } catch {}
+  return metadata
 })()`
 
 /** Playwright's launch error ends with its call log; the cause is in the browser's own error lines and exit. */
@@ -187,7 +220,7 @@ export function launchFailure(message: string): string {
   return [head, ...said.slice(-3), ...(exit === undefined ? [] : [`exited with ${exit}`])].filter((one) => one !== '').join(' / ')
 }
 
-export async function testBrowser(name: string, folder: string = browserFolder(), root: string = homedir(), initialConversation: string | undefined = process.env['GECKIT_TEST_CONVERSATION']): Promise<void> {
+export async function testBrowser(name: string, folder: string = browserFolder(), root: string = homedir()): Promise<void> {
   if (!validTestName(name)) throw new Error(`${name} is not a test profile name: lowercase letters, digits and hyphens.`)
   migrateChromeProfiles(root)
   mkdirSync(folder, { recursive: true })
@@ -196,23 +229,8 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   const unlock = acquireTestLock(name, folder)
   if (unlock === undefined) return
   process.once('exit', unlock)
-  const owners = new TestTabOwners(name, folder, initialConversation !== undefined)
-  if (initialConversation !== undefined) owners.acquire(initialConversation)
-  const acquirePending = (): void => {
-    for (const file of readdirSync(folder).filter((one) => one.endsWith('.launch'))) {
-      try {
-        const launch = JSON.parse(readFileSync(join(folder, file), 'utf8')) as Pick<Request, 'conversation'> & { readonly name: string }
-        if (launch.conversation === undefined || conversationTestName(launch.conversation, folder, launch.name) !== name) continue
-        owners.acquire(launch.conversation)
-        rmSync(join(folder, file), { force: true })
-      } catch { continue }
-    }
-  }
-  acquirePending()
+  const owners = new TestTabOwners(name, folder)
   const binary = await prepareCamoufox(root)
-  acquirePending()
-  owners.released()
-  if (owners.managed && owners.conversations.size === 0) { unlock(); return }
   const dir = join(profilesFolder(root), name)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const libraries = camoufoxLibraries(binary.path, root)
@@ -221,7 +239,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   process.once('exit', () => launch.virtual?.stop())
   let savedMedia: string | undefined
   try { savedMedia = readFileSync(join(dir, MEDIA_FILE), 'utf8') } catch { savedMedia = undefined }
-  const prefs = { 'gfx.bundled-fonts.activate': 0, ...mediaPrefs(savedMedia) }
+  const prefs = { 'gfx.bundled-fonts.activate': 0, 'browser.link.open_newwindow': 3, 'browser.link.open_newwindow.disabled_in_fullscreen': false, ...mediaPrefs(savedMedia) }
   const context = await firefox.launchPersistentContext(dir, {
     executablePath: binary.path,
     headless: launch.headless,
@@ -237,6 +255,10 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   const base = 900_000_000 + process.pid * 100_000
   let counter = 0
   const targets = new Map<number, Page>()
+  const windowTabs = new Set<Page>()
+  const pendingTabs = new Map<number, Promise<void>>()
+  let spare = context.pages().find((page) => page.url() === 'about:blank')
+  const startupUntil = Date.now() + 10_000
   const ids = new Map<Page, number>()
   const held = new Map<number, ViewSettings>()
   const dialogs = new Map<Page, Dialog>()
@@ -245,7 +267,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   let frameCounter = 0
   const expecting = new Set<Page>()
   const say = (): void => {
-    writeFileSync(`${card}.part`, JSON.stringify({ pid: process.pid, label, tabs: [...targets.keys()], focused: 0, t: Date.now(), ...(launch.display === undefined ? {} : { display: launch.display }) }))
+    writeFileSync(`${card}.part`, JSON.stringify({ pid: process.pid, label, engine: 'camoufox', tabs: [...targets.keys()], focused: 0, t: Date.now(), ...(launch.display === undefined ? {} : { display: launch.display }) }))
     renameSync(`${card}.part`, card)
   }
   const end = (): never => { rmSync(card, { force: true }); unlock(); process.exit(0) }
@@ -271,8 +293,27 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     const id = base + ++counter
     targets.set(id, page)
     ids.set(page, id)
-    void page.opener().then((opener) => { const parent = opener === null ? undefined : ids.get(opener); if (parent !== undefined) openers.set(id, parent); owners.inherit(String(id), parent === undefined ? undefined : String(parent)) })
-    page.on('close', () => { targets.delete(id); ids.delete(page); held.delete(id); openers.delete(id); dialogs.delete(page); owners.tabs.delete(String(id)); say() })
+    const assignOwner = async (): Promise<void> => {
+      const opener = await page.opener()
+      const parent = opener === null ? undefined : ids.get(opener)
+      if (parent !== undefined) {
+        openers.set(id, parent)
+        await pendingTabs.get(parent)
+      }
+      if (!page.isClosed() && page !== spare && !owners.tabs.has(id)) owners.tabs.set(id, parent === undefined ? null : owners.tabs.get(parent) ?? null)
+    }
+    pendingTabs.set(id, assignOwner().finally(() => pendingTabs.delete(id)))
+    page.on('close', () => {
+      if (page === spare) spare = undefined
+      targets.delete(id)
+      windowTabs.delete(page)
+      ids.delete(page)
+      held.delete(id)
+      openers.delete(id)
+      dialogs.delete(page)
+      owners.tabs.delete(id)
+      say()
+    })
     page.on('download', (download) => { if (expecting.has(page)) return; void saveDownload(download).catch((error: Error) => process.stderr.write(`Download failed: ${error.message}\n`)) })
     page.on('dialog', (dialog) => { if (page === viewPage || viewOpeners.includes(page)) void dialog.dismiss().catch(() => undefined); else dialogs.set(page, dialog) })
     say()
@@ -282,13 +323,15 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   for (const page of context.pages()) track(page)
   say()
   const secretKeys = new Map<string, (sealed: SealedValue, info: string) => Promise<string>>()
-  let activeConversation: string | undefined
+  let activeOwner: ReturnType<TestTabOwners['identify']> = null
+  let inspecting = false
   let closing = false
   const targetOf = (id: number | undefined): Page => {
     if (id === undefined || !Number.isInteger(id)) throw new Error('Give the tab id from geckit browser pages.')
     const page = targets.get(id)
     if (page === undefined) throw new Error(`No tab ${id}. Run geckit browser pages for the current ids.`)
-    owners.authorize(activeConversation, String(id))
+    if (!inspecting && owners.tabs.get(id) !== activeOwner) throw new Error(TEST_TAB_READ_ONLY)
+    if (handoff !== undefined && (page === viewPage || viewOpeners.includes(page))) throw new Error('The person is using this tab. Wait for them to finish.')
     return page
   }
   const evaluate = async (page: Page, expression: string): Promise<PageValue | undefined> => {
@@ -465,7 +508,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       return { guid, name: file.suggestedFilename(), bytes: statSync(join(folder, guid)).size }
     } finally { expecting.delete(page) }
   }
-  const drag = async (id: number | undefined, request: Request): Promise<object> => {
+  const drag = async (id: number | undefined, request: TestBrowserRequest): Promise<object> => {
     const page = targetOf(id)
     let from = await atRef<Center>(id, request.ref, 'pageGrab')
     const target = request.to === undefined ? undefined : await atRef<Center>(id, request.to, 'pageGrab')
@@ -477,7 +520,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     await page.mouse.up()
     return { dragged: from.label, to: to.label }
   }
-  const waitFor = async (id: number | undefined, request: Request): Promise<object> => {
+  const waitFor = async (id: number | undefined, request: TestBrowserRequest): Promise<object> => {
     const page = targetOf(id)
     const started = Date.now()
     const ms = request.ms ?? 15_000
@@ -494,7 +537,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
       await wait(250)
     }
   }
-  const answerDialog = async (id: number | undefined, request: Request): Promise<object> => {
+  const answerDialog = async (id: number | undefined, request: TestBrowserRequest): Promise<object> => {
     const page = targetOf(id)
     const open = dialogs.get(page)
     if (open === undefined) throw new Error(`No dialog is open on tab ${id}.`)
@@ -505,7 +548,7 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     return { answered, accept: request.accept === true }
   }
   const allowed = new Map<string, Set<string>>()
-  const permission = async (id: number | undefined, request: Request): Promise<object> => {
+  const permission = async (id: number | undefined, request: TestBrowserRequest): Promise<object> => {
     const origin = new URL(targetOf(id).url()).origin
     const kind = request.kind ?? ''
     const setting = request.setting ?? ''
@@ -539,14 +582,29 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   }
   let viewPage: Page | undefined
   const viewOpeners: Page[] = []
+  let handoff: { readonly key: string; readonly expires: number; heard: number } | undefined
+  let handoffPoll: ReturnType<typeof setInterval> | undefined
+  let stopVideo: (() => void) | undefined
+  const releaseHandoff = (): void => {
+    stopVideo?.()
+    clearInterval(handoffPoll)
+    handoffPoll = undefined
+    handoff = undefined
+    viewPage = undefined
+    viewOpeners.length = 0
+  }
+  const followed = new WeakSet<Page>()
   /** A popup the sign-in page opens, such as Sign in with Google, is shown in its place until it closes, then the page that opened it again. */
   const follow = (page: Page): void => {
+    if (followed.has(page)) return
+    followed.add(page)
     page.on('popup', (popup) => {
       if (viewPage !== page) return
+      stopVideo?.()
       viewOpeners.push(page)
       viewPage = popup
       follow(popup)
-      void popup.setViewportSize(VIEW_SIZE).then(() => popup.bringToFront()).catch(() => undefined)
+      if (handoff === undefined) void popup.setViewportSize(VIEW_SIZE).then(() => popup.bringToFront()).catch(() => undefined)
       popup.on('close', () => {
         if (viewPage !== popup) return
         let back = viewOpeners.pop()
@@ -556,6 +614,49 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     })
   }
   const viewTarget = (): Page => { if (viewPage === undefined || viewPage.isClosed()) throw new Error('The sign-in tab is closed. Start the sign-in again.'); return viewPage }
+  const streamTab = (endpoint: string | undefined): object => {
+    if (handoff === undefined || endpoint === undefined || !/^ws:\/\/127\.0\.0\.1:\d{1,5}\/[a-f0-9]{64}$/.test(endpoint) || stopVideo !== undefined) throw new Error('The tab stream is unavailable.')
+    const page = viewTarget()
+    const socket = new WebSocket(endpoint, { perMessageDeflate: false, handshakeTimeout: 2000 })
+    const stop = (): void => {
+      if (stopVideo !== stop) return
+      stopVideo = undefined
+      page.off('close', stop)
+      page.off('framenavigated', checkPage)
+      socket.terminate()
+      void page.screencast.stop().catch(() => undefined)
+    }
+    const checkPage = (): void => {
+      if (page !== viewPage || !/^https?:\/\//i.test(page.url())) stop()
+    }
+    stopVideo = stop
+    socket.on('error', stop)
+    socket.on('close', stop)
+    page.on('close', stop)
+    page.on('framenavigated', checkPage)
+    let pending: Buffer | undefined
+    let sending = false
+    const send = (): void => {
+      checkPage()
+      if (sending || pending === undefined || socket.readyState !== WebSocket.OPEN) return
+      const data = pending
+      pending = undefined
+      sending = true
+      socket.send(data, (error) => {
+        sending = false
+        if (error) stop()
+        else send()
+      })
+    }
+    socket.once('open', () => {
+      if (stopVideo !== stop) return
+      void page.screencast.start({ quality: 80, size: { width: 1920, height: 1200 }, onFrame: ({ data }) => {
+        pending = data
+        send()
+      } }).catch(stop)
+    })
+    return {}
+  }
   const viewInput = async (input: ViewInput | undefined): Promise<object> => {
     if (input === undefined) throw new Error('Nothing to do.')
     const page = viewTarget()
@@ -570,19 +671,71 @@ export async function testBrowser(name: string, folder: string = browserFolder()
     } else if (input.type === 'back') await page.goBack({ waitUntil: 'domcontentloaded' })
     return {}
   }
-  const answer = async (request: Request): Promise<object | PageValue | undefined> => {
+  const openPage = async (inWindow: boolean): Promise<Page> => {
+    let page = spare?.url() === 'about:blank' ? spare : undefined
+    if (spare !== undefined) {
+      owners.tabs.set(track(spare), null)
+      spare = undefined
+    }
+    if (page === undefined && inWindow) {
+      for (const anchor of windowTabs) {
+        if (anchor === viewPage || viewOpeners.includes(anchor) || dialogs.has(anchor)) continue
+        const blank = `about:blank#${randomUUID()}`
+        const opened = context.waitForEvent('page', (candidate) => candidate.url() === blank).catch(() => undefined)
+        const asked = await anchor.evaluate(`void window.open(${JSON.stringify(blank)}, '_blank', 'noopener')`).then(() => true, () => false)
+        const candidate = asked ? await Promise.race([opened, wait(2_000).then(() => undefined)]) : undefined
+        if (candidate !== undefined && await candidate.waitForLoadState('load').then(() => !candidate.isClosed(), () => false)) {
+          page = candidate
+          break
+        }
+        void opened.then((late) => late?.close().catch(() => undefined))
+      }
+    }
+    page ??= await context.newPage()
+    windowTabs.add(page)
+    const id = track(page)
+    owners.tabs.set(id, activeOwner)
+    await pendingTabs.get(id)
+    openers.delete(id)
+    return page
+  }
+  const stop = (): void => {
+    closing = true
+    setTimeout(() => { void context.close() }, 100)
+  }
+  const answer = async (request: TestBrowserRequest): Promise<object | PageValue | undefined> => {
     const id = request.tab
     switch (request.cmd) {
       case 'ping': return { version: `Camoufox ${binary.version}` }
-      case 'acquire': return {}
-      case 'quit': if (owners.conversations.size > 0) throw new Error('This browser still belongs to conversations. Move their cards to Done to release it.'); setTimeout(() => { void context.close() }, 100); return {}
-      case 'pages': return Promise.all([...targets.entries()].filter(([one]) => activeConversation === undefined ? !owners.managed : owners.tabs.get(String(one)) === activeConversation).map(async ([one, page]) => ({ ...await describe(page, one), window: 0, active: false, ...(openers.has(one) ? { opener: openers.get(one) } : {}) })))
+      case 'start': {
+        const own = [...targets].find(([tab, page]) => owners.tabs.get(tab) === activeOwner && page !== viewPage && !viewOpeners.includes(page))
+        const page = own?.[1] ?? await openPage(true)
+        if (activeOwner === null) await page.bringToFront()
+        return describe(page, track(page))
+      }
+      case 'quit':
+        if (activeOwner !== null || [...owners.tabs.values()].some((one) => one !== null)) throw new Error('This browser still belongs to conversations. Move their cards to Done to release it.')
+        stop()
+        return {}
+      case 'pages': {
+        const visible = [...targets].filter(([, page]) => page !== spare && (handoff === undefined || (page !== viewPage && !viewOpeners.includes(page))))
+        return Promise.all(visible.map(async ([tab, page]) => ({
+          ...await describe(page, tab),
+          window: 0,
+          active: false,
+          readOnly: owners.tabs.get(tab) !== activeOwner,
+          opener: openers.get(tab),
+        })))
+      }
       case 'open': {
-        const page = await context.newPage()
-        const made = track(page)
-        if (activeConversation !== undefined) owners.tabs.set(String(made), activeConversation)
-        await navigate(page, request.url)
-        return describe(page, made)
+        const page = await openPage(!/^data:/i.test(request.url ?? ''))
+        try {
+          await navigate(page, request.url)
+          return await describe(page, track(page))
+        } catch (error) {
+          await page.close().catch(() => undefined)
+          throw error
+        }
       }
       case 'go': { const page = targetOf(id); await orDialog(page, navigate(page, request.url)); return describe(page, id as number) }
       case 'close': await targetOf(id).close(); return {}
@@ -664,14 +817,66 @@ export async function testBrowser(name: string, folder: string = browserFolder()
         return evaluate(page, '({width: innerWidth, height: innerHeight, dark: matchMedia("(prefers-color-scheme: dark)").matches, still: matchMedia("(prefers-reduced-motion: reduce)").matches})')
       }
       case 'record': return record(request)
-      case 'view-open': if (viewPage === undefined || viewPage.isClosed()) { viewOpeners.length = 0; viewPage = await context.newPage(); follow(viewPage) } await viewPage.setViewportSize(VIEW_SIZE); await viewPage.bringToFront(); if (request.url) await navigate(viewPage, request.url); return { ...VIEW_SIZE }
-      case 'view-frame': { const page = viewTarget(); return { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60, caret: 'initial' })).toString('base64'), ...(page.viewportSize() ?? VIEW_SIZE), url: page.url(), title: await page.title(), ...await page.evaluate(CARET_SCRIPT).then((caret) => caret === null || caret === undefined ? {} : { caret: caret as NonNullable<ViewFrame['caret']> }, () => ({})), ...await page.evaluate(FIELDS_SCRIPT).then((fields) => ({ fields: fields as NonNullable<ViewFrame['fields']> }), () => ({})), ...pointerShown(page) } satisfies ViewFrame }
+      case 'handoff-check': {
+        if (activeOwner === null) throw new Error('Only the conversation that opened this tab can share it.')
+        if (!/^https?:\/\//i.test(targetOf(id).url())) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        return {}
+      }
+      case 'view-handoff': {
+        if (request.key === undefined || request.tab === undefined || request.conversation === undefined) throw new Error('The browser tab is unavailable.')
+        if (viewPage !== undefined && !viewPage.isClosed()) throw new Error('This browser already has a live view.')
+        const page = targetOf(request.tab)
+        if (!/^https?:\/\//i.test(page.url())) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        const now = Date.now()
+        handoff = { key: request.key, expires: now + TAB_HANDOFF_TTL, heard: now }
+        handoffPoll = setInterval(pick, 40).unref()
+        viewOpeners.length = 0
+        viewPage = page
+        follow(page)
+        return {}
+      }
+      case 'view-open': {
+        const current = viewPage?.isClosed() === false ? viewPage : undefined
+        const page = current ?? await openPage(false)
+        if (current === undefined) {
+          viewOpeners.length = 0
+          viewPage = page
+          follow(page)
+        }
+        try {
+          await page.setViewportSize(VIEW_SIZE)
+          await page.bringToFront()
+          if (request.url) await navigate(page, request.url)
+          return { ...VIEW_SIZE }
+        } catch (error) {
+          if (current === undefined) await page.close().catch(() => undefined)
+          throw error
+        }
+      }
+      case 'view-video': return streamTab(request.url)
+      case 'view-metadata':
+      case 'view-frame': {
+        const page = viewTarget()
+        if (handoff !== undefined && !/^https?:\/\//i.test(page.url())) {
+          await page.waitForURL(/^https?:\/\//i, { waitUntil: 'commit', timeout: 5000 })
+          if (!/^https?:\/\//i.test(page.url())) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        }
+        const viewport = page.viewportSize() ?? await page.evaluate<Pick<ViewFrame, 'width' | 'height'>>('({ width: innerWidth, height: innerHeight })')
+        const png = request.cmd === 'view-frame' && handoff !== undefined && request.patches ? await page.screenshot({ type: 'png', scale: 'css', caret: 'hide' }) : undefined
+        const pixels = request.cmd === 'view-metadata' ? { jpeg: '' } : png !== undefined && png.length <= 1_000_000
+          ? { png: png.toString('base64') }
+          : { jpeg: (await page.screenshot({ type: 'jpeg', quality: 60, caret: 'initial' })).toString('base64') }
+        const metadata = await page.evaluate<Pick<ViewFrame, 'title' | 'caret' | 'fields' | 'focusedField'>>(FRAME_METADATA)
+        const url = page.url()
+        if (handoff !== undefined && !/^https?:\/\//i.test(url)) throw new Error('The tab must be showing an HTTP or HTTPS page.')
+        return { ...pixels, ...viewport, url, ...metadata, ...pointerShown(page) } satisfies ViewFrame | TabHandoffPngFrame
+      }
       case 'view-input': return viewInput(request.input)
-      case 'view-close': { const pages = [...viewOpeners, ...(viewPage === undefined ? [] : [viewPage])]; viewPage = undefined; viewOpeners.length = 0; for (const page of pages) if (!page.isClosed()) await page.close(); return {} }
+      case 'view-close': { const pages = handoff === undefined ? [...viewOpeners, ...(viewPage === undefined ? [] : [viewPage])] : []; releaseHandoff(); for (const page of pages) if (!page.isClosed()) await page.close(); return {} }
       default: throw new Error(`Unknown command ${request.cmd}.`)
     }
   }
-  const record = async (request: Request): Promise<object> => {
+  const record = async (request: TestBrowserRequest): Promise<object> => {
     const id = request.tab
     const page = targetOf(id)
     const ms = request.ms ?? 1500
@@ -709,44 +914,67 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   }
   const release = async (): Promise<void> => {
     if (closing) return
-    acquirePending()
-    for (const targetId of owners.released()) { await targets.get(Number(targetId))?.close().catch(() => undefined); owners.tabs.delete(targetId) }
-    if (owners.managed && owners.conversations.size === 0) { closing = true; setTimeout(() => { void context.close() }, 100) }
+    await Promise.all(pendingTabs.values())
+    for (const tab of owners.released()) await targets.get(tab)?.close().catch(() => undefined)
+    if (handoff !== undefined && viewPage?.isClosed() !== false && viewOpeners.every((page) => page.isClosed())) releaseHandoff()
+    if (spare !== undefined) {
+      if (spare.url() !== 'about:blank') {
+        owners.tabs.set(track(spare), null)
+        spare = undefined
+      } else if (Date.now() >= startupUntil) await spare.close()
+    }
+    if (targets.size === 0) stop()
   }
   let queue: Promise<Reply> = Promise.resolve({ ok: true })
+  const expireHandoff = (): void => {
+    const now = Date.now()
+    if (handoff !== undefined && (now >= handoff.expires || now - handoff.heard >= TAB_HANDOFF_LEASE)) releaseHandoff()
+  }
   const handle = (request: object): Promise<Reply> => {
     const run = async (): Promise<Reply> => {
-      const asked = request as Request
+      const asked = request as TestBrowserRequest
       try {
-        if (closing) throw new Error('This test browser is closing. Start test again.')
+        if (closing) throw new Error(TEST_BROWSER_CLOSING)
+        expireHandoff()
+        activeOwner = owners.identify(asked.conversation)
+        inspecting = ['text', 'read', 'find', 'style', 'wait'].includes(asked.cmd)
+        await Promise.all(pendingTabs.values())
         if (asked.cmd.startsWith('view-')) {
-          if (asked.conversation !== undefined) throw new Error('Only the person signs in, through GeckIt.')
+          if (asked.cmd === 'view-handoff') {
+            if (activeOwner === null) throw new Error('Only the conversation that opened this tab can share it.')
+            if (handoff !== undefined) throw new Error('This browser already has a live view.')
+          } else {
+            if (asked.conversation !== undefined) throw new Error('Only the person signs in, through GeckIt.')
+            if (asked.key !== handoff?.key || (handoff !== undefined && asked.cmd === 'view-open')) throw new Error('This browser view belongs to another sign-in.')
+            if (handoff !== undefined) handoff.heard = Date.now()
+          }
           return await answer(asked).then((result) => ({ ok: true, result }), (error: Error) => ({ ok: false, error: error.message }))
         }
-        activeConversation = asked.conversation
         if (asked.tab !== undefined) {
           const open = dialogs.get(targetOf(asked.tab))
           if (open !== undefined && !['dialog', 'pages', 'close'].includes(asked.cmd)) throw new Error(`Tab ${asked.tab} shows ${open.type() === 'alert' ? 'an' : 'a'} ${open.type()} dialog: "${open.message()}". Answer it first with dialog ${asked.tab} accept or dismiss.`)
-        } else owners.acquire(asked.conversation)
-        const one = (next: Request): Promise<Reply> => answer(next).then((result) => {
+        }
+        const one = (next: TestBrowserRequest): Promise<Reply> => answer(next).then((result) => {
           const shown = next.tab === undefined ? undefined : targets.get(next.tab)
           const waiting = shown === undefined ? undefined : dialogs.get(shown)
           const noted = waiting !== undefined && next.cmd !== 'dialog' && result !== null && result !== undefined && typeof result === 'object' && !Array.isArray(result)
           return { ok: true, result: noted ? { ...result, dialog: { type: waiting.type(), message: waiting.message(), prompt: waiting.defaultValue() } } : result }
         }, (error: Error) => ({ ok: false, error: error.message }))
         const reply = asked.cmd === 'find' ? await findIn(one, asked.tab, asked.query ?? '') : await one(asked)
-        await release()
         if (asked.conversation !== undefined && browserConversation(asked.conversation, folder)?.done !== false) return { ok: false, error: 'This conversation is Done; its test tabs have been released.' }
         return reply
       } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
-      finally { activeConversation = undefined }
+      finally { await release(); activeOwner = null; inspecting = false }
     }
     queue = queue.then(run, run)
     return queue
   }
   const pick = serveAsks(folder, (to) => to === process.pid, handle)
-  watch(folder, pick)
-  setInterval(() => { say(); pick(); queue = queue.then(async () => { await release(); return { ok: true } }, async () => { await release(); return { ok: true } }) }, 1_000)
+  try {
+    const watcher = watch(folder, pick)
+    watcher.on('error', () => watcher.close())
+  } catch { /* The periodic check also picks up commands. */ }
+  setInterval(() => { say(); pick(); queue = queue.then(async () => { expireHandoff(); await release(); return { ok: true } }, async () => { expireHandoff(); await release(); return { ok: true } }) }, 1_000)
 }
 
 const tell = (source: string, reply: object): void => { writeFileSync(`${source}.told.part`, JSON.stringify(reply)); renameSync(`${source}.told.part`, `${source}.told`) }
@@ -778,34 +1006,36 @@ export function serveTestLaunches(executable: string, script: string, folder: st
     serveSecretFiles(folder, files)
     for (const file of files.filter((one) => one.endsWith('.signin'))) {
       const source = join(folder, file)
-      let name: string
-      try { name = (JSON.parse(readFileSync(source, 'utf8')) as { name: string }).name } catch { continue }
+      let asked: Pick<TabHandoffTarget, 'name'> & Partial<Omit<TabHandoffTarget, 'name'>>
+      try { asked = JSON.parse(readFileSync(source, 'utf8')) as typeof asked } catch { continue }
       rmSync(source, { force: true })
-      try { tell(source, { ok: true, ...signInLink(name) }) } catch (error) { tell(source, { ok: false, error: error instanceof Error ? error.message : String(error) }) }
+      void Promise.resolve().then(() => asked.tab === undefined || asked.conversation === undefined ? signInLink(asked.name) : tabHandoffLink({ name: asked.name, tab: asked.tab, conversation: asked.conversation }))
+        .then((link) => tell(source, { ok: true, ...link }), (error: Error) => tell(source, { ok: false, error: error.message }))
     }
     files = files.filter((one) => one.endsWith('.launch'))
+    const started = new Set<string>()
     for (const file of files) {
       const source = join(folder, file)
       let name: string
-      let conversation: string | undefined
+      let previous: number | undefined
       try {
-        const launch = JSON.parse(readFileSync(source, 'utf8')) as { name: string; conversation?: string }
-        conversation = launch.conversation
-        name = conversation === undefined ? launch.name : conversationTestName(conversation, folder, launch.name)
+        const launch = JSON.parse(readFileSync(source, 'utf8')) as Pick<TestBrowserRequest, 'conversation'> & { readonly name: string; readonly previous?: number }
+        name = launch.name
+        if (launch.conversation !== undefined && conversationTestName(launch.conversation, folder, name) !== name) throw new Error('This test browser belongs to another project or account profile.')
+        previous = launch.previous
       } catch { rmSync(source, { force: true }); continue }
-      if (pending.has(name) && !profiles(folder).some((one) => one.label === `${TEST_PREFIX}${name}`)) {
-        if (conversation === undefined) rmSync(source, { force: true })
-        continue
-      }
-      if (conversation !== undefined && profiles(folder).some((one) => one.label === `${TEST_PREFIX}${name}`)) continue
+      const open = profiles(folder).find((one) => one.label === `${TEST_PREFIX}${name}`)
+      if (started.has(name) || (open !== undefined && open.pid !== previous)) { rmSync(source, { force: true }); continue }
+      if (pending.has(name) || open !== undefined) continue
       const mine = `${source}.${process.pid}`
       try { renameSync(source, mine) } catch { continue }
       rmSync(mine, { force: true })
-      if (!validTestName(name) || profiles(folder).some((one) => one.label === `${TEST_PREFIX}${name}`)) continue
+      if (!validTestName(name)) continue
+      started.add(name)
       pending.add(name)
       mkdirSync(testingFolder(root), { recursive: true })
       const log = openSync(testLog(name, root), 'w')
-      const child = spawn(executable, [script, 'browser-test', name], { detached: true, stdio: ['ignore', log, log], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', ...(conversation === undefined ? {} : { GECKIT_TEST_CONVERSATION: conversation }) } })
+      const child = spawn(executable, [script, 'browser-test', name], { detached: true, stdio: ['ignore', log, log], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
       closeSync(log)
       child.on('error', () => { pending.delete(name) })
       child.on('exit', () => { pending.delete(name) })
@@ -813,7 +1043,10 @@ export function serveTestLaunches(executable: string, script: string, folder: st
     }
   }
   let watcher: ReturnType<typeof watch> | undefined
-  try { watcher = watch(folder, pick).unref() } catch { watcher = undefined }
+  try {
+    watcher = watch(folder, pick).unref()
+    watcher.on('error', () => watcher?.close())
+  } catch { watcher = undefined }
   const timer = setInterval(pick, 1_000).unref()
   pick()
   return () => { watcher?.close(); clearInterval(timer) }

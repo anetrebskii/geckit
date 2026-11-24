@@ -15,8 +15,8 @@ The existing Settings list mixes profile identifiers, account notes and status i
 
 ### Path to a result
 
-- **Entry and result:** Settings > Web Browser > Browser profiles. Press "New profile", enter a name and, if useful, a description, press "Create profile", then "Open browser" for that saved profile. Sign in manually in its Chrome for Testing window. Later tasks can use `geckit:<name>`.
-- **Readiness:** A saved profile is available to open. "Open" reports a running browser, not successful authentication. GeckIt does not inspect or invent account sign-in status. Profile management remains visible when Chrome through GeckIt is off. Creation/deletion remain available; opening and live sign-in require enabling the connection below. The first browser launch may download Chrome for Testing, as today.
+- **Entry and result:** Settings > Web Browser > Browser profiles. Press "New profile", enter a name and, if useful, a description, press "Create profile", then "Open browser" for that saved profile. Sign in manually in its Camoufox window. Later tasks can use `geckit:<name>`.
+- **Readiness:** A saved profile is available to open. "Open" reports a running browser, not successful authentication. GeckIt does not inspect or invent account sign-in status. Profile management remains visible when Chrome through GeckIt is off. Creation/deletion remain available; opening and live sign-in require enabling the connection below. The first browser launch may download Camoufox.
 - **Decisions and order:** Choose a stable short name and identify the intended account. Open the saved profile, then sign in. On this computer Open browser is the only way in; when viewing another computer, Open browser shows the live view.
 - **Shape:** Profile management leads the section; Chrome extension/connection setup follows below as secondary content. New profile is the prominent section action. One list and a disclosed creation form directly below the heading, because the name and the optional description are independent fields. Separate setup pages would make a small repeated operation longer. Profiles sit in one grouped list, macOS Settings style: each row has a letter badge, `geckit:<name>` with its open/closed dot, and its description, when there is one, on one line under it. Open browser is the row's only visible action; Edit and Delete live in the row's More menu (the ellipsis button). Edit turns the row into the same two-field form, filled in, with Cancel and Save. The creation form opens as the first block inside the same group, with labels beside the fields.
 - **First use and return:** The empty list leads to New profile. Cancelling the form saves nothing. Leaving Settings keeps saved profiles and sign-ins; unsaved form input is not promised across closing Settings. A closed profile can be opened again. If startup fails, show its reason and allow another attempt.
@@ -135,7 +135,7 @@ No new time threshold is introduced by this change.
 | Settings section | "Web Browser" |
 | Connection off | "Turn on Chrome through GeckIt below to open a browser or sign in." |
 | Heading | "Browser profiles" |
-| Explanation | "Separate Chrome for Testing profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer." |
+| Explanation | "Separate browser profiles for your accounts. Create a profile, open its browser and sign in yourself. Sign-ins stay on this computer." |
 | Create entry | "New profile" |
 | Name label and hint | "Profile name"; "Lowercase letters, numbers and hyphens. Used as geckit:<name> in conversations." |
 | Description label, placeholder and hint | "Description"; "GitHub as alex@example.com"; "Optional. Assistants read it to pick the right profile for a task." Alex asked on 2026-11-12 for it not to be mandatory, and noted that assistants use it to choose a profile. |
@@ -167,7 +167,7 @@ Existing download and live-view wording is retained. Backend errors preserve the
 
 | Not added | Reason |
 | --- | --- |
-| Ordinary Chrome profile migration | The screenshot and managed lifecycle concern Chrome for Testing; personal Chrome keeps its own storage and windows |
+| Ordinary Chrome profile migration | The screenshot and managed lifecycle concern Camoufox test browsers; personal Chrome keeps its own storage and windows |
 | Automatic cookie extraction, decryption or operating-system key-store transfer | File backup must respect Chrome's credential protection |
 | Guaranteed portable sign-in | OS encryption and site/device binding prevent that promise |
 | Automatic archive delivery to paired computers | File transfer is separate from profile backup/restore and its path semantics |
@@ -206,7 +206,7 @@ Feature 025 excluded all profile copying. This proposal changes that scope for e
 
 ## Camoufox migration (2026-11-13)
 
-This section supersedes the Chrome for Testing backend and download wording in the original profile-management specification above.
+This section supersedes the earlier backend and download wording in the original profile-management specification above.
 
 ### 1. Result and journey
 
@@ -271,11 +271,11 @@ No automatic conversion of Chrome cookies or passwords to Firefox. No promise th
 
 ### 10. Decision
 
-Replace the former Chrome for Testing backend with Camoufox using its native cursor movement and a persistent Firefox context. Use the existing settings workflow rather than adding a second browser chooser. Keep the Node runtime self-contained, without requiring a Python installation.
+Test browsers run on Camoufox, using its native cursor movement and a persistent Firefox context. Use the existing settings workflow rather than adding a second browser chooser. Keep the Node runtime self-contained, without requiring a Python installation.
 
 ### 11. Requirements
 
-The user's requested migration covers download and installation without fonts, Open, person-controlled Sign in, rename and retained profiles. Existing tab ownership and conversation release rules remain in force. Real website login is a manual account check, separate from local persistence verification.
+The user's requested migration covers download and installation without fonts, Open, person-controlled Sign in, rename and retained profiles. App and CLI use the same test-browser commands and tab ownership rules. Real website login is a manual account check, separate from local persistence verification.
 
 ## Background browser preparation (2026-11-13)
 
@@ -338,3 +338,19 @@ Covers the request to install and configure in the background without waiting fo
 Open and Sign in did the same thing for the person: open the profile so they sign in. The row's More menu no longer has Sign in; on this computer Open browser opens the Camoufox window, and in a window showing another computer it opens the live view. The live view stays the target of `geckit browser signin` links.
 
 On this computer the More menu has `Show in GeckIt` above Edit: the same profile shown in GeckIt's live view rather than in its own window, for a computer where Camoufox has no window or when the person prefers it there. It is disabled while browser access is off and absent when the window shows another computer, where Open browser already does it.
+
+## Shared test-browser tab lifecycle
+
+The existing **Open browser**, **Show in GeckIt** and CLI `open --profile geckit[:name]` entry points open the profile on demand. A tab is ready when its window or live view appears, or when the CLI returns its ID. A running profile can serve the person and several conversations at once. Profile selection still follows the conversation's project and configured accounts.
+
+| Event | Result |
+|---|---|
+| The person opens a tab from the app | The tab belongs to the person. A conversation opening a page gets its own tab in the same profile. |
+| A page opens a popup | The popup follows the opener's ownership. |
+| A conversation lists or inspects a tab in an accessible profile | `pages` labels foreign tabs `[read-only]`. `text`, `read`, `find`, `style` and `wait` can inspect them. |
+| A conversation tries to change or close a foreign tab | “This tab belongs to another conversation or the person. Open a separate tab in this profile.” Its own tab remains usable. |
+| The person closes the sign-in view or a native tab | Its tab closes. Closing the sign-in view also closes its sign-in popups. If the person closes the view during launch, its tab closes as soon as the launch completes. |
+| A conversation moves to Done | Its tabs and popups close automatically. Other tabs keep the profile running. |
+| The last tab closes | Camoufox shuts down quietly. The next open starts the same profile with its saved sign-ins. |
+
+A private handoff of a conversation tab keeps its exclusive sign-in behavior and returns the existing tab to the chat when the person finishes. Repeated **Open browser** focuses the person's existing native tab. If a new open arrives during shutdown, GeckIt starts the profile again once the closing driver releases it. The browser reports launch failures in the existing error surface. The app uses its existing opening indicator, focus behavior and controls. No extra permissions or lifecycle notifications are needed, and the approved Done and close actions are the causes of tab removal. This lifecycle applies to Camoufox profiles managed by GeckIt. Personal Chrome has its own extension workflow.

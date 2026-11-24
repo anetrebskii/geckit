@@ -10,7 +10,7 @@ import QRCode from 'qrcode'
 
 import { ANYWHERE, DEFAULT_SETTINGS, assistantsIn, homeOf, noticeWanted, providerOf, shownProjects } from '../shared/api'
 import type { Anywhere, Answered, ErrorAnswer, PhoneView, Recording, ScreenControl, ScreenSource, SessionImage, SessionNotice, Settings, TranscribeRequest } from '../shared/api'
-import type { LocalAsk } from '../shared/local'
+import type { BrowserViewFrameReply } from '../shared/renderer-api'
 import { SIGNAL } from '../shared/pairing'
 import { invitationLink } from '../shared/remote/protocol'
 import { isRemote, machineName } from '../shared/hosts'
@@ -25,7 +25,8 @@ import { connectDesktop } from './service-client'
 import { configurationActions } from './configuration-actions'
 import type { DesktopServiceClient } from './service-client'
 import { isVaultEnvelope } from '../core/vault'
-import track from './analytics'
+import type { EventName } from '../shared/counting'
+import track, { countActive, countAnswer } from './analytics'
 import { control } from './control'
 import { copyRichText, correctionText } from './clipboard'
 import { answerErrors, errorQuestion, followErrors, startErrors, watchErrors, windowError } from './errors'
@@ -35,7 +36,7 @@ import { getSettings, onSettings, configureSettingsClient } from './store'
 import { drawTray, startTray } from './tray'
 import { geckoListens, startGecko, tellGecko } from './gecko'
 import { checkForUpdates, follow, restartToUpdate, startUpdates, updateView } from './updates'
-import { chatListening, chatWindow, closePeer, closeVoice, everyWindow, openChat, panelWindow, peerWindow, personWindows, shownChat, shownPeer, listeningVoice, sizeVoice, tellChat, voiceWindow, watchingChat } from './windows'
+import { chatListening, chatPages, chatShowsAway, chatWindow, closePeer, conversationWindows, focusedChat, isChatPage, openConversationWindow, closeVoice, everyWindow, openChat, panelWindow, peerWindow, personWindows, shownChat, shownPeer, listeningVoice, sizeVoice, tellChat, voiceWindow, watchingChat } from './windows'
 import { badgeIcon } from './overlay'
 import { connectionStorage } from './connection-storage'
 import type { ConnectionStorage } from '../shared/remote/storage'
@@ -97,13 +98,24 @@ const tell = (channel: string, ...args: NativeValue[]): void => {
   shownPeer()?.webContents.send('peer:tell', channel, args[0])
 }
 // The Chat window reads conversations as every client does; pictures go whole and the list whole, since nothing here crosses a network.
-const chatView = clientView(
+const viewOf = (contents: () => Electron.WebContents | undefined) => clientView(
   { items: (id) => invoke('chat:viewItems', id), queuedPicture: (id, queued, index) => invoke('chat:queuedPicture', id, queued, index) },
   ['steps', 'find'],
-  (event) => shownChat()?.webContents.send(event.name, ...(event.args as NativeValue[])),
+  (event) => contents()?.send(event.name, ...(event.args as NativeValue[])),
 )
+const chatView = viewOf(() => shownChat()?.webContents)
+// A conversation's own window is a client of its own, watching only its conversation.
+const ownViews = new Map<Electron.WebContents, ReturnType<typeof viewOf>>()
+const ownView = (contents: Electron.WebContents): ReturnType<typeof viewOf> => {
+  const held = ownViews.get(contents)
+  if (held !== undefined) return held
+  const view = viewOf(() => (contents.isDestroyed() ? undefined : contents))
+  ownViews.set(contents, view)
+  contents.once('destroyed', () => ownViews.delete(contents))
+  return view
+}
 const tellChats = (channel: string, value: NativeValue): void => {
-  shownChat()?.webContents.send(channel, value)
+  for (const window of chatPages()) window.webContents.send(channel, value)
   shownPeer()?.webContents.send('peer:tell', channel, value)
 }
 const computerName = (): string => machineName(hostname())
@@ -279,7 +291,7 @@ function registerScreenshot(): void {
 
 function registerCorrect(): void {
   const took = globalShortcut.register(CORRECT, () => {
-    track('shortcutPressed')
+    track('correctShortcut')
     const window = panelWindow()
     void correctionText().then((text) => {
       const send = (): void => window.webContents.send('panel:text', text)
@@ -398,9 +410,11 @@ function keepPhone(on: boolean, key: string): void {
 }
 
 
-/** The peer window is there while Phone is on or a link is shared. */
+const tabVideoRooms = new Map<string, string | undefined>()
+
+/** The peer window is there while Phone is on or a tab video is shown; shared links are answered by the service. */
 function keepPeer(): void {
-  const needed = phoneOn || (snapshot?.shares.length ?? 0) > 0
+  const needed = phoneOn || tabVideoRooms.size > 0
   if (needed) peerWindow()
   else if (shownPeer() !== undefined) closePeer()
 }
@@ -428,7 +442,8 @@ function notice(notice: SessionNotice): void {
   const sound = noticeWanted(soundFor, notice.asks)
   if (sound) shell.beep()
   if (process.platform === 'win32' && !watchingChat() && noticeWanted(flashFor, notice.asks)) shownChat()?.flashFrame(true)
-  if (watchingChat()) { shownChat()?.webContents.send('chat:notice', notice); return }
+  const looking = focusedChat()
+  if (looking !== undefined) { looking.webContents.send('chat:notice', notice); return }
   if (Notification.isSupported()) {
     const request = notice.request
     const note = new Notification({ title: notice.title, subtitle: notice.subtitle, body: notice.body, silent: sound, actions: request === undefined ? [] : [{ type: 'button', text: 'Start all' }] })
@@ -447,7 +462,7 @@ function listChanged(all: ServiceSnapshot['sessions']): void {
   const settings = getSettings()
   const within = (roots: readonly string[]) => all.filter((one) => one.manager !== true && (one.question === true || roots.includes(homeOf(one))))
   const shown = within(shownProjects(settings))
-  shownChat()?.webContents.send('chat:sessions', shown)
+  for (const window of chatPages()) window.webContents.send('chat:sessions', shown)
   shownPeer()?.webContents.send('peer:tell', 'chat:sessions', within(settings.projects))
   const now = shown.filter((one) => assistantsIn(settings).includes(providerOf(one.id)))
   const gecko = geckoState(now, counted)
@@ -473,10 +488,12 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
     case 'chat:show': openChat(event.args[0]); return
     case 'manager:items':
       chatView.event(event)
+      for (const view of ownViews.values()) view.event(event)
       shownPeer()?.webContents.send('peer:tell', event.name, event.args[0])
       return
     case 'chat:items':
       chatView.event(event)
+      for (const view of ownViews.values()) view.event(event)
       shownPeer()?.webContents.send('peer:tell', event.name, event.args[0])
       return
     case 'employees:changed':
@@ -484,7 +501,7 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
       tell(event.name, event.args[0]); drawTray(); return
     case 'peer:shares':
       if (snapshot !== undefined) snapshot = { ...snapshot, shares: event.args[0] }
-      keepPeer(); shownPeer()?.webContents.send(event.name, event.args[0]); return
+      return
     case 'channels:shown':
       for (const window of everyWindow()) window.webContents.send(event.name, event.args[0])
       shownPeer()?.webContents.send('peer:tell', 'channels:shown', { id: event.args[0].id, value: event.args[0].phone ?? null }); return
@@ -498,6 +515,18 @@ function coreEvent(event: RpcEvent<ServiceEvents>): void {
       const peer = shownPeer()
       if (peer === undefined) void invoke('desktop:scaled', id).catch(report)
       else peer.webContents.send('peer:scale', id, image, width)
+      return
+    }
+    case 'core:tabVideo': {
+      const [video] = event.args
+      if (video.type === 'start') tabVideoRooms.set(video.key, undefined)
+      if (video.type === 'stop') tabVideoRooms.delete(video.key)
+      if (video.type === 'frame') {
+        if (!tabVideoRooms.has(video.key)) return
+        tabVideoRooms.set(video.key, video.jpeg)
+      }
+      if (video.type !== 'frame') keepPeer()
+      shownPeer()?.webContents.send('peer:tabVideo', video)
       return
     }
     case 'core:idle': void invoke('desktop:idle', event.args[0], powerMonitor.getSystemIdleState(AWAY_AFTER) !== 'active').catch(report); return
@@ -523,19 +552,36 @@ function applySnapshot(next: ServiceSnapshot): void {
   for (const [id, value] of Object.entries(next.channels)) coreEvent({ name: 'channels:shown', args: [{ id: id as ChannelId, value, phone: next.channelPhoneViews?.[id] ?? null }] })
   tell('speech:model', next.speech)
   keepPeer()
-  shownChat()?.webContents.send('chat:reconnected')
+  for (const window of chatPages()) window.webContents.send('chat:reconnected')
   if (watched !== undefined) void invoke('chat:items', watched).then((items) => shownPeer()?.webContents.send('peer:tell', 'chat:items', { id: watched ?? '', items })).catch(report)
 }
 
-const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "secrets:prepare", "secrets:save", "secrets:update", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:stop", "manager:setModel", "manager:resume", "manager:retry", "manager:restart", "manager:compact", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "manager:unfollow", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewFrame", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:firstAsked", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:setChecklist", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:postpone", "shortcuts:hold", "shortcuts:run", "shortcuts:destinations", "shortcuts:runs"] as const satisfies readonly (keyof ServiceMethods)[]
+const CORE_CHANNELS = ["secrets:list", "secrets:history", "secrets:revoke", "secrets:status", "secrets:prepare", "secrets:save", "secrets:update", "hosts:list", "hosts:known", "hosts:check", "hosts:update", "hosts:forget", "hosts:remove", "hosts:connect", "hosts:reconnect", "hosts:disconnect", "hosts:folders", "hosts:addFolder", "hosts:addFolderSaying", "hosts:prompts", "hosts:answer", "hosts:install", "hosts:trustNewKey", "hosts:running", "hosts:working", "hosts:conversations", "hosts:resumeLine", "employees:list", "employees:save", "employees:archive", "employees:restore", "employees:retryInstructions", "employees:memory", "chat:assignEmployee", "manager:history", "manager:view", "manager:configure", "manager:pause", "manager:stop", "manager:setModel", "manager:resume", "manager:retry", "manager:restart", "manager:compact", "manager:sendApp", "manager:receipt", "manager:answerApp", "manager:answerCard", "manager:unfollow", "channels:view", "channels:screen", "channels:request", "channels:install", "channels:configure", "channels:remove", "channels:inspect", "channels:checkUpdates", "settings:get", "correct", "transcribe", "speech:model", "speech:fetch", "browser:state", "browser:fetchModel", "browser:deleteModel", "browser:openTest", "browser:deleteTest", "browser:account", "browser:updateTest", "browser:viewStart", "browser:viewInput", "browser:viewEnd", "voice:video", "voice:videoPart", "chat:account", "chat:installProvider", "chat:reinstallProvider", "chat:uninstallProvider", "chat:applyProviderUpdate", "chat:checkProviderUpdates", "chat:providerPluginFailures", "chat:models", "chat:plan", "chat:plans", "chat:git", "chat:forgetProject", "chat:rememberProject", "chat:hidden", "chat:bring", "chat:list", "chat:listStatus", "chat:search", "chat:delete", "chat:items", "chat:firstAsked", "chat:exportConversation", "chat:continueConversation", "chat:copyConversation", "chat:schedule", "chat:preparedDraft", "chat:savePreparedDraft", "chat:links", "chat:waiting", "chat:cutOff", "chat:proceed", "chat:retry", "chat:send", "chat:answer", "chat:answerRequest", "chat:startAll", "chat:answerTeamRequest", "chat:stop", "lineup:state", "chat:unqueue", "chat:injectQueued", "chat:queuedPicture", "chat:requeue", "chat:reorderQueued", "chat:delegate", "chat:mode", "chat:transport", "chat:rename", "chat:setChecklist", "chat:mark", "chat:hide", "chat:keep", "chat:read", "chat:remote", "chat:mcp", "chat:browsers", "chat:handOver", "chat:upload", "chat:shell", "chat:stopShell", "chat:typeShell", "chat:toBackground", "chat:stopTask", "chat:clearTask", "chat:taskOutput", "chat:exists", "chat:file", "chat:repo", "chat:files", "chat:commands", "shortcuts:save", "shortcuts:remove", "shortcuts:postpone", "shortcuts:hold", "shortcuts:run", "shortcuts:destinations", "shortcuts:runs"] as const satisfies readonly (keyof ServiceMethods)[]
+
+const COUNTED: Partial<Record<typeof CORE_CHANNELS[number], EventName>> = {
+  correct: 'correct',
+  transcribe: 'transcribe',
+  'chat:send': 'chatSent',
+  'chat:delegate': 'taskDelegated',
+  'manager:sendApp': 'managerSent',
+  'employees:save': 'employeeSaved',
+  'shortcuts:save': 'shortcutSaved',
+  'shortcuts:run': 'shortcutRun',
+  'channels:install': 'channelInstalled',
+  'hosts:connect': 'hostConnected',
+  'secrets:save': 'secretSaved',
+}
 
 function registerCore<K extends typeof CORE_CHANNELS[number]>(channel: K): void {
+  const counted = COUNTED[channel]
   ipcMain.handle(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
-    if (channel === 'correct' || channel === 'transcribe') track(channel)
-    if (channel === 'chat:send') track('chatSent')
+    if (counted !== undefined) track(counted)
     return invoke(channel, ...args)
   })
-  ipcMain.on(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => send(channel, ...args))
+  ipcMain.on(channel, (_event, ...args: Parameters<ServiceMethods[K]>) => {
+    if (counted !== undefined) track(counted)
+    send(channel, ...args)
+  })
 }
 function wire(): void {
   const storedConnections = connectionStorage()
@@ -577,8 +623,9 @@ function wire(): void {
   for (const method of VIEW_METHODS) {
     if (method === 'chat:queuedPicture') continue
     ipcMain.handle(method, (event, ...args: unknown[]) => {
-      if (event.sender !== shownChat()?.webContents) throw new Error('Conversations are read in the Chat window.')
-      return chatView.call(method, args)
+      if (event.sender === shownChat()?.webContents) return chatView.call(method, args)
+      if (conversationWindows().some((one) => one.webContents === event.sender)) return ownView(event.sender).call(method, args)
+      throw new Error('Conversations are read in the Chat window.')
     })
   }
 
@@ -602,8 +649,10 @@ function wire(): void {
 
   ipcMain.handle('settings:set', async (_event, change: Partial<Settings>) => {
     const was = getSettings().sendErrors
+    const asked = getSettings().analyticsAsked
     const settings = await invoke('settings:set', change)
     if (settings.sendErrors !== was) void followErrors(settings.sendErrors)
+    if (!asked && settings.analyticsAsked) countAnswer(settings.analytics)
     return settings
   })
 
@@ -686,7 +735,7 @@ function wire(): void {
 
   ipcMain.on('chat:open', () => openChat())
 
-  ipcMain.on('chat:listening', () => chatListening())
+  ipcMain.on('chat:listening', (event) => { if (event.sender === shownChat()?.webContents) chatListening() })
 
   ipcMain.handle('chat:addProject', async () => {
     const window = shownChat() ?? chatWindow()
@@ -700,9 +749,18 @@ function wire(): void {
     return root
   })
 
-  ipcMain.on('chat:watching', (_event, id: string | undefined) =>
-    (watched = watchingChat() ? id : undefined, send('chat:watching', watched)),
-  )
+  // The conversation in front is the one in the window the person is looking at, Chat or a conversation's own.
+  const shownIn = new Map<Electron.WebContents, string | undefined>()
+  ipcMain.on('chat:watching', (event, id: string | undefined) => {
+    if (!isChatPage(event.sender)) return
+    if (!shownIn.has(event.sender)) event.sender.once('destroyed', () => shownIn.delete(event.sender))
+    shownIn.set(event.sender, id)
+    const looking = focusedChat()?.webContents
+    watched = looking === undefined ? undefined : shownIn.get(looking)
+    send('chat:watching', watched)
+  })
+  ipcMain.on('chat:popOut', (event, id: string) => { if (event.sender === shownChat()?.webContents && typeof id === 'string') openConversationWindow(id) })
+  ipcMain.on('chat:away', (event, away: boolean) => { if (event.sender === shownChat()?.webContents) chatShowsAway(away === true) })
 
   ipcMain.on('chat:terminal', (_event, id: string, root: string) => {
     if (process.platform !== 'darwin') return
@@ -722,6 +780,8 @@ function wire(): void {
   })
 
   ipcMain.handle('browser:openFolder', async () => { await shell.openPath(extensionFolder()) })
+  ipcMain.handle('browser:viewFrame', (_event, name: string): Promise<BrowserViewFrameReply> =>
+    invoke('browser:viewFrame', name).catch((error: Error) => ({ message: error.message })))
   ipcMain.handle('settings:pickApp', (event) => pickApp(BrowserWindow.fromWebContents(event.sender) ?? panelWindow()))
 
   ipcMain.handle('settings:accessibility', () => process.platform !== 'darwin' || systemPreferences.isTrustedAccessibilityClient(false))
@@ -746,16 +806,7 @@ function wire(): void {
     event.sender === shownPeer()?.webContents && phoneOn ? { key: getSettings().phoneKey, signal: SIGNAL } : undefined,
   )
 
-  ipcMain.handle('peer:shares', (event) => (event.sender === shownPeer()?.webContents ? snapshot?.shares ?? [] : []))
-
-  // A link page may ask only about its own link, and only these three things.
-  ipcMain.handle('peer:share', async (event, id: string, name: string, args: readonly NativeValue[]) => {
-    if (event.sender !== shownPeer()?.webContents) throw new Error('Not the phone')
-    if (name === 'share.about') return invoke('share:about', id)
-    if (name === 'share.fetch') return invoke('share:fetch', id, args[0] as LocalAsk)
-    if (name === 'share.read') return invoke('share:read', id, typeof args[0] === 'string' ? args[0] : '')
-    throw new Error(`No such call: ${name}`)
-  })
+  ipcMain.handle('peer:tabVideos', (event) => (event.sender === shownPeer()?.webContents ? [...tabVideoRooms] : []))
 
   ipcMain.handle('peer:call', async (event, name: string, args: readonly NativeValue[]) => {
     if (event.sender !== shownPeer()?.webContents) throw new Error('Not the phone')
@@ -1005,7 +1056,12 @@ else {
       },
       onEvent: coreEvent,
       onConnect: applySnapshot,
-      onDisconnect: (error) => tellChats('chat:notice', { session: '', title: error?.message ?? 'GeckIt service disconnected. Reconnecting...', subtitle: '', body: '', asks: false }),
+      onDisconnect: (error) => {
+        for (const key of tabVideoRooms.keys()) shownPeer()?.webContents.send('peer:tabVideo', { type: 'stop', key })
+        tabVideoRooms.clear()
+        keepPeer()
+        tellChats('chat:notice', { session: '', title: error?.message ?? 'GeckIt service disconnected. Reconnecting...', subtitle: '', body: '', asks: false })
+      },
     })
     applySnapshot(service.snapshot)
     try { await migrateSecrets() } catch { log.warn('Could not migrate saved credentials to the service') }
@@ -1013,6 +1069,8 @@ else {
     if (!app.isPackaged) app.dock?.setIcon(resolve(import.meta.dirname, '../../assets/icon-dev.png'))
     app.on('browser-window-created', (_event, window) => { window.on('show', () => { if (window === shownChat()) { worn = -1; badge() } }) })
     wire()
+    countActive()
+    app.on('browser-window-focus', () => countActive())
     nativeTheme.themeSource = getSettings().theme
     keepPhone(getSettings().phone, getSettings().phoneKey)
     openChat()

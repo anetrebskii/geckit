@@ -1,12 +1,14 @@
 import { remoteAccess } from './remote/access'
 import { remoteComputers } from './remote/computers'
 import type { RemoteComputers } from './remote/computers'
-import { setLiveServer } from '../cli/live-view'
+import { setLiveServer, setTabHandoff } from '../cli/live-view'
+import { tabHandoffs } from './remote/tab-handoff'
+import { shareRooms } from './remote/share-rooms'
 import type { RemoteAccess } from './remote/access'
 import { randomBytes } from 'node:crypto'
 import { rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { homedir } from 'node:os'
+import { homedir, hostname } from 'node:os'
 
 import log from 'electron-log'
 
@@ -62,8 +64,17 @@ async function main(): Promise<void> {
   let computers: RemoteComputers | undefined
   let stopComputers: (() => void) | undefined
   let stopSecrets: (() => void) | undefined
+  let rooms: ReturnType<typeof shareRooms> | undefined
   let stopping: Promise<void> | undefined
+  const handoffs = tabHandoffs(() => remote?.server()?.name ?? hostname(), (event) => {
+    if (rpc === undefined || rpc.connections === 0) return false
+    rpc.broadcast('core:tabVideo', event)
+    return true
+  })
   const stop = (): Promise<void> => stopping ??= (async () => {
+    setTabHandoff(undefined)
+    handoffs.dispose()
+    rooms?.dispose()
     remote?.dispose()
     stopSecrets?.()
     stopComputers?.()
@@ -89,10 +100,21 @@ async function main(): Promise<void> {
     writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' })
     remote = await remoteAccess(runtime, directory, security, application(runtime), scaler.scale, idler.idle)
     const access = remote
+    const targetRuntime = runtime
+    const linkCompleted = (session: string, text: string): void => {
+      if (stopping !== undefined) return
+      try {
+        if (targetRuntime.sessions.isManager(session)) targetRuntime.manager.linkCompleted(session, text)
+        else targetRuntime.sessions.linkCompleted(session, text)
+      } catch (error) { log.error('Could not resume after a completed link', error) }
+    }
     setLiveServer(() => access.server())
+    setTabHandoff((target) => {
+      const origin = targetRuntime.sessions.requestOrigin(target.conversation)
+      return handoffs.issue(target, () => linkCompleted(origin, `GeckIt: Browser tab returned: tab ${target.tab} in geckit:${target.name}. Check the current page and continue the task that requested the handoff.`))
+    })
     computers = remoteComputers(directory, security)
     const paired = computers
-    const targetRuntime = runtime
     runtime.setCliTargets({ local: (args) => application(targetRuntime)['cli:product'](args, 'manager'), registry: (args) => {
       const [domain, command, id, ...rest] = args
       if (rest.length > 0) throw new Error('Unsupported registry arguments.')
@@ -105,18 +127,22 @@ async function main(): Promise<void> {
       throw new Error('Pairing and authentication require the user on the target; registry supports list/forget, devices list/revoke, access status/disable.')
     }, run: (name, args, authorized) => paired.product(name, args, authorized, 'manager'), list: () => paired.list() })
     stopComputers = computers.serve()
-    const secretsRuntime = runtime
     stopSecrets = serveSecrets({
       source: fromSource,
-      sessions: () => secretsRuntime.current().sessions,
-      notice: (session, title, body) => { secretsRuntime.emit('chat:notice', { session, title, subtitle: '', body, asks: false }) },
+      sessions: () => targetRuntime.current().sessions,
+      origin: (session) => targetRuntime.sessions.requestOrigin(session),
+      complete: linkCompleted,
+      notice: (session, title, body) => { targetRuntime.emit('chat:notice', { session, title, subtitle: '', body, asks: false }) },
       log: (line) => { console.log(line) },
     })
     listener = serveLocal(directory, serviceHandler(runtime, token, shutdown))
     rpc = listenRpc<ServiceMethods, ServiceEvents>(directory, token, serviceApplication(runtime, directory, security, native, remote, computers, scaler, idler), undefined, (method) => {
       if ((method === 'service:shutdownForUpdate' || method === 'service:importConfiguration') && runtime?.sessions.working().length === 0) shutdown()
     })
+    rooms = shareRooms(runtime.shares)
+    rooms.keep(runtime.shares.rooms())
     unsubscribe = runtime.subscribe((event) => {
+      if (event.name === 'peer:shares') rooms?.keep(event.args[0])
       if (event.name === 'core:terminal' && rpc?.connections === 0) {
         const status = event.args[2]
         if (status !== undefined) { try { writeFileSync(status, '1') } catch (error) { console.error(error) } }

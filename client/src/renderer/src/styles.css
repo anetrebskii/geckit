@@ -310,7 +310,6 @@ button,
 .no-drag {
   -webkit-app-region: no-drag;
 }
-
 .spacer {
   flex: 1;
 }
@@ -2639,6 +2638,18 @@ html.framed .topbar {
   white-space: normal;
 }
 
+.notice.consent .promise {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.notice.consent .fine {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 .notice.consent .actions {
   display: flex;
   gap: 6px;
@@ -3639,6 +3650,63 @@ button.tag.work {
   border-bottom: 1px solid var(--border);
 }
 
+/* A conversation in a window of its own: no board, sidebar or top bar, so its head is the window's bar, as tall as Chat's so the title lines up with the traffic lights and starts past them. See docs/ux/conversation-windows.md. */
+.chat.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chat.solo .talk-head {
+  height: 45px;
+}
+
+html:not(.framed) .chat.solo .talk-head {
+  padding-left: 84px;
+}
+
+/* The head gives way the way a macOS toolbar does as the conversation narrows: the title shortens first, the controls keep their size, then the employee keeps only its picture and the project goes. The button that opens the conversation in its own window shows only where there is room; More always has it. */
+html:not(.phone) .talk {
+  container: talk / inline-size;
+}
+
+.talk-head > .picker,
+.talk-head > .icon-button,
+.talk-head > .employee-assignment {
+  flex-shrink: 0;
+}
+
+.talk-head > .title,
+.talk-head > .title-field {
+  flex-shrink: 1;
+  min-width: 48px;
+}
+
+.talk-head > .tinted {
+  max-width: 160px;
+}
+
+.talk-head .head-pop-out {
+  display: none;
+}
+
+@container talk (min-width: 900px) {
+  .talk-head .head-pop-out {
+    display: inline-flex;
+  }
+}
+
+@container talk (max-width: 720px) {
+  .talk-head .employee-chip-label {
+    display: none;
+  }
+}
+
+@container talk (max-width: 560px) {
+  .talk-head > .tinted,
+  .talk-head > .tag {
+    display: none;
+  }
+}
+
 /* Everything in the head stays on its one line; the title gives way first, then the project, never a second line. */
 .talk-head > * {
   white-space: nowrap;
@@ -3778,6 +3846,15 @@ html.phone .find-bar .icon-button {
 
 .turn.step + .turn:not(.step) {
   margin-top: 12px;
+}
+
+html.phone .step > button.did {
+  min-height: 44px;
+  align-items: center;
+}
+
+html:not(.phone):not(.remote-workspace-page) .step > .skeleton-line {
+  animation: skeleton-wait 0s linear 150ms both;
 }
 
 .mine {
@@ -5183,6 +5260,10 @@ html:not(.phone) .composer-bar > .goal-picker {
   min-width: 96px;
 }
 
+html:not(.phone) .composer-bar > .goal-picker.inactive {
+  min-width: 112px;
+}
+
 html:not(.phone) .composer-bar > .spacer,
 html:not(.phone) .composer-bar > .composer-hint {
   flex-shrink: 1;
@@ -5196,7 +5277,8 @@ html:not(.phone) .composer-bar > .composer-hint {
   }
 }
 
-.goal-picker .remote-dot {
+.goal-picker .remote-dot,
+.goal-picker .goal-state {
   flex-shrink: 0;
 }
 
@@ -5256,6 +5338,7 @@ html:not(.phone) .composer-bar > .composer-hint {
 .talk-status .stat:has(.branch) {
   flex-shrink: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .talk-status .act {
@@ -7468,10 +7551,12 @@ html.framed .board-head {
 }
 
 /* Away from the field, which puts the rows away without taking the click to a card. */
+/* Inside the head, which drags the window: without no-drag a click on it moves the window and never reaches the page. */
 .board-search-away {
   position: fixed;
   z-index: 40;
   inset: 0;
+  -webkit-app-region: no-drag;
 }
 
 /* Wider than the field: a row carries a title, a project and the line it was found in. */
@@ -8246,6 +8331,8 @@ html.framed .board-head {
   inset: 0;
   z-index: 5;
   background: rgb(0 0 0 / 35%);
+  /* Over the head, which drags the window: without no-drag a click there never reaches the scrim. The conversation's own head still drags. */
+  -webkit-app-region: no-drag;
 }
 
 /* A form opened over an open conversation stands above it. */
@@ -9483,6 +9570,10 @@ html.keyboard .sheet {
   color: var(--text-faint);
 }
 
+.phone-compose > .phone-task-note {
+  margin-block-end: 6px;
+}
+
 /* New task and Question on the phone: the text fills the sheet as a note does, and what adds to it rides on the keyboard, as in Notes and Mail. */
 .phone-compose .phone-task-form {
   display: flex;
@@ -10004,6 +10095,9 @@ html.phone .composer-bar .goal-control {
 
 html.phone .composer-bar .goal-picker {
   max-width: 220px;
+}
+
+html.phone .composer-bar .goal-picker:not(.inactive) {
   color: var(--accent);
   background: var(--accent-soft);
 }
@@ -10035,6 +10129,10 @@ html.phone .composer-inner.command textarea {
 
 .phone-hint.command {
   color: var(--warning-text);
+}
+
+.phone-hint.trouble {
+  color: var(--danger);
 }
 
 /* A thumb edits, starts elsewhere or cancels a queued message, and Safari zooms into an edit field under 16px. */
@@ -16250,6 +16348,86 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
   filter: saturate(0.4);
 }
 
+.live-view-picture > canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.browser-opening {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: var(--text);
+  background: var(--bg-sunken);
+  text-align: center;
+}
+
+.browser-opening p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.browser-opening-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.browser-opening-icon::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid transparent;
+  border-block-start-color: var(--accent);
+  border-radius: inherit;
+  animation: spin 900ms linear infinite;
+}
+
+.live-view-tap {
+  position: absolute;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  pointer-events: none;
+  border: 2px solid var(--pointer-edge);
+  outline: 1px solid var(--pointer-fill);
+  border-radius: 50%;
+  animation: live-view-tap var(--settle) var(--ease) forwards;
+}
+
+@keyframes live-view-tap {
+  from { transform: scale(.7); }
+  to { opacity: 0; transform: scale(1.2); }
+}
+
+@keyframes live-view-tap-still {
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-opening-icon::after {
+    animation: none;
+    border-color: var(--accent);
+  }
+
+  .live-view-tap {
+    animation-name: live-view-tap-still;
+    animation-duration: var(--settle) !important;
+  }
+}
+
 /* Firefox leaves the caret out of its pictures, so GeckIt draws it where the page says it is, in the field's own caret colour, and blinks it as a Mac does. */
 .live-view-caret {
   position: absolute;
@@ -16259,6 +16437,11 @@ html.phone.remote-workspace-page #root { flex: 1; min-block-size: 0; block-size:
   border-radius: 1px;
   pointer-events: none;
   animation: caret-blink 1.06s steps(1, end) infinite;
+}
+
+.live-view.handoff .live-view-caret {
+  width: 1px;
+  margin-left: 0;
 }
 
 @keyframes caret-blink {
@@ -16882,6 +17065,8 @@ html.phone .phone-checklist-done { width: 100%; min-height: 50px; font-size: 17p
 .task-checklist-editor { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); display: flex; flex-direction: column; }
 .task-checklist-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
 .task-checklist-items { display: contents; }
+.task-checklist-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+html.phone .task-checklist-actions .primary { min-height: 44px; }
 .task-checklist-hint { margin: 0; }
 .task-checklist-phone { display: flex; flex-direction: column; gap: 10px; padding: 0 16px 16px; }
 .task-checklist-editor .danger,

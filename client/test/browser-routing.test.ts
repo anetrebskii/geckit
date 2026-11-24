@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ folder: '', conversation: undefined as string | undefined }))
 vi.mock('node:os', async () => ({ ...await vi.importActual<typeof Os>('node:os'), homedir: () => state.folder }))
 vi.mock('../src/cli/start', () => ({ requestingSession: () => state.conversation }))
-import { browser } from '../src/cli/browser'
+import { browser, serveAsks } from '../src/cli/browser'
 import { registerBrowserConversation } from '../src/cli/browser-lifecycle'
 
 beforeEach(() => {
@@ -38,4 +38,31 @@ it('keeps explicit manually named profiles routable outside conversations', asyn
 it('refuses foreign test tabs before sending a request', async () => {
   state.conversation = 'unregistered'
   expect((await browser(['read', '900000001'])).said).toContain('another project or an unowned legacy browser')
+})
+
+it('labels incognito tabs independently of which tabs are active', async () => {
+  const folder = join(state.folder, '.geckit', 'browser')
+  const bin = join(state.folder, '.geckit', 'bin')
+  mkdirSync(bin)
+  writeFileSync(join(bin, process.platform === 'win32' ? 'geckit-browser-host.bat' : 'geckit-browser-host'), '')
+  const serve = serveAsks(folder, (pid) => pid === 1, async () => ({ ok: true, result: [
+    { id: 10, title: 'Regular tab', url: 'https://example.com/', active: true },
+    { id: 11, title: 'New Incognito Tab', url: 'chrome://newtab/', active: true, incognito: true },
+  ] }))
+  const pages = browser(['pages', '--profile', 'person@example.com'])
+  serve()
+  expect(await pages).toEqual({ ok: true, said: [
+    '* 10         Regular tab  https://example.com/',
+    '* 11         New Incognito Tab  chrome://newtab/  [incognito]',
+  ].join('\n') })
+})
+
+it('lists the name, description and Incognito state the person gave a profile, and routes by that name', async () => {
+  const folder = join(state.folder, '.geckit', 'browser')
+  writeFileSync(join(folder, 'hosts', '1.json'), JSON.stringify({ pid: 1, label: 'person@example.com', tabs: [10], focused: 1, t: Date.now(), name: 'Work', description: 'Company Google and Slack', incognito: { allowed: true, tabs: 2 } }))
+  const { pickProfile, profiles } = await import('../src/cli/browser')
+  const reply = await browser(['profiles'])
+  expect(reply.said).toContain('person@example.com                 Work                 open, 1 tabs, used last, Incognito allowed, 2 Incognito tabs')
+  expect(reply.said).toContain('for: Company Google and Slack')
+  expect((pickProfile(profiles(folder), {}, 'work') as { pid: number }).pid).toBe(1)
 })

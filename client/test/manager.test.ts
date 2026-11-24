@@ -17,7 +17,7 @@ import { Manager, runManagerCli } from '../src/main/manager'
 import { MANAGER_WORKFLOWS } from '../src/main/guide'
 import type { ManagerCliContext, ManagerDeps } from '../src/main/manager'
 import { ManagerOperations, managerFile, managerProvider, managerReadOnly } from '../src/main/manager-operations'
-import { managerCommands, managerContext, managerHistoryItem, managerMessage, managerNote, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
+import { managerContext, managerHistoryItem, managerMessage, managerNote, managerOutput, managerVisibleItem, MANAGER_INSTRUCTIONS } from '../src/main/manager-protocol'
 import { manage } from '../src/cli/manage'
 import { askedEndpoint } from '../src/cli/endpoint'
 import type { ManagerActivity, ManagerCliAnswered, ManagerCliAsked, ManagerReplyOrigin, ManagerThread, ManagerView } from '../src/shared/manager'
@@ -1425,6 +1425,43 @@ describe('Manager session inspection', () => {
 describe('Manager task lifecycle', () => {
   const operationsFor = (f: Awaited<ReturnType<typeof fixture>>): ManagerOperations => new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager' })
 
+  it('keeps a worker open until its checklist is approved and its background command ends', async () => {
+    const f = await fixture()
+    const ops = operationsFor(f)
+    const checklist = { items: [{ id: 'review', title: 'Approve the result', check: 'person' as const }] }
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Prepare the result', checklist }, 'manager', 'worker')
+    const mark = ['sessions', 'mark', '--id', worker, '--status', 'done']
+    f.finish(worker, 'Ready for approval')
+    const before = f.notes.all()[worker]?.moves
+    await expect(ops.run(mark, 'early-goal')).rejects.toThrow('goal or checklist is incomplete')
+    expect(f.notes.all()[worker]?.moves).toEqual(before)
+
+    const command = { id: 'search', kind: 'local_bash', what: 'Search', started: 1 }
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { ...command, status: 'running' } }] })
+    expect(f.sessions.approveItem(worker, 'review')).toBe(true)
+    await expect(ops.run(mark, 'early-background')).rejects.toThrow('Background work has not finished')
+    expect(f.notes.all()[worker]?.moves).toEqual(before)
+
+    f.hear(worker, { items: [], gone: [], signals: [{ kind: 'task', task: { ...command, status: 'completed', ended: 2 } }] })
+    await expect(ops.run(mark, 'finished')).resolves.toBe(JSON.stringify({ id: worker, status: 'done' }))
+    expect(f.notes.all()[worker]?.moves?.at(-1)).toMatchObject({ status: 'done' })
+  })
+
+  it('keeps a worker with an older standalone goal open until that goal is met', async () => {
+    const f = await fixture()
+    const ops = operationsFor(f)
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Prepare the result' }, 'manager', 'worker')
+    f.finish(worker, 'Prepared the result')
+    const condition = 'Result delivered'
+    f.notes.set(worker, { ...f.notes.all()[worker], goal: { condition, checks: 1 }, goalMet: 'Previous result delivered' })
+    const mark = ['sessions', 'mark', '--id', worker, '--status', 'done']
+    await expect(ops.run(mark, 'early')).rejects.toThrow('goal or checklist is incomplete')
+    expect(f.notes.all()[worker]?.status).toBeUndefined()
+
+    f.notes.set(worker, { ...f.notes.all()[worker], goalMet: condition })
+    await expect(ops.run(mark, 'finished')).resolves.toBe(JSON.stringify({ id: worker, status: 'done' }))
+  })
+
   it.each(['done', 'archived'] as const)('resumes a %s worker in place and creates an independent task separately', async (status) => {
     let worker = ''
     const f = await fixture(0, { disk: { list: async () => worker === '' ? [] : [{ id: worker, title: 'Original result', stands: '', at: Date.now(), driven: true }], read: async () => undefined, has: async () => true } })
@@ -1480,7 +1517,7 @@ describe('Manager task lifecycle', () => {
 })
 
 describe('Manager session', () => {
-  it('delivers built-in task separation policy on initial, continuation, follow-up and restored turns without saved preferences', async () => {
+  it('delivers the task and employee selection rules on initial, continuation, follow-up and restored turns without saved preferences', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true, instructions: '' })
     const id = await f.manager.send('Coordinate the first task', 'channel')
@@ -1504,8 +1541,10 @@ describe('Manager session', () => {
     expect(f.sent[4]?.text).toContain('Coordinate after reload')
     expect(restored.instructions()).toBe('')
     expect(f.sent[0]?.input).toMatch(/read sessions show.*latest user request and recent responses.*only for the same task/)
-    expect(f.sent[0]?.input).toMatch(/matching project, employee, topic or keywords alone is insufficient.*independent task or an unclear relationship, start a new session/)
-    expect(f.sent[0]?.input).toMatch(/same employee keeps their identity and source memory across separate task sessions/)
+    expect(f.sent[0]?.input).toMatch(/Decide how many task cards the request needs.*Keep steps with one shared outcome on one card.*Create separate cards when outcomes need separate delivery or tracking/)
+    expect(f.sent[0]?.input).toMatch(/choose a suitable active employee for each task yourself, even if several fit/)
+    expect(f.sent[0]?.input).toMatch(/matching project, employee, topic or keywords alone is insufficient/i)
+    expect(f.sent[0]?.input).toMatch(/same employee keeps their identity and source memory across task sessions/)
     expect(f.sent[0]?.input).toMatch(/Honor the user's explicit direction to continue a specific session/)
     expect(f.sent[0]?.input).not.toContain('Use ordinary Send for separate later work.')
     expect(f.sent[0]?.input).toContain('A runtime ending, Goal reached badge, ticked checklist or worker claim alone is not proof.')
@@ -1796,6 +1835,28 @@ describe('Manager session', () => {
     await vi.waitFor(() => expect(replies).toEqual(['Which app is it, the desktop one?\n\nI will coordinate that.']))
     f.finish(id, 'Done.')
     await vi.waitFor(() => expect(replies).toEqual(['Which app is it, the desktop one?\n\nI will coordinate that.']))
+  })
+
+  it('keeps command arguments out of a Discord reply after an unclosed status block', async () => {
+    const f = await fixture()
+    const replies: string[] = []
+    f.manager.onResponse((text) => replies.push(text))
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'channel:discord', place: 'Discord', key: 'discord-thread' })
+    const id = await f.manager.open(thread)
+    await f.manager.send('Which assistants are available?', 'channel', 'discord:1', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    expect(f.sent[0]?.input).toContain('Reply destination for this thread: "Discord".')
+    expect(f.sent[0]?.input).toContain('send-discord-reply')
+
+    const args = ['providers', 'list']
+    f.finish(id, `Проверяю доступных ассистентов.\n\n\`\`\`status\nСмотрю настройки.\n\`\`\`geckit\n${JSON.stringify({ id: 'discord-providers', args })}\n\`\`\``)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('discord-providers'))
+    expect(f.sent.at(-1)?.input).toContain('Reply destination for this thread: "Discord".')
+    expect(f.cli.map((call) => call.args)).toEqual([args])
+    expect(replies).toEqual([])
+    f.finish(id, '')
+    await vi.waitFor(() => expect(replies).toEqual(['Проверяю доступных ассистентов.']))
   })
 
   it('hides status blocks from the answer and shows the last one in the thread until Manager answers', async () => {
@@ -2134,8 +2195,8 @@ describe('Manager session', () => {
     f.finish(id, f.command('bad-flag', ['projects', 'list', '--shell', 'touch escaped']))
     await vi.waitFor(async () => expect((await f.manager.view()).activity[0]?.state).toBe('failed'))
     expect((await f.manager.view()).activity[0]?.result).toContain('Unsupported flag')
-    expect(managerCommands('```geckit\n{"id":"literal","args":["files","write","--text","$(touch nope); echo hi"]}\n```')[0]?.args.at(-1)).toBe('$(touch nope); echo hi')
-    expect(() => managerCommands('```geckit\n{"id":"bad","args":[3]}\n```')).toThrow('invalid')
+    expect(managerOutput('```geckit\n{"id":"literal","args":["files","write","--text","$(touch nope); echo hi ```"]}\n```')).toEqual({ commands: [{ id: 'literal', args: ['files', 'write', '--text', '$(touch nope); echo hi ```'] }], visible: '' })
+    expect(() => managerOutput('```geckit\n{"id":"bad","args":[3]}\n```')).toThrow('invalid')
     expect(managerVisibleItem({ kind: 'theirs', id: '1', text: 'Hello\n```geckit\npartial' })).toMatchObject({ text: 'Hello' })
   })
 
@@ -2692,6 +2753,18 @@ describe('Manager CLI preferences and explicit new-worker models', () => {
     expect(ops.confirmation(['sessions', 'mark', '--id', first, '--status', 'done'], 'automatic')).toBeUndefined()
     expect(ops.confirmation(['sessions', 'start', ...start.slice(2)], 'approve')).toContain('Start this worker?')
     expect(ops.confirmation(['projects', 'add', '--path', f.root], 'automatic')).toContain('Register this folder')
+    const teamEdit = ['employees', 'create', '--name', 'Setup worker']
+    const channelOps = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: () => f.settings(), owner: 'manager', managed: () => true, managerSession: () => 'manager', ownerThread: (thread) => thread === 'owner', sharedThread: (thread) => thread === 'shared', computers: () => [{ id: 'paired', name: 'Paired computer' }] })
+    expect(channelOps.confirmation(teamEdit, 'approve')).toBeUndefined()
+    expect(channelOps.confirmation(teamEdit, 'approve', 'owner')).toBeUndefined()
+    expect(channelOps.confirmation(teamEdit, 'automatic', 'discord')).toContain('Change the GeckIt team?')
+    expect(channelOps.confirmation(teamEdit, 'automatic', 'shared')).toBeUndefined()
+    const rename = ['employees', 'rename', '--id', 'worker', '--name', 'New name', '--expected-name', 'Old name']
+    expect(channelOps.confirmation(rename, 'approve', 'owner')).toBeUndefined()
+    expect(channelOps.confirmation(rename, 'automatic', 'discord')).toContain('Change the GeckIt team?')
+    const save = ['shortcuts', 'save', '--draft', '{}', '--expected', 'null']
+    expect(channelOps.confirmation(save, 'approve')).toBeUndefined()
+    expect(channelOps.confirmation([...save, '--host', 'paired'], 'automatic')).toContain('Change paired?')
   })
 })
 
@@ -2724,6 +2797,53 @@ describe('Manager threads', () => {
     await f.manager.sendApp({ id: 'app:main', text: 'Plan the week', session: main })
     await vi.waitFor(() => expect(f.sent.some((one) => one.id === main && one.text.includes('Plan the week'))).toBe(true))
     expect((await f.manager.view()).state).not.toBe('blocked')
+  })
+
+  it('keeps malformed GeckIt fences out of Slack replies and privately retries the command once', async () => {
+    const f = await fixture()
+    const replies: string[] = []
+    f.manager.onResponse((text) => replies.push(text))
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread(slack)
+    const id = await f.manager.send('Use a 24-hour window', 'channel', 'slack:window', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent).toHaveLength(1))
+    const worker = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Wait for job search results' }, 'manager', 'job-search', thread, () => true, { managerThread: thread })
+
+    const args = ['shortcuts', 'list']
+    const fence = '```'
+    const body = JSON.stringify({ id: 'shortcut-window-check', args })
+    const malformed = `${fence}geckit>\n${body}\n${fence}`
+    expect(managerMessage(malformed)).toBe('')
+    expect(managerMessage(`${fence}\ngeckit>\n${body}\n${fence}`)).toBe('')
+    expect(managerMessage(`${fence}geckit>\n${body}`)).toBe('')
+
+    f.finish(id, `${malformed}\n\n${f.command('skip-mixed-command', ['capabilities'])}`)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('No commands from the last turn ran'))
+    expect(f.sent.at(-1)?.id).toBe(id)
+    expect(f.cli).toEqual([])
+    expect(replies).toEqual([])
+    expect(f.manager.pendingRequests(thread)).toContain('slack:window')
+
+    f.setCli(async () => '[]')
+    f.finish(id, `${fence}geckit\n${body}\n${fence}`)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('"result":"[]"'))
+    expect(f.cli.map((call) => call.args)).toEqual([args])
+    expect(replies).toEqual([])
+    const example = `${fence}text\nAn ordinary code block\n${fence}`
+    f.finish(id, example)
+    await vi.waitFor(() => expect(replies).toEqual([example]))
+    await vi.waitFor(async () => expect(threadActivity(await f.manager.view(), thread)).toMatchObject({ active: false, workers: [{ id: worker, active: true }] }))
+
+    await f.manager.send('Check again', 'channel', 'slack:check', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toBe('Check again'))
+    f.finish(id, malformed)
+    await vi.waitFor(() => expect(f.sent.at(-1)?.text).toContain('No commands from the last turn ran'))
+    const count = f.sent.length
+    f.finish(id, malformed)
+    await vi.waitFor(async () => expect((await f.manager.view()).threads?.find((one) => one.id === thread)?.state).toBe('failed'))
+    expect(f.sent).toHaveLength(count)
+    expect(f.cli.map((call) => call.args)).toEqual([args])
+    expect(replies).toEqual([example])
   })
 
   it('lets only one thread track a worker, and another follow it only after that one lets go', async () => {
@@ -2962,19 +3082,39 @@ describe('Manager built-in channel attachments', () => {
 describe('team topic tools enforce ownership', () => {
   it('filters worker lists and refuses personal history, mutations, global controls and installation preferences', async () => {
     const f = await fixture()
+    const employees = new Employees({ directory: f.directory, sync: async () => undefined, assignment: () => undefined, sources: async () => [], items: async () => [] })
+    await employees.save({ name: 'Scotty', role: 'SEO', description: 'Private instructions', avatar: 'employee-01' })
+    await employees.save({ name: 'Retired', role: 'SEO', description: '', avatar: 'employee-02' })
+    const [employee, retired] = employees.list().employees
+    if (employee === undefined || retired === undefined) throw new Error('Missing employee fixture')
+    await employees.archive(retired.id, retired.revision)
     await f.manager.configure({ enabled: true })
     const thread = f.manager.thread({ channel: 'telegram', place: 'Telegram', key: 'team:-10081:42:example-generation', shared: true })
     const managerSession = await f.manager.open(thread)
     const own = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Team work' }, 'manager', 'team-worker')
     const foreign = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Personal work' }, 'manager', 'private-worker')
     f.notes.set(own, { ...f.notes.all()[own], managerThread: thread })
-    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => ({ ...f.settings(), ...change }), owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => managerSession, managerThread: () => thread, sharedThread: (one) => one === thread, authorized: () => true })
+    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: f.settings, saveSettings: (change) => ({ ...f.settings(), ...change }), owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => managerSession, managerThread: () => thread, sharedThread: (one) => one === thread, authorized: () => true, employees })
     const listed = await ops.run(['sessions', 'list'], 'list-team')
     expect(listed).toContain(own)
     expect(listed).not.toContain(foreign)
     for (const command of ['show', 'stop', 'send', 'retry', 'delete', 'attach', 'follow', 'mark']) await expect(ops.run(['sessions', command, '--id', foreign], `foreign-${command}`)).rejects.toThrow()
-    for (const args of [['manager', 'pause'], ['sessions', 'history'], ['sessions', 'assign'], ['settings', 'show'], ['settings', 'manager-edit'], ['employees', 'memory', 'someone'], ['channels', 'list'], ['files', 'read', '--project', f.root, '--path', 'private.txt']]) await expect(ops.run(args, `denied-${args[0]}`)).rejects.toThrow('Team topics')
+    for (const args of [['manager', 'pause'], ['sessions', 'history'], ['settings', 'show'], ['settings', 'manager-edit'], ['employees', 'memory', employee.id], ['employees', 'show', employee.id], ['channels', 'list'], ['files', 'read', '--project', f.root, '--path', 'private.txt']]) await expect(ops.run(args, `denied-${args[0]}`)).rejects.toThrow('Team topics')
+    const capabilities = await ops.run(['capabilities'], 'team-capabilities')
+    expect(capabilities).toContain('employees list')
+    expect(capabilities).toContain('sessions assign')
+    expect(capabilities).toContain('sessions start')
+    expect(JSON.parse(await ops.run(['employees', 'list'], 'team-employees'))).toEqual({ employees: [{ id: employee.id, name: 'Scotty', role: 'SEO' }] })
+    await expect(ops.run(['sessions', 'assign', '--id', foreign, '--employee', employee.id], 'assign-foreign')).rejects.toThrow('another Manager thread')
+    await expect(ops.run(['sessions', 'assign', '--id', own, '--employee', retired.id], 'assign-archived')).rejects.toThrow('archived')
+    const turns = f.sent.length
+    expect(JSON.parse(await ops.run(['sessions', 'assign', '--id', own, '--employee', employee.id], 'assign-own'))).toEqual({ id: own, employeeId: employee.id })
+    expect(f.notes.all()[own]).toMatchObject({ managerThread: thread, employeeId: employee.id })
+    expect(f.sessions.employeeAssignment(foreign)).toBeUndefined()
+    expect(f.sent).toHaveLength(turns)
     await expect(ops.run(['sessions', 'stop', '--id', own], 'stop-team')).resolves.toContain('stopRequested')
+    await expect(ops.run(['employees', 'create', '--name', 'Employee'], 'denied-team-edit')).rejects.toThrow('Team topics')
+    await expect(ops.run(['employees', 'shortcut', 'add', 'none', '--cron', '0 9 * * *'], 'denied-team-schedule')).rejects.toThrow('Team topics')
   })
 })
 
@@ -3144,6 +3284,40 @@ it('team regression: replaced backing session does not block later replies', asy
 })
 
 describe('scheduled run Manager contexts', () => {
+  it('starts two parallel tasks for one employee from one Slack request past the old task cap', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'geckit-digest-employees-'))
+    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    const employees = new Employees({ directory, sync: async () => undefined, assignment: () => undefined, sources: async () => [], items: async () => [] })
+    const [employee] = (await employees.save({ name: 'Scotty', role: 'SEO', description: '', avatar: 'employee-01' })).employees
+    if (employee === undefined) throw new Error('Missing employee fixture')
+    const f = await fixture(0, { validateEmployee: (id) => { employees.active(id) } }, undefined, undefined, employees)
+    for (let index = 0; index < 2048; index += 1) {
+      const id = `past-task-${index}`
+      f.notes.set(id, { managerRequestSource: { id, bot: 1, chatId: -10081, topicId: 42, generation: 'example', actor: 82, messageId: index + 1 } })
+    }
+    await f.manager.configure({ enabled: true })
+    const thread = f.manager.thread({ channel: 'channel:slack', key: 'shortcut-run:seo', place: 'SEO digest' }, true)
+    const manager = await f.manager.runShortcut({ id: 'seo', name: 'SEO digest', root: f.root, prompt: 'Report SEO runs' }, 'shortcut:seo:digest', thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === manager && one.text.includes('Report SEO runs'))).toBe(true))
+    f.finish(manager, 'SEO digest ready')
+    await vi.waitFor(() => expect(f.manager.shortcutSettled(thread)).toBe(true))
+    f.manager.bindShortcutThread(thread, { channel: 'channel:slack', key: 'seo:123', place: 'SEO digest' })
+    await f.manager.send('Ask Scotty to correct the partner price and update the backlog in separate PRs', 'channel', 'seo-follow-up', [], () => true, [], [], thread)
+    await vi.waitFor(() => expect(f.sent.some((one) => one.id === manager && one.text.includes('Ask Scotty'))).toBe(true))
+    const price = f.command('start-scotty-price', ['sessions', 'start', '--project', f.root, '--text', 'Correct the partner price', '--goal', 'Open a PR', '--employee', employee.id])
+    const backlog = f.command('start-scotty-backlog', ['sessions', 'start', '--project', f.root, '--text', 'Update the backlog', '--goal', 'Open a PR', '--employee', employee.id])
+    f.finish(manager, `${price}\n\n${backlog}`)
+    await vi.waitFor(async () => {
+      const view = await f.manager.view()
+      const workers = view.workers.filter((one) => one.employeeId === employee.id)
+      expect(workers).toHaveLength(2)
+      expect(workers.map((one) => one.state)).toEqual(['working', 'working'])
+      expect(view.threads?.find((one) => one.id === thread)?.owns).toEqual(expect.arrayContaining(workers.map((one) => one.id)))
+      expect(view.threads?.find((one) => one.id === 'main')?.owns).toEqual([])
+      expect(f.sent.filter((one) => workers.some((worker) => worker.id === one.id)).map((one) => one.text)).toEqual(expect.arrayContaining(['Correct the partner price', 'Update the backlog']))
+    })
+  })
+
   it('waits beyond a Manager acknowledgement for its owned worker, then binds the same context for continuation', async () => {
     const f = await fixture()
     await f.manager.configure({ enabled: true })

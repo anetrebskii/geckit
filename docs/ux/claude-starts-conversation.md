@@ -142,6 +142,8 @@ flowchart LR
 | How long a batch waits | As long as the command lives; GeckIt adds no limit | A waiting batch costs nothing, and only the asker knows whether it still wants the answer |
 | Claude Code's limit for a foreground command | 2 minutes by default, 10 at most | Why `GECKIT.md` says to run `geckit start` in the background |
 
+A background command from an attached provider conversation can reach GeckIt between turns. GeckIt shows the usual approval card in the originating conversation and waits for an answer before starting any task.
+
 ## 7. Wording
 
 | State | Text |

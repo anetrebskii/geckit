@@ -3,18 +3,29 @@ import type { Settings } from './api'
 
 /** What a client keeps for itself rather than the computer: how it looks, which projects it shows, and what it sends. */
 export const OWN = ['theme', 'profile', 'chatProjects', 'chatAll', 'chatPlace', 'analytics', 'analyticsAsked', 'sendErrors', 'client'] as const
+const PRIVACY = ['analytics', 'analyticsAsked', 'sendErrors', 'client'] as const
+const DEVICE = 'own:privacy'
 
 /**
  * What a client on a link keeps for itself rather than the computer it reads: how it looks, which projects it shows,
  * and whether it counts and sends its errors. A profile the computer no longer has is All projects again.
  */
 export function clientOwn(key: string) {
-  const read = (): Partial<Settings> => {
-    try { return JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Settings> } catch { return {} }
+  const load = (at: string): Partial<Settings> => {
+    try { return JSON.parse(localStorage.getItem(at) ?? '{}') as Partial<Settings> } catch { return {} }
   }
-  let mine = read()
+  const split = (all: Partial<Settings>, privacy: boolean): Partial<Settings> =>
+    Object.fromEntries(Object.entries(all).filter(([name]) => (PRIVACY as readonly string[]).includes(name) === privacy)) as Partial<Settings>
+  // The privacy answers belong to the device, so another computer does not ask again; an answer kept per computer moves there.
+  let mine: Partial<Settings> = { ...load(key), ...load(DEVICE) }
   let last: Settings | undefined
-  const write = (): void => { try { localStorage.setItem(key, JSON.stringify(mine)) } catch { /* kept for this launch only */ } }
+  const write = (): void => {
+    try {
+      localStorage.setItem(key, JSON.stringify(split(mine, false)))
+      localStorage.setItem(DEVICE, JSON.stringify({ ...load(DEVICE), ...split(mine, true) }))
+    } catch { /* kept for this launch only */ }
+  }
+  if (Object.keys(split(load(key), true)).length > 0) write()
   const isOwn = (name: string): boolean => (OWN as readonly string[]).includes(name)
   return {
     mine: (): Partial<Settings> => mine,

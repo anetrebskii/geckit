@@ -9,7 +9,7 @@ import { kindOf } from '../shared/prompt-kinds'
 import { checklistItems } from '../shared/checklists'
 import { flagsFrom, jsonInput, onlyFields, required } from './product-input'
 
-export const shortcutDraft = ({ since: _since, lastRun: _lastRun, lastSession: _lastSession, outcome: _outcome, postponedFrom: _postponedFrom, ...draft }: Shortcut): ShortcutDraft => draft
+export const shortcutDraft = ({ since: _since, lastRun: _lastRun, lastSession: _lastSession, runSessions: _runSessions, outcome: _outcome, postponedFrom: _postponedFrom, ...draft }: Shortcut): ShortcutDraft => draft
 export async function productShortcuts(api: Pick<CoreMethods, 'shortcuts:save' | 'shortcuts:remove' | 'shortcuts:postpone' | 'shortcuts:run' | 'shortcuts:destinations' | 'shortcuts:runs'>, args: readonly string[]): Promise<string> {
   const [command, ...rest] = args
   const json = <T>(value: T): string => JSON.stringify(value ?? null)

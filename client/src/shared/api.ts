@@ -523,6 +523,7 @@ export function goalMet(session: Pick<ChatSession, 'goal' | 'goalMet'>): boolean
 /** A goal set with `/goal` or attached to a new task. */
 export interface SessionGoal {
   readonly condition: string
+  readonly state?: 'paused' | 'stopped'
   /** How many checks have found it does not hold yet. */
   readonly checks: number
   /** What the last of them said. */
@@ -899,7 +900,7 @@ export type ViewInput =
   | { readonly type: 'back' }
 
 /** One picture of the sign-in tab, a JPEG in base64, with the page it shows. */
-export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string }; readonly pointer?: { readonly x: number; readonly y: number }; readonly fields?: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] }
+export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string }; readonly pointer?: { readonly x: number; readonly y: number }; readonly fields?: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[]; readonly focusedField?: NonNullable<ViewFrame['fields']>[number] }
 
 /** Test browsers: Camoufox driven by GeckIt, each profile kept by name. */
 export interface TestBrowsersState {
@@ -984,6 +985,11 @@ export interface Bounds {
   readonly y: number
   readonly width: number
   readonly height: number
+}
+
+export interface ConversationWindow {
+  readonly id: string
+  readonly bounds?: Bounds
 }
 
 /** Which application opens a kind of file pressed in a conversation. */
@@ -1233,6 +1239,8 @@ export interface Settings {
   readonly openWith: readonly OpenRule[]
   readonly transcriptions: readonly Transcription[]
   readonly chatBounds?: Bounds
+  /** Conversations open in windows of their own on this computer, and where each was left; kept while Chat shows another computer and across restarts. */
+  readonly conversationWindows?: readonly ConversationWindow[]
   readonly panelBounds?: Bounds
   /** Where the floating gecko was dragged to. */
   readonly geckoBounds?: Bounds
@@ -1332,6 +1340,8 @@ export interface Shortcut extends Pick<SessionMessage, 'provider' | 'reasoning'>
   readonly lastRun?: number
   /** The conversation the last run started. */
   readonly lastSession?: string
+  /** The conversations its runs started, newest first, at most 50: what Runs lists. */
+  readonly runSessions?: readonly { readonly session: string; readonly at: number }[]
 }
 
 export type ShortcutOutcome =

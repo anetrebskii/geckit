@@ -9,11 +9,12 @@ import type { RemoteServer } from '../../../shared/remote/protocol'
 import { SIGNAL } from '../../../shared/pairing'
 import { clientOwn } from '../../../shared/client-own'
 import { phoneErrors } from '../phone-errors'
-import { countEvent } from '../../../shared/counting'
+import { countDecline, countEvent } from '../../../shared/counting'
 import type { EventName } from '../../../shared/counting'
 import { LINK_DOWN } from './client'
 import type { PhoneCalls } from '../phone-calls'
-import type { WorkspaceConnection } from './Workspace'
+import type { WorkspaceConnection, WorkspaceMount } from './Workspace'
+import { readSignIn } from '../../../shared/live-view'
 import { clientData } from '../../../shared/client-data'
 import { keep, readKept } from '../kept'
 
@@ -21,7 +22,7 @@ import { keep, readKept } from '../kept'
 const NOTICE_FOR = 6000
 const CODE_SHOWN = 60_000
 
-export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean) {
+export async function workspaceApi(connection: WorkspaceConnection, server: RemoteServer, onPhone: boolean, onSignIn?: WorkspaceMount['onSignIn']) {
   // A server older than service:about answers only the whole bootstrap.
   const readAbout = () => connection.call('service:about').catch(() => connection.call('service:bootstrap'))
   const asked = readAbout()
@@ -111,9 +112,10 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
         const failure = error instanceof Error ? error : new Error(typeof (error as { message?: unknown } | null)?.message === 'string' ? (error as { message: string }).message : String(error))
         if (failure.message === 'Unknown GeckIt method.') {
           const older = new Error('GeckIt on the server is older than this app. Update it there to use this.')
-          if (!quiet.has(channel)) report(older)
+          if (channel !== 'chat:file' && !quiet.has(channel)) report(older)
           throw older
         }
+        if (channel === 'chat:file') throw failure
         report(failure)
         throw error
       }
@@ -132,7 +134,10 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
       }
       if (channel === 'open:link') {
         const href = args[0]
-        if (typeof href === 'string' && /^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
+        if (typeof href !== 'string') return
+        const signIn = href.startsWith('geckit:') ? readSignIn(href) : undefined
+        if (signIn !== undefined && onSignIn !== undefined) void onSignIn(signIn).catch(report)
+        else if (/^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
         return
       }
       if (['chat:openFile', 'chat:reveal', 'chat:fileMenu'].includes(channel)) {
@@ -146,7 +151,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
         return
       }
       if (channel === 'errors:hold') { console.error(...args); return }
-      if (['chat:open', 'chat:listening', 'voice:form', 'errors:answer'].includes(channel)) return
+      if (['chat:open', 'chat:listening', 'chat:popOut', 'chat:away', 'voice:form', 'errors:answer'].includes(channel)) return
       void transport.invoke(channel, ...args).catch(() => undefined)
     },
     listen: <Value,>(channel: string, said: (value: Value) => void): (() => void) => {
@@ -167,7 +172,7 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
   const errors = phoneErrors(() => owned.mine().sendErrors === true, () => void settings.set({ sendErrors: true }))
   const counting = (name: EventName): void => {
     if (owned.mine().analytics !== true || owned.mine().analyticsAsked !== true) return
-    void countEvent(owned.client(), name, onPhone ? 'phone server' : 'remote desktop')
+    void countEvent(owned.client(), name, 'server', onPhone ? 'phone' : 'remote desktop')
   }
   const settings = {
     ...api.settings,
@@ -180,8 +185,11 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
       return owned.own(kept)
     },
     set: async (change: Partial<Settings>): Promise<Settings> => {
+      const first = owned.mine().analyticsAsked !== true && change.analyticsAsked === true
       const { here, there } = owned.take(change)
       if (change.sendErrors !== undefined) errors.follow(change.sendErrors)
+      if (first && change.analytics !== true) countDecline('server', onPhone ? 'phone' : 'remote desktop')
+      if (first && change.analytics === true) counting('countingAccepted')
       if (change.analytics === true) counting('phoneOpened')
       if (Object.keys(here).length === 0 || Object.keys(there).length > 0) return owned.own(await api.settings.set(there))
       const now = owned.own(owned.last() ?? (await api.settings.get()))
@@ -223,7 +231,10 @@ export async function workspaceApi(connection: WorkspaceConnection, server: Remo
     localFetch: (request) => connection.call('local:fetch', request),
     forwardLink: (root, href) => connection.call('hosts:forwardLink', root, href),
     pushToken: (token) => { void connection.call('push:token', token).catch(() => undefined) },
-    away: (on) => { void connection.call('push:here' as keyof CoreMethods, ...([on] as unknown as Parameters<CoreMethods[keyof CoreMethods]>)).catch(() => undefined) },
+    away: (on) => {
+      void connection.call('push:here' as keyof CoreMethods, ...([on] as unknown as Parameters<CoreMethods[keyof CoreMethods]>)).catch(() => undefined)
+      if (!on) data.refresh()
+    },
   }
   if (onPhone) {
     Object.defineProperty(window, 'geckitPhone', { value: phone })

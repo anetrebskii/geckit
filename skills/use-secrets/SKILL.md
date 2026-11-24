@@ -14,9 +14,9 @@ Get a credential the work needs from the person and use it only where it is allo
 ## Inputs
 
 - What the work needs: which credential, for which site, host, program or SSH server.
-- `{{said}} secrets list` shows saved secrets with their use, places and keeping period. A saved one with the right use and places is used as it is.
+- `{{said}} secrets list` shows saved secrets with their use, places and retention period. Match an existing secret before requesting a new one.
 - A new secret gets a name in lowercase and hyphens naming the service and account, such as `github-work` or `openai-key`, and one use:
-  - `website`: a sign-in, the password and the username or email it signs in as, in one secret; places are origins, such as `https://github.com`;
+  - `website`: username and password. Request or use it only after opt-in for the site and account. Places are origins, such as `https://github.com`.
   - `http`: an API key or token sent in requests; places are hosts, such as `api.openai.com` or `*.stripe.com`;
   - `command`: a value a program reads from its environment; places are program names, such as `psql`;
   - `ssh`: a private key; places are hosts, such as `github.com`.
@@ -26,9 +26,9 @@ Get a credential the work needs from the person and use it only where it is allo
 
 1. `{{said}} secrets request <name> --use <use> --for <places> --note "<what for>"` prints a link; `--field "<element>"` names a website's password field, `--replace` sends a new link for a saved one.
 
-   A website sign-in is one request and one link. Add `--user <account>` when the account is known; without it, the same page asks for the username or email beside the password. Never request a username or email as a secret of its own, never send two links for one sign-in, and do not ask for the username in the conversation.
-2. Put the link, as it is printed, in the final message of this turn, or in the thread the person wrote from, never only in a command's output or a note between steps, which the chat folds away. Say what it is for, and that it opens once, for the minutes the command printed.
-3. `{{said}} secrets wait <name>` waits up to 15 minutes. If it runs in the background, end the turn with the link still in that final message.
+   For a website password, send one credential link. Add `--user <account>` if known. Otherwise, collect the username or email on the same form as the password. The person selects the retention period. Leave one-time codes to the person in the browser.
+2. Put the link as printed in the final message of this turn, in a private reply or direct message. Say what it is for, that it opens once, and when it expires. From a shared channel, ask the person to continue in a direct message.
+3. End the turn after sharing the link. GeckIt resumes this conversation when the secret is saved. Do not schedule a timer, poll, or run `{{said}} secrets wait <name>`.
 4. Use it by name:
    - website: type the username `secrets list` shows after `as` with an ordinary `{{said}} browser type`, then `{{said}} browser type <tab> <ref> --secret <name>` types the password into a password field on its own site;
    - http: `{{said}} secrets run --env NAME=secret:<name> -- <command>`; NAME holds a placeholder the broker replaces with the value only on the secret's hosts;
@@ -41,7 +41,7 @@ Get a credential the work needs from the person and use it only where it is allo
 
 ## Unknowns
 
-A refusal says why: a secret works only on its own places and only for the task that asked for it, unless the person chose to keep it. Report the refusal as it came back; do not widen the places, rename the secret or request it again to get around it. Do not invent a value, a place or a name the person would not recognise. When `wait` ends without the secret, say so and offer a new link with `--replace`.
+A refusal says why: a secret works only on its own places and only for the task that asked for it, unless the person chose to keep it. Report the refusal as it came back; do not widen the places, rename the secret or request it again to get around it. Do not invent a value, a place or a name the person would not recognise. If the person reports an expired link, offer a replacement.
 
 ## Output
 
@@ -49,4 +49,4 @@ In the person's language: the link and what it is for; once used, which secret w
 
 ## Verification
 
-After `wait`, check that `secrets list` shows the secret. After use, confirm the result the work needed: the page is signed in, the request succeeded, the command exited with 0. `[secret:<name>]` in output is the broker's mask, not an error.
+After GeckIt resumes, use the saved name from the completion message. Confirm the result the work needed: the page is signed in, the request succeeded, or the command exited with 0. `[secret:<name>]` in output is the broker's mask, not an error.

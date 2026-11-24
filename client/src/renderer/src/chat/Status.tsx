@@ -101,7 +101,7 @@ export function useGit(root: string | undefined, state: unknown): GitState | und
   return git !== undefined && git.root === root ? git.state : undefined
 }
 
-export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly onClear: () => void }): React.JSX.Element {
+export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly onClear?: () => void }): React.JSX.Element {
   const [now, setNow] = useState(() => Date.now())
   const spend = chat.session?.spend
   const model = chat.session?.model
@@ -146,9 +146,11 @@ export function TalkStatus({ chat, onClear }: { readonly chat: Chat; readonly on
           >
             Compact
           </button>
-          <button type="button" className="act" title="Start a new conversation in this folder, for another task" onClick={onClear}>
-            Clear
-          </button>
+          {onClear === undefined ? null : (
+            <button type="button" className="act" title="Start a new conversation in this folder, for another task" onClick={onClear}>
+              Clear
+            </button>
+          )}
         </>
       )}
       {spend?.cost === undefined ? null : (

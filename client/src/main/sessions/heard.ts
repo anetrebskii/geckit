@@ -62,6 +62,7 @@ export interface Driver {
   /** Starts a turn. `before` goes ahead of the message as blocks of its own: the commands run with `!` since the last one. */
   send(text: string, images?: readonly SessionImage[], before?: readonly string[]): void
   inject?(...input: Parameters<Driver['send']>): Promise<void>
+  readyForGoal?(): Promise<void>
   /** Compacts the held conversation in place while it is idle, settled once that is finished; no turn of its own is reported. */
   compact?(): Promise<void>
   answer(ask: string, answer: CardAnswer | string): void

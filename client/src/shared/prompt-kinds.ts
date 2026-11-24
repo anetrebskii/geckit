@@ -147,7 +147,7 @@ export function ranLine(outcome: Extract<Shortcut['outcome'], { state: 'ran' }>,
 
 /** A new prompt of the same kind with every setting but the history, named "{name} copy"; a Scheduled time already past moves to the next day at the same time. */
 export function duplicateDraft(prompt: Shortcut | ShortcutDraft, now: number, zone?: string): ShortcutDraft {
-  const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, outcome: _outcome, postponedFrom: _postponedFrom, startWindowMinutes: _window, ...kept } = prompt as Shortcut & ShortcutDraft
+  const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, runSessions: _runSessions, outcome: _outcome, postponedFrom: _postponedFrom, startWindowMinutes: _window, ...kept } = prompt as Shortcut & ShortcutDraft
   const draft: ShortcutDraft = { ...kept, name: `${prompt.name} copy` }
   if (draft.at === undefined) return draft
   let at = draft.at
@@ -157,13 +157,13 @@ export function duplicateDraft(prompt: Shortcut | ShortcutDraft, now: number, zo
 
 /** A Scheduled copy of a Shortcut, for Run later...: tomorrow 09:00, varied. */
 export function runLaterDraft(prompt: Shortcut, now: number, zone?: string): ShortcutDraft {
-  const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, outcome: _outcome, postponedFrom: _postponedFrom, cron: _cron, recurrence: _recurrence, ...kept } = prompt
+  const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, runSessions: _runSessions, outcome: _outcome, postponedFrom: _postponedFrom, cron: _cron, recurrence: _recurrence, ...kept } = prompt
   return { ...kept, at: defaultOnce(now, zone), vary: true, on: true }
 }
 
 /** Schedule again from "Ran today": the same prompt tomorrow at the same time. */
 export function againDraft(prompt: Shortcut, now: number, zone?: string): ShortcutDraft {
-  const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, outcome: _outcome, postponedFrom: _postponedFrom, ...kept } = prompt
+  const { id: _id, since: _since, lastRun: _lastRun, lastSession: _lastSession, runSessions: _runSessions, outcome: _outcome, postponedFrom: _postponedFrom, ...kept } = prompt
   const at = movedTo(prompt.at ?? defaultOnce(now, zone), addDays(civilDay(now, zone), 1), zone)
   return { ...kept, at }
 }
@@ -209,6 +209,6 @@ export const dateField = (at: number, zone?: string): string => civilDay(at, zon
 
 /** A saved prompt as the editor saves it, its history left to the service. */
 export function asDraft(prompt: Shortcut): ShortcutDraft {
-  const { since: _since, lastRun: _lastRun, lastSession: _lastSession, outcome: _outcome, postponedFrom: _postponedFrom, ...kept } = prompt
+  const { since: _since, lastRun: _lastRun, lastSession: _lastSession, runSessions: _runSessions, outcome: _outcome, postponedFrom: _postponedFrom, ...kept } = prompt
   return kept
 }

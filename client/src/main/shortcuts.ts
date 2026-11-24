@@ -40,6 +40,15 @@ const put = (id: string, change: Partial<Shortcut>): void => {
   setSettings({ shortcuts: getSettings().shortcuts.map((one) => (one.id === id ? { ...one, ...change } : one)) })
 }
 
+const RUNS_KEPT = 50
+
+/** The conversation a run started, as the last one and at the head of the runs kept. */
+const started = (id: string, session: string): void => {
+  const one = getSettings().shortcuts.find((shortcut) => shortcut.id === id)
+  const kept = (one?.runSessions ?? []).filter((run) => run.session !== session)
+  put(id, { lastSession: session, runSessions: [{ session, at: Date.now() }, ...kept].slice(0, RUNS_KEPT) })
+}
+
 const ownerArchived = (one: Shortcut): boolean => one.target !== 'manager' && one.employeeId !== undefined && deps?.employee?.(one.employeeId)?.archived === true
 
 /** An employee restored: their timetables count from now, so what was missed while archived is not caught up. */
@@ -182,7 +191,7 @@ async function startShortcut(id: string, by: 'hand' | 'timetable', anchor?: numb
     if (one.destination !== undefined && deps.runs === undefined) throw new Error('Shortcut destination delivery is unavailable.')
     if (one.target === 'manager') {
       const session = one.destination === undefined ? await deps.manager?.(one, `shortcut:${one.id}:${randomUUID()}`) : await deps.runs!.start({ ...one, destination: one.destination }, () => Promise.reject(new Error('Manager starts through its run context.')))
-      if (session !== undefined && getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
+      if (session !== undefined && getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) started(id, session)
       return session
     }
     const checklist = shortcutChecklist(one)
@@ -198,7 +207,7 @@ async function startShortcut(id: string, by: 'hand' | 'timetable', anchor?: numb
         ...(!isCodexProvider(provider) || one.reasoning === undefined ? {} : { reasoning: one.reasoning }),
       })
       given.rename(session, one.name)
-      if (getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) put(id, { lastSession: session })
+      if (getSettings().shortcuts.find((shortcut) => shortcut.id === id)?.target === one.target) started(id, session)
       return session
     }
     return one.destination === undefined ? await start() : await deps.runs!.start({ ...one, destination: one.destination }, start)
@@ -260,6 +269,7 @@ export function saveShortcut(draft: ShortcutDraft): Shortcut {
     since,
     ...(was?.lastRun === undefined ? {} : { lastRun: was.lastRun }),
     ...(was?.lastSession === undefined || was.target !== draft.target ? {} : { lastSession: was.lastSession }),
+    ...(was?.runSessions === undefined || was.target !== draft.target ? {} : { runSessions: was.runSessions }),
   }
   setSettings({ shortcuts: was === undefined ? [...all, saved] : all.map((one) => (one.id === was.id ? saved : one)) })
   return saved

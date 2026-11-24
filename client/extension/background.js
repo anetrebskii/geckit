@@ -84,10 +84,14 @@ let focused = 0
 async function announce() {
   if (port === undefined) return
   const who = await chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }).catch(() => ({ email: '' }))
-  const tabs = (await chrome.tabs.query({})).map((one) => one.id)
+  const all = await chrome.tabs.query({})
+  const tabs = all.map((one) => one.id)
   if (focused === 0 && (await chrome.windows.getAll()).some((one) => one.focused)) focused = Date.now()
-  port?.postMessage({ event: 'profile', label: who.email, tabs, focused })
+  const { about } = await chrome.storage.local.get('about')
+  const incognito = { allowed: await chrome.extension.isAllowedIncognitoAccess(), tabs: all.filter((one) => one.incognito).length }
+  port?.postMessage({ event: 'profile', label: who.email, tabs, focused, name: about?.name ?? '', description: about?.description ?? '', incognito })
 }
+chrome.storage.onChanged.addListener((changes, area) => { if (area === 'local' && changes.about) void announce() })
 chrome.tabs.onCreated.addListener(() => void announce())
 chrome.tabs.onRemoved.addListener(() => void announce())
 chrome.windows.onFocusChanged.addListener((id) => { if (id !== chrome.windows.WINDOW_ID_NONE) { focused = Date.now(); void announce() } })
@@ -589,12 +593,19 @@ async function claim(id, opened) {
 }
 
 async function answer(request) {
+  if ((request.cmd === 'open' || request.cmd === 'go') && /^\s*file:/i.test(request.url) && !await chrome.extension.isAllowedFileSchemeAccess()) {
+    throw new Error('Couldn\'t open the local file. In this Chrome profile, go to chrome://extensions > GeckIt Browser > Details, turn on Allow access to file URLs, then try again.')
+  }
   const id = request.tab
   if (Number.isInteger(id) && request.cmd !== 'close') await claim(id, false)
   switch (request.cmd) {
     case 'ping': return { version: chrome.runtime.getManifest().version, id: chrome.runtime.id }
     case 'reload': setTimeout(() => chrome.runtime.reload(), 100); return {}
-    case 'pages': return (await chrome.tabs.query({})).map((one) => ({ id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '', ...(one.openerTabId === undefined ? {} : { opener: one.openerTabId }) }))
+    case 'pages': return (await chrome.tabs.query({})).map((one) => ({
+      id: one.id, window: one.windowId, active: one.active, title: one.title ?? '', url: one.url ?? '',
+      ...(one.incognito ? { incognito: true } : {}),
+      ...(one.openerTabId === undefined ? {} : { opener: one.openerTabId }),
+    }))
     case 'open': {
       const made = await chrome.tabs.create({ url: request.url, active: false })
       await claim(made.id, true)
@@ -603,14 +614,16 @@ async function answer(request) {
       return { id: now.id, title: now.title ?? '', url: now.url ?? '' }
     }
     case 'go': {
-      await tab(id)
-      return debug(id, async () => {
+      const source = await tab(id)
+      const navigate = async () => {
         const back = loaded(id)
         await chrome.tabs.update(id, { url: request.url })
         await orDialog(id, back)
         const now = await chrome.tabs.get(id)
         return { id, title: now.title ?? '', url: now.url ?? '' }
-      })
+      }
+      if (source.incognito && source.url === 'chrome://newtab/' && /^https?:\/\//i.test(request.url)) return navigate()
+      return debug(id, navigate)
     }
     case 'close': await tab(id); await chrome.tabs.remove(id); return {}
     case 'text': return inPage(id, pageText)

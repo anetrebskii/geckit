@@ -3,7 +3,7 @@ import type { Geckit } from '../../preload'
 import type { ChatSession, SessionImage, SessionItem, ScreenControlled, SessionNotice, Settings } from '../../shared/api'
 import { isRemote } from '../../shared/hosts'
 import { isLocal, toPhone } from '../../shared/local'
-import { countEvent } from '../../shared/counting'
+import { countDecline, countEvent } from '../../shared/counting'
 import type { EventName } from '../../shared/counting'
 import { clientOwn } from '../../shared/client-own'
 import { pairAgain } from './pair-again'
@@ -180,7 +180,11 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     if (owned.mine().analytics !== true || owned.mine().analyticsAsked !== true) return
     const client = owned.client()
     version ??= call<string>('mac.version')
-    void version.then((said) => countEvent(client, name, `phone ${said}`)).catch(() => undefined)
+    void version.then((said) => countEvent(client, name, said, 'phone')).catch(() => undefined)
+  }
+  const declined = (): void => {
+    version ??= call<string>('mac.version')
+    void version.then((said) => countDecline(said, 'phone')).catch(() => undefined)
   }
 
   const told = (channel: string, value: unknown): void => {
@@ -376,9 +380,12 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
     settings: {
       get: () => keptFirst<Settings>('settings', () => call('settings.get'), 'settings:changed').then(own),
       set: async (change) => {
+        const first = owned.mine().analyticsAsked !== true && change.analyticsAsked === true
         const { here, there } = owned.take(change)
         if (Object.keys(here).length > 0) {
           if (change.sendErrors !== undefined) errors.follow(change.sendErrors)
+          if (first && change.analytics !== true) declined()
+          if (first && change.analytics === true) counting('countingAccepted')
           if (change.analytics === true) counting('phoneOpened')
         }
         if (Object.keys(there).length > 0) return own(await call<Settings>('settings.set', there))
@@ -577,6 +584,9 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onScreenshot: never,
       onTask: never,
       listening: nothing,
+      popOut: nothing,
+      away: nothing,
+      onWindows: never,
     },
     lineup: {
       state: () => call('lineup.state'),
@@ -650,9 +660,8 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       onTell: never,
       state: nothing,
       screen: () => Promise.resolve({}),
-      shares: () => Promise.resolve([]),
-      onShares: never,
-      share: () => Promise.resolve(undefined),
+      tabVideos: () => Promise.resolve([]),
+      onTabVideo: never,
       onScale: never,
       scaled: nothing,
     },

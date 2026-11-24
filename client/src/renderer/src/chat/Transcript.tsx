@@ -504,27 +504,30 @@ function Picture({ image, onPicture }: { readonly image: SessionImage; readonly 
 /** The one line a run of steps is drawn as, with the pictures its steps handed back while it is shut, and the line over it once it is open. */
 function Fold({
   said,
-  icon,
-  title,
+  expanded,
+  loading = false,
+  failed = false,
   onPress,
   images = [],
   onPicture,
 }: {
   readonly said: string
-  readonly icon: 'right' | 'down' | 'spinner'
-  readonly title: string
+  readonly expanded: boolean
+  readonly loading?: boolean
+  readonly failed?: boolean
   readonly onPress: () => void
   readonly images?: readonly SessionImage[]
   readonly onPicture?: (src: string) => void
 }): React.JSX.Element {
   return (
     <div className="turn step">
-      <button type="button" className="did" title={title} onClick={onPress}>
-        <span className={`glyph${icon === 'spinner' ? ' spinning' : ''}`}>
-          <Icon name={icon} size={12} />
+      <button type="button" className="did" title={failed ? undefined : expanded ? 'Hide what was done' : 'Show what was done'} aria-expanded={expanded} aria-disabled={loading || undefined} onClick={loading ? undefined : onPress}>
+        <span className="glyph">
+          <Icon name={expanded ? 'down' : 'right'} size={12} />
         </span>
         <span className="what">{said}</span>
       </button>
+      {loading ? <div className="skeleton-line short" role="status" aria-label="Loading steps" /> : null}
       {images.length === 0 || onPicture === undefined ? null : (
         <div className="pictures did-pictures fold-pictures">
           {images.map((one, index) => (
@@ -594,7 +597,7 @@ export const Transcript = memo(function Transcript({
   readonly earlier?: number
   readonly onEarlier?: () => Promise<void> | void
   /** A run of steps opened that is only a line so far: its steps are to be asked for. */
-  readonly onSteps?: (run: Extract<SessionItem, { kind: 'steps' }>) => void
+  readonly onSteps?: (run: Extract<SessionItem, { kind: 'steps' }>) => Promise<void> | void
   /** When finding in it was last asked for, which puts the field there and in focus; none, and there is no field. */
   readonly find?: number | undefined
   readonly onFindClose?: () => void
@@ -606,7 +609,7 @@ export const Transcript = memo(function Transcript({
   const [preview, setPreview] = useState<string | undefined>()
   // How much is drawn, and of which conversation: one that has just arrived is drawn from its end, before its page is.
   const [drawn, setDrawn] = useState({ at, count: FIRST })
-  const [opened, setOpened] = useState<{ readonly at: string; readonly keys: ReadonlySet<string> }>({ at, keys: new Set() })
+  const [opened, setOpened] = useState<{ readonly at: string; readonly states: ReadonlyMap<string, 'loading' | 'open' | 'failed'> }>({ at, states: new Map() })
   const [now, setNow] = useState(() => Date.now())
   const [query, setQuery] = useState('')
   const [newMessages, setNewMessages] = useState(false)
@@ -913,9 +916,9 @@ export const Transcript = memo(function Transcript({
   }
   // The message searched for is shown with what is around it.
   const target = sought < 0 ? undefined : foldOf.get(items[sought]?.id ?? '')
-  const openKeys = opened.at === at ? opened.keys : new Set<string>()
+  const foldStates = opened.at === at ? opened.states : undefined
   const hitFold = hitId === undefined ? undefined : foldOf.get(hitId)
-  const isOpen = (key: string): boolean => openKeys.has(key) || key === target || key === hitFold
+  const isOpen = (key: string): boolean => foldStates?.get(key) === 'open' || foldStates?.get(key) === 'loading' || key === target || key === hitFold
   const workingFold = foldOf.get([...shown].reverse().find((item) => current.has(item.id) && foldOf.has(item.id))?.id ?? '')
   const counted = (n: number): string => (n === 1 ? '1 step' : `${String(n)} steps`)
 
@@ -1000,45 +1003,34 @@ export const Transcript = memo(function Transcript({
           const key = foldOf.get(item.id)
           const held = key === undefined ? undefined : folds.get(key)
           if (key === undefined || held === undefined) return <Turn readOnly={readOnly} manager={manager} key={item.id} item={item} active={current.has(item.id)} going={going.has(item.id)} when={when(item)} onAnswer={onAnswer} onAgain={readOnly || manager || heldSend || checkingIp || retrying || queuedAgain.has(item.id) ? undefined : onAgain} onFile={onFile} onPicture={picture} onCopyAnswer={copyAnswer} onStopShell={onStopShell} onTypeShell={onTypeShell} onBackground={onBackground} />
-          if (held.first !== item.id && !isOpen(key)) return null
+          const state = foldStates?.get(key)
+          const loading = item.kind === 'steps' && state === 'loading'
+          const expanded = item.kind === 'steps' ? loading : isOpen(key)
+          const first = held.first === item.id
+          if (!first && !expanded) return null
           const open = (): void => {
-            setOpened({ at, keys: new Set([...openKeys, key]) })
-            if (item.kind === 'steps') onSteps?.(item)
+            setOpened({ at, states: new Map(foldStates).set(key, item.kind === 'steps' ? 'loading' : 'open') })
+            if (item.kind === 'steps') {
+              const loaded = (result: 'open' | 'failed'): void => {
+                setOpened((previous) => previous.at === at && previous.states.get(key) === 'loading'
+                  ? { at, states: new Map(previous.states).set(key, result) }
+                  : previous)
+              }
+              void Promise.resolve(onSteps?.(item)).then(() => loaded('open'), () => loaded('failed'))
+            }
           }
-          const close = (): void => setOpened({ at, keys: new Set([...openKeys].filter((one) => one !== key)) })
-          if (item.kind === 'steps') {
-            const now = key === workingFold
-            const loading = isOpen(key)
-            return (
-              <Fold
-                key={item.id}
-                said={`${counted(held.ids.length)}${loading ? '' : now && held.latest !== undefined ? `, ${held.latest}` : ''}`}
-                icon={loading || now ? 'spinner' : 'right'}
-                title={loading ? 'Hide what was done' : 'Show what was done'}
-                onPress={loading ? close : open}
-                images={loading ? [] : held.images}
-                onPicture={picture}
-              />
-            )
+          const close = (): void => {
+            const states = new Map(foldStates)
+            states.delete(key)
+            setOpened({ at, states })
           }
-          if (!isOpen(key)) {
-            const now = key === workingFold
-            return (
-              <Fold
-                key={`fold:${key}`}
-                said={`${counted(held.ids.length)}${now && held.latest !== undefined ? `, ${held.latest}` : ''}`}
-                icon={now ? 'spinner' : 'right'}
-                title="Show what was done"
-                onPress={open}
-                images={held.images}
-                onPicture={picture}
-              />
-            )
-          }
+          const failed = item.kind === 'steps' && state === 'failed'
+          const latest = !expanded && key === workingFold ? held.latest : undefined
+          const said = failed ? 'Could not load. Try again' : `${counted(held.ids.length)}${latest === undefined ? '' : `, ${latest}`}`
           return (
-            <Fragment key={item.id}>
-              {held.first === item.id ? <Fold said={counted(held.ids.length)} icon="down" title="Hide what was done" onPress={close} /> : null}
-              <Turn
+            <Fragment key={first ? key : item.id}>
+              {first ? <Fold said={said} expanded={expanded} loading={loading} failed={failed} onPress={expanded ? close : open} images={expanded ? [] : held.images} onPicture={picture} /> : null}
+              {expanded && item.kind !== 'steps' ? <Turn
                 readOnly={readOnly}
                 manager={manager}
                 item={item}
@@ -1053,7 +1045,7 @@ export const Transcript = memo(function Transcript({
                 onStopShell={onStopShell}
                 onTypeShell={onTypeShell}
                 onBackground={onBackground}
-              />
+              /> : null}
             </Fragment>
           )
         })}

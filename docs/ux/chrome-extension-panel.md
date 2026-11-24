@@ -98,3 +98,23 @@ stateDiagram-v2
 - A Stop button for one running command: a command takes a second or two; pausing covers stopping the next ones.
 - Which conversation sent a command: the host does not know it, and guessing would mislead.
 - Settings for the model or the folder: they live in GeckIt, where they work.
+
+## Opening local files
+
+When a conversation opens a `file://` URL in a new or existing tab, GeckIt checks the Chrome profile's **Allow access to file URLs** setting. If Chrome denies access, GeckIt reports the failure in the command reply and Activity before attempting navigation.
+
+| From | Event | To | What the person sees |
+| --- | --- | --- | --- |
+| Chrome file access is off | A conversation tries to open a local file | Chrome file access is off | "Couldn't open the local file. In this Chrome profile, go to chrome://extensions > GeckIt Browser > Details, turn on Allow access to file URLs, then try again." |
+| Chrome file access is off | The person enables the setting in Chrome and the conversation retries | Chrome file access is on | The requested page opens with the usual navigation feedback. |
+
+The check runs only when a conversation requests a local file. A granted check is silent. The person controls the setting in Chrome, and each retry reads its current value.
+
+## This profile
+
+A person with several Chrome profiles (work, personal, a client) tells conversations which is which. The panel's first section, This profile, holds a Name (up to 60 characters, placeholder "Work") and What it is for (up to 300 characters, placeholder "Signed in to the company Google, Slack and Linear"). Both are kept in the profile's own extension storage and saved as the person types; there is no Save button. Under them one line says whether GeckIt may see Incognito tabs:
+
+- "Incognito: off. GeckIt sees Incognito tabs only with Allow in Incognito on in chrome://extensions > GeckIt Browser > Details."
+- "Incognito: allowed, 2 Incognito tabs open. GeckIt tells conversations which tabs are Incognito."
+
+The extension sends the name, the description and the Incognito state with every profile announcement, and the host keeps the name and description by email in `~/.geckit/browser/about/`, so `geckit browser profiles` shows them for a closed profile too. In that list the name replaces Chrome's own profile name, the description follows on its own line as `for: <description>`, and an open profile ends with "Incognito allowed, N Incognito tabs" or "Incognito not allowed". `--profile <name>` reaches a profile by the name given here. Conversations pick the profile whose description fits the task; `pages` still marks each Incognito tab with `[incognito]`. Empty fields change nothing: the list shows Chrome's name and no `for:` line.

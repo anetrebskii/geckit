@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { clientData } from '../src/shared/client-data'
 import type { ChatSession, SessionItem, SessionItems } from '../src/shared/api'
@@ -90,5 +90,151 @@ describe('client data', () => {
     expect(await data.items('s')).toEqual([said('a', 'one')])
     await settle()
     expect(items.at(-1)?.items.map((one) => one.id)).toEqual(['a', 'b'])
+  })
+
+  it('keeps a failed step run collapsed in live updates and lets the next request open it', async () => {
+    const first: SessionItem = { kind: 'did', id: 'one', what: 'Read the config' }
+    const second: SessionItem = { kind: 'did', id: 'two', what: 'Ran the checks' }
+    const run: SessionItem = { kind: 'steps', id: 'steps:one', ids: [first.id], latest: first.what }
+    const grown: SessionItem = { ...run, ids: [first.id, second.id], latest: second.what }
+    let tries = 0
+    const side = link({
+      'link:can': () => ({ can: ['steps'] }),
+      'chat:watch': () => undefined,
+      'chat:turns': () => ({ items: [run], left: 0 }),
+      'chat:steps': () => {
+        if (++tries === 1) throw new Error('Connection lost')
+        if (tries === 2) return []
+        return [first, second]
+      },
+    })
+    const data = side.data(false)
+    const updates: SessionItems[] = []
+    data.listen('chat:items', (value: SessionItems) => updates.push(value))
+    await data.items('s')
+    await expect(data.steps('s', run.ids)).rejects.toThrow('Connection lost')
+    side.tell('chat:items', { id: 's', items: [grown], gone: [run.id] })
+    await settle()
+    expect(updates.at(-1)).toEqual({ id: 's', items: [grown], gone: [run.id] })
+    expect(tries).toBe(1)
+    await expect(data.steps('s', grown.ids)).rejects.toThrow('No steps returned')
+    await expect(data.steps('s', grown.ids)).resolves.toEqual([first, second])
+  })
+
+  it('refreshes an open chat after a transient transcript error on reconnect', async () => {
+    const cached = said('cached', 'What the phone had before reconnecting')
+    const fresh = said('fresh', 'New reply from the computer')
+    let fetches = 0
+    const side = link({
+      'link:can': () => ({ can: ['steps'] }),
+      'chat:watch': () => undefined,
+      'chat:list': () => [],
+      'chat:turns': () => {
+        if (++fetches === 2) throw new Error('GeckIt on the server is busy. Try again in a moment.')
+        return { items: fetches === 1 ? [cached] : [cached, fresh], left: 0 }
+      },
+    })
+    const data = side.data(false)
+    const updates: SessionItems[] = []
+    data.listen('chat:items', (value: SessionItems) => updates.push(value))
+    expect(await data.items('s')).toEqual([cached])
+    data.reconnected()
+    await settle()
+    expect(updates.at(-1)?.items).toEqual([cached, fresh])
+  })
+
+  it('updates the transcript on reconnect even when new details for an open step run are unavailable', async () => {
+    const earlier = said('earlier', 'An earlier reply')
+    const first: SessionItem = { kind: 'did', id: 'one', what: 'Read the config' }
+    const run: SessionItem = { kind: 'steps', id: 'steps:one', ids: [first.id] }
+    const grown: SessionItem = { ...run, ids: [first.id, 'two'] }
+    const fresh = said('fresh', 'New reply from the computer')
+    let reconnecting = false
+    const side = link({
+      'link:can': () => ({ can: ['steps'] }),
+      'chat:watch': () => undefined,
+      'chat:list': () => [],
+      'chat:turns': () => ({ items: reconnecting ? [grown, fresh] : [run], left: 0 }),
+      'chat:turnsBefore': () => ({ items: [earlier], left: 0 }),
+      'chat:steps': () => {
+        if (reconnecting) throw new Error('Step details unavailable')
+        return [first]
+      },
+    })
+    const data = side.data(false)
+    const updates: SessionItems[] = []
+    data.listen('chat:items', (value: SessionItems) => updates.push(value))
+    await data.items('s')
+    await data.before('s', run.id)
+    await data.steps('s', run.ids)
+    reconnecting = true
+    data.reconnected()
+    await settle()
+    expect(updates.at(-1)?.items).toEqual([grown, fresh])
+    expect(updates.at(-1)?.gone).toContain(first.id)
+    expect(updates.at(-1)?.gone).not.toContain(earlier.id)
+  })
+
+  it('delivers new updates without waiting for a step request from before reconnecting', async () => {
+    const first: SessionItem = { kind: 'did', id: 'one', what: 'Read the config' }
+    const run: SessionItem = { kind: 'steps', id: 'steps:one', ids: [first.id] }
+    const grown: SessionItem = { ...run, ids: [first.id, 'two'] }
+    const fresh = said('fresh', 'New reply from the computer')
+    let items: SessionItem[] = [run]
+    let finish: ((steps: SessionItem[]) => void) | undefined
+    const pending = new Promise<SessionItem[]>((resolve) => { finish = resolve })
+    const side = link({
+      'link:can': () => ({ can: ['steps'] }),
+      'chat:watch': () => undefined,
+      'chat:list': () => [],
+      'chat:turns': () => ({ items, left: 0 }),
+      'chat:steps': () => items.includes(grown) ? pending : [first],
+    })
+    const data = side.data(false)
+    const updates: SessionItems[] = []
+    data.listen('chat:items', (value: SessionItems) => updates.push(value))
+    await data.items('s')
+    await data.steps('s', run.ids)
+    items = [grown]
+    side.tell('chat:items', { id: 's', items, gone: [run.id] })
+    await settle()
+    expect(updates).toHaveLength(0)
+    data.reconnected()
+    await settle()
+    side.tell('chat:items', { id: 's', items: [fresh] })
+    await settle()
+    expect(updates.map((update) => update.items)).toEqual([[grown], [fresh]])
+    finish?.([first])
+    await settle()
+    expect(updates).toHaveLength(2)
+  })
+
+  it('keeps showing new replies while a live step lookup stalls on a connected link', async () => {
+    vi.useFakeTimers()
+    try {
+      const first: SessionItem = { kind: 'did', id: 'one', what: 'Read the config' }
+      const run: SessionItem = { kind: 'steps', id: 'steps:one', ids: [first.id] }
+      const grown: SessionItem = { ...run, ids: [first.id, 'two'] }
+      const fresh = said('fresh', 'New reply from the computer')
+      const side = link({
+        'link:can': () => ({ can: ['steps'] }),
+        'chat:watch': () => undefined,
+        'chat:turns': () => ({ items: [run], left: 0 }),
+        'chat:steps': (_id, ids) => Array.isArray(ids) && ids.length === 1 && ids[0] === first.id
+          ? [first]
+          : new Promise<SessionItem[]>(() => undefined),
+      })
+      const data = side.data(false)
+      const updates: SessionItems[] = []
+      data.listen('chat:items', (value: SessionItems) => updates.push(value))
+      await data.items('s')
+      await data.steps('s', run.ids)
+      side.tell('chat:items', { id: 's', gone: [run.id], items: [grown] })
+      side.tell('chat:items', { id: 's', items: [fresh] })
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(updates.map((update) => update.items)).toEqual([[grown], [fresh]])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

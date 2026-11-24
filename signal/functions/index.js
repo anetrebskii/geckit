@@ -6,7 +6,8 @@ import { getFirestore } from 'firebase-admin/firestore'
 import { onRequest } from 'firebase-functions/v2/https'
 
 const STUN = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }]
-const ALIVE = 60_000
+// Listeners say they are there every four minutes; each saying is a billed write.
+const ALIVE = 5 * 60_000
 const ROOM = /^[0-9a-f]{64}$/
 
 initializeApp()
@@ -21,8 +22,10 @@ export const ice = onRequest({ region: 'europe-west1', cors: true, maxInstances:
   const seen = (await getFirestore().doc(`rooms/${room}`).get()).get('seen')?.toMillis() ?? 0
   const keyId = process.env.CLOUDFLARE_TURN_KEY_ID
   const token = process.env.CLOUDFLARE_TURN_API_TOKEN
-  if (Date.now() - seen > ALIVE || !keyId || !token) {
-    response.json({ iceServers: STUN, relay: false })
+  // turn says whether a relay exists at all, so computers write their presence only when it can buy them something.
+  const turn = Boolean(keyId && token)
+  if (Date.now() - seen > ALIVE || !turn) {
+    response.json({ iceServers: STUN, relay: false, turn })
     return
   }
   const answer = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate-ice-servers`, {
@@ -31,11 +34,11 @@ export const ice = onRequest({ region: 'europe-west1', cors: true, maxInstances:
     body: JSON.stringify({ ttl: 86_400 }),
   })
   if (!answer.ok) {
-    response.json({ iceServers: STUN, relay: false })
+    response.json({ iceServers: STUN, relay: false, turn })
     return
   }
   const { iceServers } = await answer.json()
-  response.json({ iceServers: [...STUN, ...iceServers], relay: true })
+  response.json({ iceServers: [...STUN, ...iceServers], relay: true, turn })
 })
 
 const TOKEN = /^[0-9a-f]{64,200}$/

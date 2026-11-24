@@ -1,13 +1,17 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, expect, it } from 'vitest'
-import { makeTestAccount, profilesFolder, updateTestProfile } from '../src/cli/testing'
+import { promisify } from 'node:util'
+import { afterEach, expect, it, vi } from 'vitest'
+import { makeTestAccount, profilesFolder, serveTestLaunches, updateTestProfile } from '../src/cli/testing'
 import { exportTestProfile, importTestProfile } from '../src/cli/profile-archive'
 import { registerBrowserConversation } from '../src/cli/browser-lifecycle'
+import { openTest } from '../src/cli/browser'
+import { viewEnd, viewStart } from '../src/cli/live-view'
+import { tabVideo } from '../src/service/remote/tab-video'
 
 interface Reply { readonly ok: boolean; readonly error?: string; readonly result?: { readonly id?: number; readonly title?: string; readonly lines?: string[]; readonly text?: string; readonly jpeg?: string; readonly png?: string; readonly gif?: string; readonly sheet?: string; readonly value?: { readonly cookie?: string; readonly stored?: string; readonly moves?: number; readonly trusted?: boolean; readonly webdriver?: boolean }; readonly url?: string; readonly width?: number; readonly height?: number; readonly dark?: boolean; readonly still?: boolean; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string }; readonly fields?: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] } }
 const wait = (ms = 50): Promise<void> => new Promise((done) => setTimeout(done, ms))
@@ -20,8 +24,8 @@ const cards = (path: string): { readonly pid: number; readonly tabs: number[] }[
   try { return readdirSync(join(folder(path), 'hosts')).filter((name) => name.endsWith('.json')).map((name) => JSON.parse(readFileSync(join(folder(path), 'hosts', name), 'utf8')) as { pid: number; tabs: number[] }) } catch { return [] }
 }
 async function until(check: () => boolean): Promise<void> { for (let tries = 0; tries < 600; tries++) { if (check()) return; await wait() }; throw new Error('Browser state did not arrive.') }
-async function start(path: string, name: string, conversation?: string): Promise<void> {
-  child = spawn(process.execPath, [process.env['GECKIT_BROWSER_TEST_CLI'] ?? 'out/service/cli.js', 'browser-test', name], { env: { ...process.env, HOME: path, GECKIT_CAMOUFOX: process.env['GECKIT_CAMOUFOX_TEST_BINARY'] ?? '', GECKIT_TEST_CONVERSATION: conversation }, stdio: 'pipe' })
+async function start(path: string, name: string): Promise<void> {
+  child = spawn(process.execPath, [process.env['GECKIT_BROWSER_TEST_CLI'] ?? 'out/service/cli.js', 'browser-test', name], { env: { ...process.env, HOME: path, GECKIT_CAMOUFOX: process.env['GECKIT_CAMOUFOX_TEST_BINARY'] ?? '' }, stdio: 'pipe' })
   let errors = ''
   child.stderr?.on('data', (data: Buffer) => { errors += data.toString() })
   try { await until(() => cards(path).length > 0) } catch (error) { throw new Error(`${String(error)} ${errors}`, { cause: error }) }
@@ -121,13 +125,53 @@ it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('runs persistent p
   const second = root()
   await importTestProfile(archive, 'restored', { root: second })
   registerBrowserConversation('a', '/local-test', false, folder(second)); registerBrowserConversation('b', '/local-test', false, folder(second))
-  await start(second, 'restored', 'a')
+  await start(second, 'restored')
   const own = (await ask(second, { cmd: 'open', conversation: 'a', url })).result?.id
   const transferred = (await ask(second, { cmd: 'eval', conversation: 'a', tab: own, code: stateCode })).result?.value
   expect(transferred).toEqual(saved)
   const other = (await ask(second, { cmd: 'open', conversation: 'b', url })).result?.id
-  const refused = await ask(second, { cmd: 'text', conversation: 'a', tab: other }, false)
+  expect((await ask(second, { cmd: 'text', conversation: 'a', tab: other })).result?.text).toContain('Local sign-in check')
+  const refused = await ask(second, { cmd: 'close', conversation: 'a', tab: other }, false)
   expect(refused.ok).toBe(false); expect(refused.error).toContain('another conversation')
+  const key = randomUUID()
+  const existing = { tab: own, conversation: 'a' }
+  expect((await ask(second, { cmd: 'handoff-check', ...existing })).ok).toBe(true)
+  expect((await ask(second, { cmd: 'view-handoff', tab: other, conversation: 'a', key }, false)).error).toContain('another conversation')
+  await ask(second, { cmd: 'view-handoff', ...existing, key })
+  expect((await ask(second, { cmd: 'view-handoff', ...existing, key: randomUUID() }, false)).error).toContain('already has a live view')
+  expect((await ask(second, { cmd: 'close', ...existing }, false)).error).toContain('person is using this tab')
+  expect((await ask(second, { cmd: 'view-frame' }, false)).error).toContain('another sign-in')
+  expect((await ask(second, { cmd: 'view-frame', key })).result?.url).toBe(`${url}/`)
+  let jpeg: string | undefined
+  let streamStopped = false
+  const video = await tabVideo((event) => {
+    if (event.type === 'frame') jpeg = event.jpeg
+    if (event.type === 'stop') streamStopped = true
+    return true
+  })
+  if (video === undefined) throw new Error('Could not listen for the tab screencast.')
+  try {
+    expect((await ask(second, { cmd: 'view-video', key: randomUUID(), url: video.endpoint }, false)).ok).toBe(false)
+    await ask(second, { cmd: 'view-video', key, url: video.endpoint })
+    await until(() => jpeg !== undefined)
+    const firstFrame = jpeg
+    await ask(second, { cmd: 'view-input', key, input: { type: 'click', x: 140, y: 155 } })
+    await ask(second, { cmd: 'view-input', key, input: { type: 'text', text: 'same-tab' } })
+    const metadata = (await ask(second, { cmd: 'view-metadata', key })).result
+    expect(metadata).toMatchObject({ url: `${url}/`, jpeg: '', caret: expect.any(Object), focusedField: expect.any(Object) })
+    await until(() => jpeg !== firstFrame)
+    await ask(second, { cmd: 'view-input', key, input: { type: 'key', key: 'Enter' } })
+    await wait(300)
+    expect((await ask(second, { cmd: 'view-frame', key })).result?.url).toContain('/login?account=same-tab')
+    await ask(second, { cmd: 'view-input', key, input: { type: 'click', x: 10, y: 10 } })
+    await until(() => streamStopped)
+    expect((await ask(second, { cmd: 'view-frame', key })).result?.url).toContain('/other')
+    await ask(second, { cmd: 'view-input', key, input: { type: 'click', x: 10, y: 10 } })
+  } finally { video.stop() }
+  await ask(second, { cmd: 'view-close', key })
+  expect((await ask(second, { cmd: 'view-frame', key }, false)).ok).toBe(false)
+  expect((await ask(second, { cmd: 'eval', ...existing, code: 'location.search' })).result).toMatchObject({ value: '?account=same-tab' })
+  expect((await ask(second, { cmd: 'text', conversation: 'b', tab: other })).ok).toBe(true)
   expect((await ask(second, { cmd: 'view-open', conversation: 'a', url }, false)).error).toContain('Only the person')
   registerBrowserConversation('a', '/local-test', true, folder(second))
   await until(() => !cards(second)[0]?.tabs.includes(own ?? -1))
@@ -138,3 +182,73 @@ it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('runs persistent p
   const evidence = process.env['GECKIT_CAMOUFOX_EVIDENCE']
   if (evidence !== undefined) { mkdirSync(evidence, { recursive: true }); writeFileSync(join(evidence, 'real-browser.json'), JSON.stringify({ installedBinary: process.env['GECKIT_CAMOUFOX_TEST_BINARY'], natural, saved, transferred, refused, driver: 'Camoufox', account: 'local synthetic sign-in only', checked: ['open', 'read', 'hover', 'type', 'style', 'element screenshot', 'viewport and media', 'record', 'persistent website downloads and duplicate filenames', 'live-view screenshot and input', 'persistent cookies and storage', 'rename', 'archive export/import', 'conversation isolation', 'release and process exit'] }, null, 2)) }
 }, 120_000)
+
+it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('shares the on-demand driver between app and CLI tabs and stops after the last tab', async () => {
+  const path = root()
+  const name = 'shared'
+  const browserFolder = folder(path)
+  vi.stubEnv('HOME', path)
+  vi.stubEnv('GECKIT_CAMOUFOX', process.env['GECKIT_CAMOUFOX_TEST_BINARY'])
+  const wrapper = join(path, '.geckit', 'bin', process.platform === 'win32' ? 'geckit-browser-host.bat' : 'geckit-browser-host')
+  mkdirSync(join(path, '.geckit', 'bin'), { recursive: true })
+  writeFileSync(wrapper, '')
+  makeTestAccount(name, 'Test account', path, true)
+  for (const thread of ['a', 'b']) registerBrowserConversation(`codex:${thread}`, '/test', false, browserFolder)
+  const script = process.env['GECKIT_BROWSER_TEST_CLI'] ?? 'out/service/cli.js'
+  const stopLaunches = serveTestLaunches(process.execPath, script, browserFolder, path)
+  const run = promisify(execFile)
+  const cli = async (thread: string, ...args: string[]): Promise<string> => (await run(process.execPath, [script, 'browser', ...args], { env: { ...process.env, CODEX_THREAD_ID: thread }, timeout: 30_000 })).stdout
+  const profile = ['--profile', `geckit:${name}`]
+  try {
+    const opened = await openTest(name)
+    expect(opened.ok, opened.said).toBe(true)
+    const pid = cards(path)[0]?.pid
+    expect(pid).toBeTypeOf('number')
+    const manual = cards(path)[0]?.tabs[0]
+    expect(manual).toBeTypeOf('number')
+    const url = `data:text/html,<title>Chat tab</title><h1>Chat tab</h1><button onclick="window.open('about:blank')">Popup</button>`
+    await Promise.all([viewStart(name), cli('a', 'open', url, ...profile), cli('b', 'open', url, ...profile)])
+    expect(cards(path).map((card) => card.pid)).toEqual([pid])
+    const listing = await cli('a', 'pages', ...profile)
+    const own = listing.split('\n').find((line) => line.includes('Chat tab') && !line.includes('[read-only]'))?.trim().split(/\s+/)[0]
+    expect(own).toBeDefined()
+    expect(listing.split('\n').filter((line) => line.includes('[read-only]'))).toHaveLength(3)
+    await expect(cli('b', 'text', String(own))).resolves.toContain('Chat tab')
+    await expect(cli('b', 'eval', String(own), 'document.body.remove()')).rejects.toMatchObject({ stdout: expect.stringContaining('belongs to another conversation') })
+    await expect(cli('b', 'go', String(manual), 'about:blank')).rejects.toMatchObject({ stdout: expect.stringContaining('belongs to another conversation') })
+    await expect(cli('b', 'close', String(own))).rejects.toMatchObject({ stdout: expect.stringContaining('belongs to another conversation') })
+    const read = await cli('a', 'read', String(own))
+    const trigger = read.match(/\[(\d+)\].*Popup/)?.[1]
+    expect(trigger).toBeDefined()
+    await cli('a', 'click', String(own), String(trigger))
+    const withPopup = await cli('a', 'pages', ...profile)
+    const popup = withPopup.split('\n').find((line) => line.includes(`opened by ${own}`))
+    expect(popup).toBeDefined()
+    expect(popup).not.toContain('[read-only]')
+    await viewEnd(name)
+    expect(cards(path)[0]?.tabs).toHaveLength(4)
+    registerBrowserConversation('codex:a', '/test', true, browserFolder)
+    await until(() => cards(path)[0]?.tabs.length === 2)
+    registerBrowserConversation('codex:b', '/test', true, browserFolder)
+    await until(() => cards(path)[0]?.tabs.length === 1)
+    expect(cards(path)[0]?.tabs).toEqual([manual])
+    await ask(path, { cmd: 'close', tab: manual })
+    await until(() => cards(path).length === 0)
+    registerBrowserConversation('codex:a', '/test', false, browserFolder)
+    await expect(cli('a', 'open', 'about:blank', ...profile)).resolves.toContain('about:blank')
+    expect(cards(path)[0]?.pid).not.toBe(pid)
+    registerBrowserConversation('codex:a', '/test', true, browserFolder)
+    await until(() => cards(path).length === 0)
+    await viewStart(name)
+    expect(cards(path)[0]?.tabs).toHaveLength(1)
+    await viewEnd(name)
+    await until(() => cards(path).length === 0)
+    await Promise.all([viewStart(name), viewEnd(name)])
+    await until(() => cards(path).length === 0)
+  } finally {
+    stopLaunches()
+    for (const card of cards(path)) process.kill(card.pid, 'SIGTERM')
+    await until(() => cards(path).length === 0)
+    vi.unstubAllEnvs()
+  }
+}, 90_000)

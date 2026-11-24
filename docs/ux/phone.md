@@ -198,8 +198,9 @@ stateDiagram-v2
 - **Drop mid-send:** the message goes as a request over the link; if it fails, nothing is in the transcript, the text and pictures go back into the field, and the status line says it was not sent.
 - **Stale copy:** after a drop the page starts over rather than patching, so nothing on screen is older than the reconnect.
 - **Code photographed by someone else:** it is a key; New code on the Mac makes the old one worthless.
-- **Dictating while Claude works:** the round button is Stop then, so the keyboard's own dictation is the way; the mic comes back when the turn ends. A turn that starts while listening does not stop it.
-- **Dictation and sending:** nothing is sent by itself; the text waits in the field. iOS stops listening by itself after about a minute, and the text heard stays.
+- **Dictation in New task, Question and chats:** tap the microphone to record and tap again to finish. The chat shows the microphone beside Send, Queue or Stop whenever that action is present. The phone or connected computer writes the words after the existing draft. Review the resulting text before sending or starting the task.
+- **Dictation status:** while the microphone opens, show "Opening the microphone". While it listens, show "Listening in [language]" for phone recognition or "Recording" for host recognition. After Stop, show "Writing down what you said" until the text is ready. Show a permission or transcription error next to the draft, including when it already contains text. A failed host transcription can be retried with "Not written down".
+- **Leaving during dictation:** closing a draft or leaving a chat stops its microphone. A host recording kept by GeckIt is offered in its original draft or chat. A late response cannot change a different draft.
 - **Networks that block a direct link:** the relay carries it, when one is configured; without it, Cannot reach the Mac.
 - **A Mac renamed on the phone:** the phone's name wins over the one the Mac sends on every connect, and stays on this phone only; clearing it brings the Mac's own back.
 - **The only Mac:** Forget is not offered, since there would be nothing left to switch to; New code on the Mac is the way to drop it.
@@ -350,6 +351,10 @@ Visually reviewed full chat context at measured 390x844 dark/light and 320x844 l
 Signed Release 1.100.0/build 209 was installed in place and launched successfully on the paired iPhone 13 Pro. Device metadata confirms build 209; all 22 bundled web files match the reviewed mobile build. Evidence: `/private/tmp/geckit-forms-209-{install,app-after,launch}.json`, with build/check logs alongside them. Automatic approval review rejected resuming iPhone Mirroring because it could expose unrelated private phone content; approval was requested. Physical form interaction, real iOS keyboard behavior and iPhone-to-host answer delivery remain unverified. Browser preview closed and temporary viewport override reset. No git commit, push or task worktree.
 
 Performance review against `docs/performance.md`: no problems found. Choices are mapped only while their existing question row renders; custom answer state stays local to that question. No global collection, formatter, pointer listener, polling interval or animation was introduced. Removing sticky positioning and composer blocking uses the existing transcript scroll path. Phone bundle rebuilt; these bounded changes require no additional profiling.
+
+## Files opened from a conversation
+
+Tapping a file link opens its preview sheet immediately with "Reading it on [computer]...". HTML displays as a page and Markdown reads as formatted text. If the connected computer does not answer a file read within 20 seconds, or the link drops during the read, GeckIt retries once in the same sheet. Either attempt can fill the sheet, so a larger file still has the normal two-minute reply window. When the read expires or fails, the sheet shows the error. Done closes the sheet in each state.
 
 ## Android localhost forms - 2026-10-18
 

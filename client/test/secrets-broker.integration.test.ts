@@ -56,12 +56,15 @@ afterAll(async () => {
 it.skipIf(!run)('takes a secret from the page, uses it without giving it out, and forgets it with its task', async () => {
   const ops = brokerOps(() => broker!.endpoint())
   const notices: string[] = []
+  let completed = 0
   const secrets = new Secrets({ broker: () => ops, notify: (_task, title, body) => { notices.push(`${title}: ${body}`) }, relay, computer: () => 'test-mac' })
 
-  const made = await secrets.request({ name: 'canary-cmd', kind: 'command', places: ['sh'], note: 'canary', taskId: 'task-a', taskTitle: 'Canary task' })
+  const made = await secrets.request({ name: 'canary-cmd', kind: 'command', places: ['sh'], note: 'canary', taskId: 'task-a', taskTitle: 'Canary task' }, () => { completed += 1 })
   expect(made.link).toMatch(/\/s\/#[\w-]{22}\.[\w-]{22}\.[\w-]{22}$/)
+  expect(completed).toBe(0)
   await page(made.link ?? '', CANARY, 'task')
-  await until(async () => (await ops.list()).secrets.some((one) => one.name === 'canary-cmd'))
+  await until(async () => completed === 1)
+  expect((await ops.list()).secrets.some((one) => one.name === 'canary-cmd')).toBe(true)
   expect(notices.join('\n')).toContain('canary-cmd is ready')
   expect(notices.join('\n')).not.toContain(CANARY)
 
@@ -102,6 +105,25 @@ it.skipIf(!run)('takes a secret from the page, uses it without giving it out, an
   for (const file of files) expect(readFileSync(file).includes(Buffer.from(CANARY)), file).toBe(false)
   secrets.dispose()
 }, 60_000)
+
+it.skipIf(!run)('does not signal completion when the broker rejects the submitted value', async () => {
+  const ops = brokerOps(() => broker!.endpoint())
+  const notices: string[] = []
+  let completed = 0
+  const secrets = new Secrets({ broker: () => ops, notify: (_task, title) => { notices.push(title) }, relay })
+  try {
+    const made = await secrets.request({ name: 'rejected-value', kind: 'command', places: ['sh'], taskId: 'task-rejected' }, () => { completed += 1 })
+    const id = made.link?.split('#')[1]?.split('.')[0] ?? ''
+    const held = relayed.get(id)
+    if (held === undefined) throw new Error('no card')
+    held.ciphertext = await sealFor((await receiver()).publicKey, CANARY, 'geckit-secret-v1')
+    held.lifetime = 'task'
+    held.state = 'saved'
+    await until(async () => notices.includes('rejected-value was not saved'))
+    expect(completed).toBe(0)
+    expect((await ops.list()).secrets.some((one) => one.name === 'rejected-value')).toBe(false)
+  } finally { secrets.dispose() }
+})
 
 it.skipIf(!run)('adds a secret from Settings, changes where it is used and keeps its value', async () => {
   const ops = brokerOps(() => broker!.endpoint())

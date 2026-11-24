@@ -2,7 +2,7 @@
 
 ## Select the employee
 
-Use `{{said}} employees list` and `employees show <employee-id>` to check names, roles and archived state. A name match alone does not establish the intended employee. Ask when several match; never restore an archived employee without a request.
+Use `{{said}} employees list` and `employees show <employee-id>` to check names, roles and archived state. Ask when several records match the employee the person wants to inspect or change. Restore an archived employee only when requested.
 
 Resolve the requested name, responsibilities and work boundaries from the conversation. Ask for a missing name or an unclear responsibility before creating. Portrait and role text are optional CLI fields; leave an unspecified portrait to GeckIt. Portrait numbers are 1 through 12.
 
@@ -24,13 +24,13 @@ Read `{{said}} help` or Manager capabilities for this target's supported forms. 
 
 Create the file from the agreed responsibilities before running the example. Omit `--avatar` when no portrait was chosen. Pass only requested changes to Edit; its description replaces the saved description.
 
-Authenticated Manager uses its advertised `geckit` JSON action interface, without a shell. Pass multiline text as one `--description` argument; a local `--description-file` is a shell CLI convenience. Preserve newlines through the JSON serializer. Never unset session identity to bypass an Allow card.
+Authenticated Manager uses its advertised `geckit` JSON actions directly for local employee creation, editing, archiving and restoration. Use the employee ID from `employees show` for profile changes. Pass multiline text as one `--description` argument and preserve newlines through the JSON serializer.
 
-Creation, editing, archiving, restoration and assignment from a conversation wait for the person's bound Allow decision. A pending card is not a saved employee. On refusal, stop that action. On an uncertain result, inspect the catalog before retrying so a successful creation is not duplicated.
+In GeckIt Manager chat and paired owner chats, directly apply requested local team changes. Other authorized Manager channels and worker conversations wait for the person's bound Allow decision. Worker CLI assignments also wait for Allow. On refusal, stop that action. On an uncertain result, inspect the catalog before retrying so a successful creation is not duplicated.
 
-## Configure work only when requested
+## Conversation assignments and shortcuts
 
-To assign an existing conversation, use `{{said}} employees assign <session-id> <employee-id>` and inspect `employees tasks <employee-id>`. Assignment does not send a message or start work. Use `none` to remove an assignment only when requested.
+For Manager task creation and assignment, load `{{lifecycleSkill}}` from {{lifecyclePath}}. When the person requests an assignment from an ordinary conversation, use `{{said}} employees assign <session-id> <employee-id>` and inspect `employees tasks <employee-id>`. Assignment does not send a message or start work. Use `none` to remove an assignment only when requested.
 
 For requested shortcuts or recurring work, load `{{scheduleSkill}}` from {{schedulePath}}. Inspect existing shortcuts first. Configure project, prompt, provider and model there; do not invent a timetable or run a shortcut merely to test saving.
 

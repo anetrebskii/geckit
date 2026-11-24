@@ -51,6 +51,7 @@ States, in order:
 ## On the computer
 
 - When a value is saved, GeckIt shows a notice (desktop notification and the conversation's notice line): **openai-key was entered** · from iPhone, Telegram browser · 14:05. The device is the page's user agent, shortened.
+- After the broker confirms it saved the secret, GeckIt automatically resumes the conversation that issued the link with “Secret ready: <name>.” Only the saved name goes into the assistant's turn. A running turn finishes first. Failed saves, expired links and closing or closed conversations do not trigger a new turn.
 - The conversation then gets: `openai-key is ready (http, api.openai.com), expires 15:05.`
 
 ## Settings > Secrets

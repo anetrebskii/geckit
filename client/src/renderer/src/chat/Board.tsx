@@ -9,7 +9,7 @@ import { landingIndex, movedOrder, ordered } from '../../../shared/order'
 import { isCodexProvider, llmProviderInfo, modelPreference, providerModel, selectableProviders } from '../../../shared/providers'
 import { clock, MOST_FRAMES, recordedNote, thinFrames } from '../../../shared/recording'
 import { projectColor } from '../../../shared/project-color'
-import { dictate, languageCode, useDictationLanguage, useLevel } from '../dictate'
+import { dictate, languageCode } from '../dictate'
 import { ON_PHONE } from '../on-phone'
 import { asImage, canShow } from '../pictures'
 import { hostOf, isRemote, outOfReach, outOfReachLine } from '../../../shared/hosts'
@@ -20,6 +20,7 @@ import { Sheet } from '../ui/Sheet'
 import { MOD, said } from '../ui/Shortcuts'
 import { DeleteChats } from './DeleteChats'
 import { NameField } from './NameField'
+import { KeptRecording, PhoneDictationStatus, useDictation } from './MessageControls'
 import { ChecklistField } from './ChecklistField'
 import { checklistLabel } from './TaskChecklist'
 import type { TaskChecklist } from '../../../shared/checklists'
@@ -42,6 +43,7 @@ import { ago, byDay } from './time'
 import type { Chat } from './useChat'
 import { TaskListStatus, taskListSettled } from './TaskListStatus'
 import { TaskFilters } from './TaskFilters'
+import { popsOut } from './solo'
 
 /**
  * The conversations as cards in columns, by how each stands.
@@ -489,6 +491,7 @@ const BoardView = memo(function BoardView({
                   { value: 'delete', label: `Delete ${String(picked.size)}`, danger: true, icon: 'trash' },
                 ]
               : [
+                  ...(popsOut() ? [{ value: 'window', label: 'Open in new window', icon: 'external' }] : []),
                   { value: 'rename', label: 'Rename', icon: 'pencil' },
                   { value: 'shortcut', label: 'Save as a shortcut...', icon: 'bolt' },
                   {
@@ -524,6 +527,7 @@ const BoardView = memo(function BoardView({
               if (column.order === 'lineup') chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, ids, value) })
               else chat.change({ columnOrders: { ...chat.settings.columnOrders, [column.id]: movedOrder(column.rows.map((session) => session.id), ids, value) } })
             }
+            if (value === 'window') window.geckit.chat.popOut(menu.id)
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'shortcut') {
               const one = chat.everyone.find((session) => session.id === menu.id)
@@ -1333,37 +1337,14 @@ function PhoneNewTask({
   const [choosing, setChoosing] = useState(false)
   const [editingChecklist, setEditingChecklist] = useState(false)
   const [recording, setRecording] = useState(record)
-  const [listening, setListening] = useState(false)
-  const [writing, setWriting] = useState(false)
-  const level = useLevel(listening)
-  // Dictation goes after what was already typed, as the composer's does.
-  const typed = useRef('')
-  const [spoken, flipSpoken] = useDictationLanguage(chat.settings.nativeLanguage, chat.settings.secondLanguage)
-  const dictating = (): void => {
-    const ear = dictate()
-    if (ear === undefined) return
-    if (listening) {
-      setListening(false)
-      setWriting(!ear.live)
-      void ear.stop().catch(() => undefined).finally(() => setWriting(false))
-      return
-    }
-    typed.current = text.trim() === '' ? '' : `${text.trimEnd()} `
-    setListening(true)
-    ear
-      .start(
-        spoken,
-        (heard) => onText(`${typed.current}${heard}`),
-        () => setListening(false),
-      )
-      .catch(() => setListening(false))
-  }
-  useEffect(() => () => dictate()?.cancel(), [])
   const [dragged, setDragged] = useState<number | undefined>()
   const [looking, setLooking] = useState<string | undefined>()
   const from = useRef<number | undefined>(undefined)
   const photos = useRef<HTMLInputElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
+  const dictation = useDictation({ settings: chat.settings, draft: text, setDraft: onText, field, place: question ? 'question' : 'new-task', session: undefined })
+  const { capturing, level, listening, opening, spoken, writing } = dictation
+  const ears = dictate()
   useEffect(() => {
     if (!record) field.current?.focus()
   }, [record])
@@ -1405,7 +1386,7 @@ function PhoneNewTask({
             Cancel
           </button>
           <b>{question ? 'Question' : 'New task'}</b>
-          <button type="button" className="strong" disabled={!ready || starting} onClick={onStart}>
+          <button type="button" className="strong" disabled={!ready || starting || capturing} onClick={onStart}>
             {starting ? 'Starting...' : question ? 'Ask' : 'Start'}
           </button>
         </div>
@@ -1441,7 +1422,7 @@ function PhoneNewTask({
               ) : null}
               <div className="phone-task-note">{`${checklistHint(checklistGoal(checklist), checklist, providerInfo.shortName)}.`}</div>
               <div className="phone-task-group">
-                <button type="button" className="phone-task-cell" disabled={onPlan === undefined || starting} onClick={onPlan}>
+                <button type="button" className="phone-task-cell" disabled={onPlan === undefined || starting || capturing} onClick={onPlan}>
                   Plan in To do
                   <span className="phone-task-selected">Nothing is sent</span>
                 </button>
@@ -1453,7 +1434,8 @@ function PhoneNewTask({
             className="phone-task-text"
             value={text}
             aria-label={question ? 'Question' : 'What to do'}
-            placeholder={listening ? 'Listening' : writing ? 'Writing down what you said' : question ? 'Ask anything; it is not a task' : 'What to do'}
+            placeholder={question ? 'Ask anything; it is not a task' : 'What to do'}
+            readOnly={capturing}
             onChange={(event) => onText(event.target.value)}
           />
           {copying === undefined ? null : (
@@ -1495,17 +1477,21 @@ function PhoneNewTask({
             </div>
           )}
         </div>
+        <PhoneDictationStatus dictation={dictation} className="phone-task-note" />
+        {dictation.kept === undefined ? null : <div className="phone-task-note"><KeptRecording dictation={dictation} /></div>}
         {/* What adds to the text sits on the keyboard, as in Notes and Mail, so it is in reach while typing. */}
         <div className="phone-task-tools">
-          <button type="button" className={listening ? 'on' : ''} style={{ '--level': level } as React.CSSProperties} disabled={writing} aria-label={listening ? 'Stop dictating' : `Dictate in ${spoken}`} onClick={dictating}>
-            <Icon name={writing ? 'spinner' : listening ? 'stop' : 'mic'} size={22} />
-          </button>
-          {dictate()?.live === false ? null : (
-            <button type="button" className="spoken" disabled={listening} onClick={flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
+          {ears === undefined ? null : (
+            <button type="button" className={listening === undefined ? '' : 'on'} style={{ '--level': level } as React.CSSProperties} disabled={starting || opening || writing} aria-label={listening === undefined ? 'Dictate' : 'Stop dictating'} onClick={() => dictation.listen()}>
+              <Icon name={opening || writing ? 'spinner' : listening === undefined ? 'mic' : 'stop'} size={22} className={opening || writing ? 'spinning' : ''} />
+            </button>
+          )}
+          {ears?.live !== true ? null : (
+            <button type="button" className="spoken" disabled={capturing} onClick={dictation.flipSpoken} aria-label={`Dictating in ${spoken}. Switch language`}>
               {languageCode(spoken)}
             </button>
           )}
-          <button type="button" aria-label="From a recording" onClick={() => setRecording(true)}>
+          <button type="button" aria-label="From a recording" disabled={capturing} onClick={() => setRecording(true)}>
             <Icon name="display" size={22} />
           </button>
           <button type="button" aria-label="Add photo" onClick={() => photos.current?.click()}>

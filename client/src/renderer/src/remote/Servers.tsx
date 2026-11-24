@@ -5,6 +5,7 @@ import type { SavedServer } from './storage'
 import { Icon } from '../ui/Icon'
 import { connectRemote } from './client'
 import { Workspace } from './Workspace'
+import type { WorkspaceMount } from './Workspace'
 import { ConnectProgress, stageSaid } from './ConnectProgress'
 import { LiveView } from '../chat/LiveView'
 import type { SignInLink } from '../../../shared/live-view'
@@ -100,6 +101,14 @@ export function Servers({ onClose, onWorkspace, onConnected, onForgotten, scan, 
   }, [closeConnection, connect, initialServer, signIn])
   const showForm = adding || (saved?.length === 0 && !ON_PHONE())
   const shownServer = snapshot?.server ?? opening
+  const openSignIn: WorkspaceMount['onSignIn'] = async (link) => {
+    if (link.computer !== shownServer?.id) {
+      const trust = (await savedServers()).find((one) => one.server.id === link.computer && one.full)
+      if (trust === undefined) throw new Error(`This link opens in GeckIt paired with ${link.name}. Pair this device with it first.`)
+      connect(trust)
+    }
+    setSigning(link)
+  }
   const openServer = shownServer !== undefined && workspace !== undefined ? shownServer.id : undefined
   useEffect(() => { onWorkspace?.(openServer !== undefined, openServer) }, [onWorkspace, openServer])
   useEffect(() => { if (showForm && snapshot === undefined) setTimeout(() => input.current?.focus(), 0) }, [showForm, snapshot])
@@ -132,7 +141,7 @@ export function Servers({ onClose, onWorkspace, onConnected, onForgotten, scan, 
   const feedback = (here: boolean): React.JSX.Element | null => here && (failed || (view.state === 'reconnecting' && (view.steps ?? []).length === 0)) ? <p className={`remote-feedback${failed ? ' failed' : ''}`} role="status">{view.message}</p> : null
   if (shownServer !== undefined && workspace !== undefined) return <main className="remote-clients">
     {view.state !== 'reconnecting' && view.state !== 'connecting' ? null : <Dropped key={view.state} head={`${view.state === 'connecting' ? 'Connecting' : 'Reconnecting'} to ${computerName(labelled(shownServer).name)}`} step={pillStep(shownServer.name)} />}
-    <Workspace key={round} quick={snapshot === undefined} connection={workspace} server={shownServer} steps={view.steps ?? []} onCancel={ON_PHONE() ? () => choose(':manage') : leave} source={{ server: labelled(shownServer), state: view.state, choices: (saved ?? []).map((one) => ({ server: labelled(one.server) })), onChoose: choose }} onClose={leave} />
+    <Workspace key={round} quick={snapshot === undefined} connection={workspace} server={shownServer} steps={view.steps ?? []} onSignIn={openSignIn} onCancel={ON_PHONE() ? () => choose(':manage') : leave} source={{ server: labelled(shownServer), state: view.state, choices: (saved ?? []).map((one) => ({ server: labelled(one.server) })), onChoose: choose }} onClose={leave} />
     {signing === undefined || signing.computer !== shownServer.id ? null : <LiveView
       name={signing.profile}
       token={signing.token}

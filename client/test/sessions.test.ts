@@ -160,6 +160,36 @@ const last = <T>(all: readonly T[]): T | undefined => all.at(-1)
 const of = (all: readonly (readonly ChatSession[])[], id: string): ChatSession | undefined =>
   last(all)?.find((one) => one.id === id)
 
+describe('link completion', () => {
+  it('continues the issuing conversation after its current turn', async () => {
+    const { sessions, fake, rows } = build()
+    const id = await sessions.send({ root: ROOT, mode: 'manual', text: 'Open the sign-in link.' })
+    const text = 'GeckIt: Browser tab returned.'
+    sessions.linkCompleted('missing-conversation', text)
+    sessions.linkCompleted(id, text)
+    expect(of(rows, id)?.queued?.map((entry) => entry.text)).toEqual([text])
+    expect(fake.sent.map((entry) => entry.text)).toEqual(['Open the sign-in link.'])
+    fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(fake.sent.map((entry) => entry.text)).toEqual(['Open the sign-in link.', text]))
+    expect(fake.made).toHaveLength(1)
+    sessions.dispose()
+  })
+
+  it('does not reopen a conversation marked Done while its completion was queued', async () => {
+    const { sessions, fake, rows } = build()
+    const id = await sessions.send({ root: ROOT, mode: 'manual', text: 'Request a key.' })
+    sessions.linkCompleted(id, 'GeckIt: Secret ready: test-key.')
+    sessions.mark(id, 'done')
+    sessions.linkCompleted(id, 'GeckIt: Secret ready: another-key.')
+    expect(of(rows, id)?.queued).toHaveLength(1)
+    fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+    await vi.waitFor(() => expect(of(rows, id)?.queued ?? []).toHaveLength(0))
+    expect(fake.sent.map((entry) => entry.text)).toEqual(['Request a key.'])
+    expect(of(rows, id)?.status).toBe('done')
+    sessions.dispose()
+  })
+})
+
 describe('the list a client is answered with', () => {
   it('reads the disk once, then answers from what it holds and reads again behind the answer only after 30 s', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] })
@@ -1212,8 +1242,8 @@ describe('a task checklist', () => {
       await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'continue' })
       expect(setGoal).not.toHaveBeenCalled()
       held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
-      await vi.waitFor(() => expect(held.fake.sent.at(-1)?.text).toBe(`Next on the checklist: ${objective}`))
-      expect(setGoal).toHaveBeenCalledExactlyOnceWith(id, objective)
+      await vi.waitFor(() => expect(setGoal).toHaveBeenCalledExactlyOnceWith(id, objective))
+      expect(held.fake.sent.at(-1)?.text).toBe('continue')
       expect(of(built.rows, id)?.goal?.condition).toBe(objective)
       expect(of(built.rows, id)?.checklist?.items.map((one) => one.state)).toEqual([undefined, undefined])
     } finally { built.sessions.dispose() }
@@ -1225,6 +1255,28 @@ describe('a task checklist', () => {
     built.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
     built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Page loads', check: 'none' }] })
     await vi.waitFor(() => expect(built.fake.sent.at(-1)).toEqual({ text: '/goal Page loads' }))
+  })
+
+  it('starts the latest edit of an idle Codex checklist immediately when requested', async () => {
+    const id = 'codex:checklist-start-now'
+    const objective = 'Development build is published'
+    const setGoal = vi.fn<NonNullable<SessionsDeps['codex']>['setGoal']>().mockResolvedValue({ threadId: id, objective, status: 'active', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1_000, updatedAt: 1_000 })
+    const held = heldCodex(id, { setGoal })
+    const built = build({ later: soon, codex: held.codex })
+    try {
+      await built.sessions.send({ root: ROOT, mode: 'manual', provider: 'codex', text: 'Check the build' })
+      held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
+      await settled()
+      built.sessions.setChecklist(id, { items: [{ id: 'a', title: 'Development build', check: 'none' }] }, true)
+      await settled()
+      expect(setGoal).not.toHaveBeenCalled()
+
+      const checklist = { items: [{ id: 'a', title: objective, check: 'none' as const }] }
+      built.sessions.setChecklist(id, checklist, 'start')
+      await vi.waitFor(() => expect(setGoal).toHaveBeenCalledExactlyOnceWith(id, objective))
+      expect(of(built.rows, id)).toMatchObject({ goal: { condition: objective }, checklist })
+      expect(held.fake.sent).toEqual([{ text: 'Check the build' }])
+    } finally { built.sessions.dispose() }
   })
 
   it('starts a Codex checklist added during a working turn after that turn finishes', async () => {
@@ -1239,7 +1291,7 @@ describe('a task checklist', () => {
       expect(setGoal).not.toHaveBeenCalled()
       held.fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
       await vi.waitFor(() => expect(setGoal).toHaveBeenCalledWith(id, 'Deployed to development'))
-      await vi.waitFor(() => expect(held.fake.sent.at(-1)?.text).toBe('Next on the checklist: Deployed to development'))
+      expect(held.fake.sent).toEqual([{ text: 'Finish the redesign' }])
       expect(setGoal).toHaveBeenCalledTimes(1)
     } finally { built.sessions.dispose() }
   })
@@ -3116,11 +3168,12 @@ describe('what runs in the background', () => {
 
 describe('marking a conversation', () => {
   describe.each(['built-in', 'library', 'mirror'] as const)('live terminal goals from %s', (source) => {
-    function nativeGoals(): Pick<LlmProvider, 'family'> & { readonly built: Built; readonly fake: Fake } {
-      const family = source === 'built-in' ? 'codex' : source === 'mirror' ? 'plugin:codex-mirror' : 'plugin:live-goal-test'
-      const held = heldCodex(source === 'built-in' ? 'codex:live-goal' : `${family}:live-goal`)
+    function nativeGoals(over?: Parameters<typeof heldCodex>[1]) {
+      const family: LlmProvider['family'] = source === 'built-in' ? 'codex' : source === 'mirror' ? 'plugin:codex-mirror' : 'plugin:live-goal-test'
+      const held = heldCodex(`${family}:live-goal`, over)
       const provider: LlmProvider = { ...llmProvider({ codex: held.codex }, 'codex'), id: family, family }
-      return { built: build(source === 'built-in' ? { codex: held.codex } : { plugins: [provider] }), fake: held.fake, family }
+      const notes = memoryNotes()
+      return { built: build(source === 'built-in' ? { codex: held.codex, notes } : { plugins: [provider], notes }), fake: held.fake, family, notes }
     }
 
     it('ignores a replayed completed goal throughout a goal-less followup turn', async () => {
@@ -3147,9 +3200,32 @@ describe('marking a conversation', () => {
       expect(of(built.rows, id)?.state).toBe('working')
       expect(of(built.rows, id)?.status).toBeUndefined()
       expect(of(built.rows, id)?.goalMet).toBeUndefined()
+      expect(of(built.rows, id)?.goal).toEqual(status === 'complete' ? undefined : { ...goal, state: 'stopped' })
       fake.hear({ signals: [{ kind: 'ended', how: 'done' }] })
       expect(of(built.rows, id)?.status).toBe(status === 'complete' ? undefined : 'blocked')
       expect(of(built.rows, id)?.goalMet).toBe(status === 'complete' ? 'Finish it' : undefined)
+    })
+
+    it('keeps a stopped goal inactive during follow-ups and restores it when the provider resumes it', async () => {
+      const { built, fake, family, notes } = nativeGoals({
+        goal: async (threadId) => ({ threadId, objective: 'Finish it', status: 'blocked', tokenBudget: null, tokensUsed: 0, timeUsedSeconds: 0, createdAt: 0, updatedAt: 0 }),
+      })
+      const id = await built.sessions.send({ provider: family, root: ROOT, mode: 'manual', text: 'Finish it' })
+      notes.set(id, { ...notes.all()[id], checklist: { items: [{ id: 'item', title: 'Finish it', check: 'none' }] } })
+      const goal = { condition: 'Finish it', checks: 0 }
+      fake.hear({ signals: [{ kind: 'goal', goal, status: 'active' }, { kind: 'goal', goal, status: 'blocked' }, { kind: 'ended', how: 'done' }] })
+      await built.sessions.send({ session: id, root: ROOT, mode: 'manual', text: 'What blocked it?' })
+      fake.hear({ signals: [{ kind: 'goal', goal, status: 'blocked' }, { kind: 'ended', how: 'done' }] })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(of(built.rows, id)?.goal).toEqual({ ...goal, state: 'stopped' })
+      expect(of(built.rows, id)?.checklist?.items[0]?.state).toBeUndefined()
+      expect(fake.sent).toEqual([{ text: 'Finish it' }, { text: 'What blocked it?' }])
+      expect(built.fanned.flatMap((one) => one.items).filter((item) => item.kind === 'note' && item.text === 'Goal stopped: Finish it')).toHaveLength(1)
+
+      fake.hear({ signals: [{ kind: 'goal', goal, status: 'paused' }] })
+      expect(of(built.rows, id)?.goal).toEqual({ ...goal, state: 'paused' })
+      fake.hear({ signals: [{ kind: 'goal', goal, status: 'active' }] })
+      expect(of(built.rows, id)?.goal).toEqual(goal)
     })
 
     it('leaves an approval waiting in progress until genuine goal completion and turn end', async () => {

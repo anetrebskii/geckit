@@ -5,6 +5,18 @@ import { pictureData, picturePath } from '../src/shared/pictures'
 vi.stubGlobal('window', {})
 const { Prose } = await import('../src/renderer/src/chat/Prose')
 
+describe('links in answers', () => {
+  it('keeps valid sign-in links and filters other GeckIt URLs', () => {
+    const url = 'geckit://signin?computer=remote&profile=cws-publisher&t=fixture_token_123456'
+    const html = renderToStaticMarkup(createElement(Prose, {
+      text: `[Sign in](${url}) [Pair](geckit://pair) [Invalid](geckit://signin?profile=example)`,
+    }))
+    expect(html).toContain(`href="${url.replaceAll('&', '&amp;')}"`)
+    expect(html).not.toContain('href="geckit://pair')
+    expect(html).not.toContain('href="geckit://signin?profile=')
+  })
+})
+
 describe('pictures in answers', () => {
   it.each([['E:/probes/screen.png', 'E:/probes/screen.png'], ['file:///E:/screen%20one.png', 'E:/screen one.png'], ['/E:/screen.png', 'E:/screen.png'], ['/tmp/screen.png', '/tmp/screen.png'], ['shots/one.png', 'shots/one.png']])('accepts local path %s', (src, expected) => expect(picturePath(src)).toBe(expected))
   it.each(['https://example.com/image.png', '//example.com/image.png', 'javascript:alert(1)', 'data:text/html;base64,aGVsbG8='])('does not read a remote or executable source %s', (src) => expect(picturePath(src)).toBeUndefined())
