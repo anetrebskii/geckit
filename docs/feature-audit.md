@@ -222,7 +222,7 @@ Sources: [Chat](../client/src/renderer/src/chat/Chat.tsx), [Composer](../client/
 - Expand tool details and grouped steps; read assistant-produced images.
 - Render formatted text and code; copy answers with text and HTML formatting.
 - Paste or drop images, add photos on phone, remove pending attachments, and enlarge/zoom pictures.
-- Mention project files or folders with `@`; drop files and carry files to SSH projects.
+- Mention project files or folders with `@`; drop files and carry files to SSH projects. The desktop Composer paperclip opens the native file picker with multiple selection and uses the same file handling as drag and drop. The phone photo picker still accepts images.
 - Bring back previous messages with Up/Down.
 - Dictate directly into the composer, with language switching and stop/cancel controls.
 - Save a short message as a reusable phrase; insert several phrases into a draft and edit/remove them in Settings.
