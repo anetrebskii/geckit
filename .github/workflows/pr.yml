@@ -62,7 +62,7 @@ jobs:
           cache: npm
           cache-dependency-path: '**/package-lock.json'
       - run: npm ci
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: broker/go.mod
           cache-dependency-path: broker/go.sum
