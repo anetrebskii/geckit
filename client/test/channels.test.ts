@@ -856,6 +856,19 @@ it('does not forward a stale or other-thread decision ID to Manager through deci
   await channels.dispose()
 })
 
+it('Slack: an approval card turns a project path into a GeckIt link and keeps hosted links clickable', async () => {
+  const run = slackHarness()
+  Object.assign(run.context, { projects: () => [{ root: '/srv/seo-ops' }], shares: { open: async () => ({ id: 's1', key: 'k'.repeat(43), title: 'report.html', expiresAt: 36, again: false }) } })
+  await run.channel.start()
+  run.event({ type: 'app_mention', user: 'U1', channel: 'C1', ts: '3.0', text: '<@B1> work' })
+  await run.settle()
+  run.watchers.get('channel:slack:C1:3.0')?.({ kind: 'decisions', decisions: [{ id: 'one', title: 'Accept https://github.com/acme/site/pull/18 & /srv/seo-ops/report.html?', choices: [{ label: 'Accept', value: 'accept' }] }] })
+  await run.settle()
+  const section = (run.posted.at(-1)?.blocks?.[0] as { text?: { type: string; text: string } } | undefined)?.text
+  expect(section?.type).toBe('mrkdwn')
+  expect(section?.text).toMatch(/^Accept https:\/\/github\.com\/acme\/site\/pull\/18 &amp; <https:\/\/geckit-signal\.web\.app\/#k+\.10\|\/srv\/seo-ops\/report\.html>\?/)
+})
+
 it('Slack: a slow approval in one thread does not block another thread', async () => {
   const run = slackHarness()
   await run.channel.start()

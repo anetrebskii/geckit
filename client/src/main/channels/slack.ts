@@ -366,7 +366,9 @@ export function createSlack(context: ChannelContext, transport: SlackTransport =
         }
         const buttons = decision.choices.length > 0 && decision.choices.length <= 40
         const text = privateText(channel, decision.choices.length === 0 ? decision.title : `${decision.title}\n${buttons ? 'Press a button or reply' : 'Reply'} with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`)
-        const sections = (text.slice(0, 39_000).match(/[\s\S]{1,3000}/g) ?? []).map((part, index) => ({ type: 'section', ...(index === 0 ? { block_id: marker } : {}), text: { type: 'plain_text', text: part } }))
+        const title = await linkLocal(plain(privateText(channel, decision.title)), context.shares, (words, url) => `<${url}|${words.replace(/[|>]/g, ' ')}>`, context.projects().map((one) => one.root))
+        const shown = decision.choices.length === 0 ? title : `${title}\n${buttons ? 'Press a button or reply' : 'Reply'} with one of: ${decision.choices.map((one) => `\`${plain(one.value)}\``).join(', ')}`
+        const sections = (shown.slice(0, 39_000).match(/[\s\S]{1,3000}/g) ?? []).map((part, index) => ({ type: 'section', ...(index === 0 ? { block_id: marker } : {}), text: { type: 'mrkdwn', text: part } }))
         const actions = buttons ? Array.from({ length: Math.ceil(decision.choices.length / 25) }, (_, row) => ({ type: 'actions', elements: decision.choices.slice(row * 25, row * 25 + 25).map((choice, index) => ({ type: 'button', text: { type: 'plain_text', text: privateText(channel, choice.label || choice.value).slice(0, 75) }, action_id: `${marker}:${String(row * 25 + index)}`, value: decision.id })) })) : []
         context.store.set(`approval-posting:${key}`, decision.id)
         const reply = await slack('chat.postMessage', { channel, thread_ts: ts, text: text.slice(0, 39_000), mrkdwn: false, blocks: [...sections, ...actions] }).catch((error: Error) => { if (error instanceof SlackApiFailure) context.store.set(`approval-posting:${key}`, undefined); throw error })

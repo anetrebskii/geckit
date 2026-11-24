@@ -367,7 +367,8 @@ export function createDiscord(context: ChannelContext, transport: DiscordTranspo
         await legacyClosed
         const choices = decision.choices.slice(0, BUTTONS)
         const buttons = decision.choices.length > 0 && decision.choices.length <= BUTTONS
-        const title = `**${decision.title.length > 1_500 ? `${decision.title.slice(0, 1_499)}…` : decision.title}**`
+        const linked = await linkLocal(decision.title.length > 1_500 ? `${decision.title.slice(0, 1_499)}…` : decision.title, context.shares, (words, url) => `[${words.replace(/[[\]]/g, '')}](${url})`, context.projects().map((one) => one.root))
+        const title = `**${linked}**`
         const text = decision.choices.length === 0 ? title : `${title}\n${buttons ? 'Press a button or reply' : 'Reply'} with one of: ${decision.choices.map((one) => `\`${one.value}\``).join(', ')}`
         const rows = buttons ? Array.from({ length: Math.ceil(choices.length / 5) }, (_, row) => ({ type: 1, components: choices.slice(row * 5, row * 5 + 5).map((choice, index) => ({ type: 2, style: row * 5 + index === 0 ? 1 : 2, label: (choice.label || choice.value).slice(0, 80), custom_id: buttonId(decision.id, row * 5 + index) })) })) : []
         const nonce = createHash('sha256').update(`${channel}:${decision.id}`).digest('hex').slice(0, 20)

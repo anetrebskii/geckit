@@ -272,6 +272,18 @@ it('passes a repeated or replayed event to Manager once, and a known thread only
   await again.stop()
 })
 
+it('links a project file named in an approval card', async () => {
+  const run = harness()
+  Object.assign(run.context, { projects: () => [{ root: '/srv/seo-ops' }], shares: { open: async () => ({ id: 's1', key: 'k'.repeat(43), title: 'report.html', expiresAt: 36, again: false }) } })
+  await run.channel.start()
+  run.ready()
+  run.message('530000000000000001', ALLOWED, `<@${BOT}> start the migration`)
+  await run.settle()
+  run.watchers.get('channel:discord:530000000000000001')?.({ kind: 'decisions', decisions: [{ id: 'one', title: 'Accept /srv/seo-ops/report.html?', choices: [{ label: 'Accept', value: 'accept' }] }] })
+  await run.settle()
+  expect(run.posts().at(-1)?.body['content']).toMatch(/^\*\*Accept \[\/srv\/seo-ops\/report\.html\]\(https:\/\/geckit-signal\.web\.app\/#k+\.10\)\?\*\*/)
+})
+
 it('asks a question with buttons bound to the person, the thread, the message and the choice', async () => {
   const run = harness()
   await run.channel.start()
