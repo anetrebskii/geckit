@@ -37,6 +37,7 @@ function Preview(): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const [log, setLog] = useState<readonly string[]>([])
   const [shown, setShown] = useState(!query.has('shut'))
+  const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS, phrases: [], chatProjects: ['/work/geckit'] })
   const phone = query.has('phone')
   const meet = (): void => {
     if (checklist === undefined || goal === undefined) return
@@ -53,7 +54,7 @@ function Preview(): React.JSX.Element {
   }
   const chat = {
     employees: [], employeesById: new Map(),
-    settings: { ...DEFAULT_SETTINGS, phrases: [] }, hosts: [], prompts: [], lineup: { working: 1, limit: 6 }, full: false, change: noop,
+    settings, hosts: [], prompts: [], lineup: { working: 1, limit: 6 }, full: false, change: (next: Partial<typeof settings>) => { setSettings((was) => ({ ...was, ...next })); setLog((was) => [...was, `checklists: ${(next.checklists ?? []).map((one) => `${one.name} (${one.root ?? 'shared'}, ${String(one.items.length)})`).join(', ')}`]) },
     root: session.root, scope: session.root, sessions: [session], listed: true, listLoading: false, listProblem: undefined, listStatus: [], everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'session', id: session.id }, session,
     items, itemsFor: session.id, earlier: 0, showEarlier: noop, loadSteps: noop, draft, pictures: [], trouble: '', checkingIp: false, retrying: false, retry: noop, uploading: false,
     account: { provider: 'claude', here: true, signedIn: true, plan: 'Max' }, plan: undefined, plans: [], plansAt: {}, models: [{ value: 'opus', name: 'Opus' }],
@@ -81,7 +82,7 @@ function Preview(): React.JSX.Element {
         <div className="talk-column"><Transcript at={session.id} items={items} working onAnswer={noop} onAgain={noop} onFile={noop} onStopShell={noop} onTypeShell={noop} onBackground={noop} onContinue={noop} onRetry={noop} tasks={undefined} onTasks={noop} find={query.has('find') ? 0 : undefined} onFindClose={noop} />
           <Composer chat={fake} onChecklist={phone ? undefined : () => setShown(!shown)} checklistShown={shown} />
         </div>
-        {shown && !phone ? <TaskChecklistEditor key={session.id} panel goal={session.goal?.condition} checklist={shownChecklist(session.checklist, session.goal?.condition, session.goalMet)} onSave={(next, typing) => fake.setChecklist(session.id, next, typing)} onClear={() => fake.setChecklist(session.id, { items: [] })} onClose={() => setShown(false)} /> : null}
+        {shown && !phone ? <TaskChecklistEditor key={session.id} panel goal={session.goal?.condition} checklist={shownChecklist(session.checklist, session.goal?.condition, session.goalMet)} onSave={(next, typing) => fake.setChecklist(session.id, next, typing)} onClear={() => fake.setChecklist(session.id, { items: [] })} onClose={() => setShown(false)} saveAs={{ settings, change: fake.change, title: session.title, root: session.root }} /> : null}
       </div>
     </div>
   </main>

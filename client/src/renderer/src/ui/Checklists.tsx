@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 import type { Settings } from '../../../shared/api'
 import { shownProjects } from '../../../shared/api'
-import type { Checklist } from '../../../shared/checklists'
+import type { Checklist, ChecklistItem } from '../../../shared/checklists'
 import { newItem } from '../../../shared/checklists'
 import { ChecklistItems, ChecklistNotes } from '../chat/ChecklistField'
 import { projectName } from '../chat/project'
@@ -17,8 +17,9 @@ interface Part {
 
 const SHARED = ''
 
-function ChecklistForm({ checklist, folders, onSave, onCancel, onDelete, askFirst = false }: {
+function ChecklistForm({ checklist, folders, onSave, onCancel, onDelete, askFirst = false, label }: {
   readonly checklist: Checklist
+  readonly label?: string
   /** Opened from Delete in the row's menu: the question comes first. */
   readonly askFirst?: boolean
   readonly folders: readonly string[]
@@ -50,7 +51,7 @@ function ChecklistForm({ checklist, folders, onSave, onCancel, onDelete, askFirs
   return (
     <form
       className="browser-profiles-form checklist-form"
-      aria-label={checklist.name === '' ? 'New checklist' : `Edit ${checklist.name}`}
+      aria-label={label ?? (checklist.name === '' ? 'New checklist' : `Edit ${checklist.name}`)}
       onSubmit={(event) => {
         event.preventDefault()
         save()
@@ -111,8 +112,9 @@ function ChecklistForm({ checklist, folders, onSave, onCancel, onDelete, askFirs
 }
 
 /** On the phone, a checklist is written in a sheet of its own, as a shortcut is: Cancel and Save in its bar, the rows grouped, Delete at the foot. */
-function ChecklistSheet({ checklist, folders, onSave, onCancel, onDelete, askFirst = false }: {
+function ChecklistSheet({ checklist, folders, onSave, onCancel, onDelete, askFirst = false, title }: {
   readonly checklist: Checklist
+  readonly title?: string
   readonly askFirst?: boolean
   readonly folders: readonly string[]
   readonly onSave: (checklist: Checklist) => void
@@ -125,7 +127,7 @@ function ChecklistSheet({ checklist, folders, onSave, onCancel, onDelete, askFir
   const [items, setItems] = useState(checklist.items.length === 0 ? [newItem()] : checklist.items)
   const [picking, setPicking] = useState(false)
   const [asking, setAsking] = useState(askFirst)
-  const fresh = checklist.name === ''
+  const fresh = checklist.name === '' || title !== undefined
   const ready = name.trim() !== '' && items.some((one) => one.title.trim() !== '')
   const places = checklist.root === undefined || folders.includes(checklist.root) ? folders : [...folders, checklist.root]
   const save = (): void => {
@@ -139,7 +141,7 @@ function ChecklistSheet({ checklist, folders, onSave, onCancel, onDelete, askFir
     })
   }
   return (
-    <FullSheet title={fresh ? 'New checklist' : checklist.name} action="Save" ready={ready} onAction={save} onClose={onCancel}>
+    <FullSheet title={title ?? (fresh ? 'New checklist' : checklist.name)} action="Save" ready={ready} onAction={save} onClose={onCancel}>
       <div className="phone-task-label">Name</div>
       <input className="phone-task-goal" autoFocus={fresh} aria-label="Name" value={name} maxLength={80} placeholder="Feature flow" onChange={(event) => setName(event.target.value)} />
       <div className="phone-group phone-form-group">
@@ -188,6 +190,42 @@ function ChecklistSheet({ checklist, folders, onSave, onCancel, onDelete, askFir
   )
 }
 
+/** The saved list with one checklist added or replaced; a new default clears the folder's previous one. */
+const withChecklist = (checklists: readonly Checklist[], saved: Checklist): readonly Checklist[] => {
+  const cleared = saved.isDefault === true ? checklists.map((one) => (one.id !== saved.id && one.root === saved.root && one.isDefault === true ? { ...one, isDefault: undefined } : one)) : checklists
+  return cleared.some((one) => one.id === saved.id) ? cleared.map((one) => (one.id === saved.id ? saved : one)) : [...cleared, saved]
+}
+
+/** A task's items saved as a new checklist, in the same editor as Settings: a dialog on the desktop, a sheet on the phone. */
+export function SaveAsChecklist({ settings, change, name, root, items, onClose }: Part & {
+  readonly name: string
+  readonly root: string | undefined
+  readonly items: readonly ChecklistItem[]
+  readonly onClose: () => void
+}): React.JSX.Element {
+  const folders = shownProjects(settings)
+  const [checklist] = useState<Checklist>(() => ({
+    id: crypto.randomUUID(),
+    name: name.trim().slice(0, 80),
+    ...(root === undefined || root === '' ? {} : { root }),
+    items: items.filter((one) => one.title.trim() !== '').map(({ state: _state, ...one }) => ({ ...one, id: crypto.randomUUID() })),
+  }))
+  const save = (saved: Checklist): void => {
+    change({ checklists: withChecklist(settings.checklists ?? [], saved) })
+    onClose()
+  }
+  if (document.documentElement.classList.contains('phone')) return <ChecklistSheet checklist={checklist} folders={folders} title="Save as Checklist" onSave={save} onCancel={onClose} />
+  return (
+    <div className="dialog-scrim" onMouseDown={onClose}>
+      <div className="dialog checklist-save-dialog" role="dialog" aria-label="Save as Checklist" onMouseDown={(event) => event.stopPropagation()}>
+        <h2>Save as Checklist</h2>
+        <p className="add-host-lead">New tasks can start with these items. This task keeps its own copy.</p>
+        <ChecklistForm checklist={checklist} folders={folders} label="Save as Checklist" onSave={save} onCancel={onClose} />
+      </div>
+    </div>
+  )
+}
+
 export function ChecklistsSection({ settings, change }: Part): React.JSX.Element {
   const checklists = settings.checklists ?? []
   const folders = shownProjects(settings)
@@ -198,8 +236,7 @@ export function ChecklistsSection({ settings, change }: Part): React.JSX.Element
   const phone = document.documentElement.classList.contains('phone')
   const store = (next: readonly Checklist[]): void => change({ checklists: next })
   const save = (saved: Checklist): void => {
-    const cleared = saved.isDefault === true ? checklists.map((one) => (one.id !== saved.id && one.root === saved.root && one.isDefault === true ? { ...one, isDefault: undefined } : one)) : checklists
-    store(cleared.some((one) => one.id === saved.id) ? cleared.map((one) => (one.id === saved.id ? saved : one)) : [...cleared, saved])
+    store(withChecklist(checklists, saved))
     setEditing(undefined)
     setAdding(undefined)
   }

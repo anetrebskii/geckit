@@ -431,6 +431,7 @@ export function Composer({ chat, onContinue, onChecklist, checklistShown = false
           checklist={taskList}
           goal={goalState === undefined ? goal?.condition : undefined}
           personItem={chat.session.personItem}
+          saveAs={{ settings: chat.settings, change: chat.change, title: chat.session.title, root: chat.session.root }}
           onSave={(next, edit) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, edit) }}
           onClear={() => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, { items: [] }); if (goal !== undefined) chat.say('/goal clear'); setEditingGoal(undefined) }}
           onClose={() => setEditingGoal(undefined)}

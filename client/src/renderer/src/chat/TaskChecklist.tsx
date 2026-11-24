@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { ChatSession } from '../../../shared/api'
+import type { ChatSession, Settings } from '../../../shared/api'
 import type { ChecklistEdit, ChecklistItem, TaskChecklist } from '../../../shared/checklists'
 import { checklistDone, checklistProgress, currentItem, itemCondition, newItem, nextCondition } from '../../../shared/checklists'
 import { ON_PHONE } from '../on-phone'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import { SaveAsChecklist } from '../ui/Checklists'
 import { Cell, FullSheet } from './PhoneKit'
 import { ChecklistItems, ChecklistNotes } from './ChecklistField'
 
@@ -36,7 +37,15 @@ export function canStartChecklistGoal(session: ChatSession): boolean {
 }
 
 /** The task's checklist, ticked as goals are met and edited by the person. Every change saves itself; ticks that land meanwhile are kept, and an edit made elsewhere shows when nothing here is waiting to save. */
-export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onClear, onClose, panel = false, canStart = false }: {
+/** What saving a task's items as a checklist needs: the settings it goes into, and the task's title and folder for its name and place. */
+export interface SaveAs {
+  readonly settings: Settings
+  readonly change: (change: Partial<Settings>) => void
+  readonly title: string
+  readonly root: string | undefined
+}
+
+export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onClear, onClose, panel = false, canStart = false, saveAs }: {
   readonly checklist: TaskChecklist
   /** The conversation's goal now, so the item it was set from stands out. */
   readonly goal?: string | undefined
@@ -48,6 +57,7 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
   /** Beside the conversation on the desktop, shown and hidden from the header. */
   readonly panel?: boolean
   readonly canStart?: boolean
+  readonly saveAs?: SaveAs | undefined
 }): React.JSX.Element {
   const [items, setItems] = useState<readonly ChecklistItem[]>(() => (checklist.items.length === 0 ? [newItem()] : checklist.items))
   const [ticked, setTicked] = useState<ReadonlyMap<string, boolean>>(new Map())
@@ -56,6 +66,7 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
   const [focus, setFocus] = useState<string | undefined>()
   const [more, setMore] = useState<DOMRect | undefined>()
   const [clearing, setClearing] = useState(false)
+  const [saving, setSaving] = useState(false)
   const typing = useRef(false)
   const held = useRef(false)
   const addButton = useRef<HTMLButtonElement>(null)
@@ -162,6 +173,17 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
   )
   const { passed, all } = checklistProgress(draft)
   const title = checklist.from === undefined ? 'Checklist' : `Checklist: ${checklist.from.name}`
+  const canSaveAs = saveAs !== undefined && ready
+  const savingAs = saving && saveAs !== undefined ? (
+    <SaveAsChecklist
+      settings={saveAs.settings}
+      change={saveAs.change}
+      name={checklist.from === undefined ? saveAs.title : `${checklist.from.name} copy`}
+      root={saveAs.root}
+      items={merged}
+      onClose={() => setSaving(false)}
+    />
+  ) : null
   const clearButton = checklist.items.length === 0 ? null : <button type="button" className="quiet danger" onClick={clear}>Clear checklist</button>
   if (panel) return (
     <aside className="task-checklist-panel" aria-label={title}>
@@ -170,14 +192,22 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
           <h3>{title}</h3>
           {all === 0 ? null : <span>{checklistDone(draft) ? 'All done' : `${String(passed)} of ${String(all)} done`}</span>}
         </div>
-        {checklist.items.length === 0 ? null : (
+        {checklist.items.length === 0 && !canSaveAs ? null : (
           <button type="button" className="icon-button" aria-label="Checklist actions" aria-haspopup="menu" title="More" onClick={(event) => setMore(event.currentTarget.getBoundingClientRect())}>
             <Icon name="more" size={14} />
           </button>
         )}
       </header>
       <div className="task-checklist-body">{body}</div>
-      {more === undefined ? null : <Menu anchor={more} choices={[{ value: 'clear', label: 'Clear Checklist…', danger: true }]} onPick={() => setClearing(true)} onClose={() => setMore(undefined)} />}
+      {more === undefined ? null : (
+        <Menu
+          anchor={more}
+          choices={[...(canSaveAs ? [{ value: 'save', label: 'Save as Checklist…' }] : []), ...(checklist.items.length === 0 ? [] : [{ value: 'clear', label: 'Clear Checklist…', danger: true }])]}
+          onPick={(value) => { if (value === 'save') setSaving(true); else setClearing(true) }}
+          onClose={() => setMore(undefined)}
+        />
+      )}
+      {savingAs}
       {clearing ? (
         <div className="dialog-scrim" onMouseDown={() => setClearing(false)}>
           <div className="dialog" role="alertdialog" aria-label="Clear this checklist?" onMouseDown={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') setClearing(false) }}>
@@ -197,24 +227,32 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
       <div className="task-checklist-phone">
         {all === 0 ? null : <div className="phone-head">{checklistDone(draft) ? 'All done' : `${String(passed)} of ${String(all)} done`}</div>}
         {body}
-        {checklist.items.length === 0 ? null : (
-          <div className="phone-group"><Cell label="Clear Checklist" danger onPress={() => setClearing(true)} /></div>
+        {checklist.items.length === 0 && !canSaveAs ? null : (
+          <div className="phone-group">
+            {canSaveAs ? <Cell label="Save as Checklist" onPress={() => setSaving(true)} /> : null}
+            {checklist.items.length === 0 ? null : <Cell label="Clear Checklist" danger onPress={() => setClearing(true)} />}
+          </div>
         )}
       </div>
+      {savingAs}
       {clearing ? <Menu anchor={new DOMRect()} title="Clear this checklist?" choices={[{ value: 'clear', label: 'Clear Checklist', says: 'Every item and tick is removed from this task.', danger: true }]} onPick={clear} onClose={() => setClearing(false)} /> : null}
     </FullSheet>
   )
   return (
+    <>
     <div className="dialog-scrim" onMouseDown={onClose}>
       <div className="dialog task-checklist-editor" role="dialog" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
         <h2>{title}</h2>
         <div className="task-checklist-body">{body}</div>
         <div className="dialog-actions">
           {clearButton}
+          {canSaveAs ? <button type="button" className="quiet" onClick={() => setSaving(true)}>Save as Checklist…</button> : null}
           <span className="spacer" />
           <button type="button" className="primary" onClick={onClose}>Done</button>
         </div>
       </div>
     </div>
+    {savingAs}
+    </>
   )
 }

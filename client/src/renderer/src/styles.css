@@ -17033,6 +17033,9 @@ html.phone .secret-form .secret-form-label { text-align: start; }
 .checklist-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius); }
 .checklist-root { width: 100%; min-width: 0; }
 .checklist-default { margin-top: 2px; }
+.checklist-default input { width: auto; }
+.checklist-save-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 64px); }
+.checklist-save-dialog .checklist-form { padding: 4px 0 0; background: none; border: 0; animation: none; }
 .checklist-form-items { gap: 6px; }
 .checklist-form-items .checklist-items { background: var(--bg-raised); }
 .checklist-form-actions .checklist-delete { margin-inline-end: auto; color: var(--danger); }
