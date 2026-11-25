@@ -3,6 +3,7 @@ import type { BrowserBridgeState, TestBrowsersState } from '../../../shared/api'
 import { tap } from '../tap'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
+import { BrowserLocationEditor } from '../ui/BrowserLocationEditor'
 import { LiveView, tint } from './LiveView'
 import type { LiveViewApi } from './LiveView'
 import { Cell, FullSheet, Page, Switch } from './PhoneKit'
@@ -24,6 +25,7 @@ export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat
   const [state, setState] = useState<BrowserBridgeState>()
   const [problem, setProblem] = useState('')
   const [editing, setEditing] = useState<Editing>()
+  const [locationFor, setLocationFor] = useState<Profile['name'] | null>()
   const [more, setMore] = useState<Profile['name']>()
   const [deleting, setDeleting] = useState<Profile['name']>()
   const [live, setLive] = useState<Profile['name']>()
@@ -40,6 +42,10 @@ export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat
   }, [])
   const testing = state?.testing
   const profiles = testing?.profiles ?? []
+  const locationProfile = profiles.find((one) => one.name === locationFor)
+  const defaults = testing?.supported === true ? testing.locationDefaults : undefined
+  const locationSettings = locationFor === null ? defaults : locationProfile?.locationSettings
+  const closeLocation = (): void => setLocationFor(undefined)
   const download = testing?.download
   const remove = async (name: Profile['name']): Promise<void> => {
     try { await window.geckit.browser.deleteTest(name); tap('light'); await refresh() } catch (error) { setProblem(said(error)) }
@@ -48,6 +54,7 @@ export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat
 
   return (
     <Page title="Browsers" {...(back === undefined ? {} : { back })} {...(onBack === undefined ? {} : { onBack })} actions={<button type="button" className="phone-icon" aria-label="New profile" disabled={testing?.supported === false} onClick={() => setEditing({})}><Icon name="plus" size={24} /></button>}>
+      {defaults === undefined ? null : <div className="phone-group"><Cell label="Camoufox defaults" says={Object.keys(defaults.overrides).length > 0 ? 'Custom defaults' : 'Use system settings'} onPress={() => setLocationFor(null)}>{null}</Cell></div>}
       <div className="phone-head">Browser profiles</div>
       {state === undefined && problem === '' ? (
         <div className="phone-group" aria-busy="true">
@@ -95,9 +102,10 @@ export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat
           choices={[
             { value: 'open', label: 'Open browser', icon: 'display', ...(enabled ? {} : { disabled: true }) },
             { value: 'edit', label: 'Edit', icon: 'pencil' },
+            ...(profiles.some((one) => one.name === more && one.locationSettings !== undefined) ? [{ value: 'location', label: 'Location and language', icon: 'globe' }] : []),
             { value: 'delete', label: 'Delete', icon: 'trash', danger: true },
           ]}
-          onPick={(value) => { if (value === 'open') open(more); else if (value === 'edit') setEditing({ name: more }); else setDeleting(more) }}
+          onPick={(value) => { if (value === 'open') open(more); else if (value === 'edit') setEditing({ name: more }); else if (value === 'location') setLocationFor(more); else setDeleting(more) }}
           onClose={() => setMore(undefined)}
         />
       )}
@@ -111,6 +119,7 @@ export function PhoneBrowser({ chat, host, back, onBack }: { readonly chat: Chat
         />
       )}
       {editing === undefined ? null : <ProfileSheet given={profiles.find((one) => one.name === editing.name)} taken={profiles.map((one) => one.name)} host={host} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); void refresh() }} />}
+      {locationFor === undefined || locationSettings === undefined ? null : <FullSheet title={locationFor === null ? 'Camoufox defaults' : 'Location and language'} back="Browsers" onBack={closeLocation} onClose={closeLocation}><BrowserLocationEditor key={locationFor ?? 'defaults'} name={locationFor} open={locationProfile?.open === true} settings={locationSettings} onClose={closeLocation} onSaved={async () => { await refresh(); setLocationFor((current) => current === locationFor ? undefined : current) }} /></FullSheet>}
       {live === undefined ? null : <LiveView name={live} api={liveApi} computer={host} title={`geckit:${live}`} onClose={() => { setLive(undefined); void refresh() }} />}
     </Page>
   )

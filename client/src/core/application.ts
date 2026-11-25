@@ -6,7 +6,7 @@ import type { ProductAuthority } from '../shared/product-cli'
 import { dispatchProduct } from './product-cli'
 import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
-import type { ViewInput } from '../shared/api'
+import type { BrowserLocationOverrides, ViewInput } from '../shared/api'
 import type { Answered, ConversationContinuation, CorrectRequest, Recording, SessionMessage, Settings, ShortcutDraft, TranscribeRequest } from '../shared/api'
 import { assistantsIn, providerOf, shownProjects, resumeCommand } from '../shared/api'
 import type { EmployeeDraft } from '../shared/employees'
@@ -31,7 +31,7 @@ import { keepToken, pushTo } from '../main/push'
 import type { SessionNotice } from '../shared/api'
 import { localFetch } from '../main/local-page'
 import { browserBridgeOn, browserBridgeState, openTest, stopTest } from '../cli/browser'
-import { deleteTestProfile, makeTestAccount, updateTestProfile } from '../cli/testing'
+import { deleteTestProfile, makeTestAccount, updateBrowserLocation, updateTestProfile } from '../cli/testing'
 import { signInLink, viewEnd, viewFrame, viewInput, viewStart } from '../cli/live-view'
 import { runCli } from './cli-run'
 import { deleteFindModel, fetchFindModel, findModelServer } from '../cli/find-model'
@@ -216,6 +216,7 @@ export function application(runtime: CoreRuntime) {
     'browser:deleteTest': async (name: string) => { const stopped = await stopTest(name); if (!stopped.ok) throw new Error(stopped.said); deleteTestProfile(name) },
     'browser:account': (name: string, note: string) => makeTestAccount(name, note, undefined, true),
     'browser:updateTest': (name: string, next: string, note: string) => updateTestProfile(name, next, note),
+    'browser:locationSettings': (name: string | null, location: BrowserLocationOverrides) => updateBrowserLocation(name, location),
     'browser:signInLink': (name: string) => signInLink(name),
     'browser:viewStart': (name: string, url?: string, token?: string) => viewStart(name, url, token),
     'browser:viewFrame': (name: string) => viewFrame(name),

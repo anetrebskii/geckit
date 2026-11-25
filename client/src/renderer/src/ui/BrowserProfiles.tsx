@@ -5,6 +5,7 @@ import type { LiveViewApi } from '../chat/LiveView'
 import { Icon } from './Icon'
 import { Menu } from './Menu'
 import type { Choice } from './Menu'
+import { BrowserLocationEditor } from './BrowserLocationEditor'
 
 type Profile = TestBrowsersState['profiles'][number]
 interface BrowserProfilesProps {
@@ -13,12 +14,14 @@ interface BrowserProfilesProps {
   readonly enabled: boolean
   readonly loading?: boolean
 }
-type ProfileRowProps = Pick<Profile, 'name' | 'note' | 'open'> & Pick<BrowserProfilesProps, 'refresh' | 'enabled'> & {
+type ProfileRowProps = Pick<Profile, 'name' | 'note' | 'open' | 'locationSettings'> & Pick<BrowserProfilesProps, 'refresh' | 'enabled'> & {
   readonly signIn: (name: Profile['name'], opener: HTMLButtonElement | null) => void
   readonly focusOpen: boolean
   readonly onFocused: () => void
   readonly onDeleted: () => void
   readonly onRenamed: (name: Profile['name']) => void
+  readonly canSetLocation: boolean
+  readonly onLocationSettings: (name: Profile['name'] | undefined) => void
 }
 const NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 const liveApi: LiveViewApi = {
@@ -28,7 +31,7 @@ const liveApi: LiveViewApi = {
   end: (name) => window.geckit.browser.viewEnd(name),
 }
 
-const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled, signIn, focusOpen, onFocused, onDeleted, onRenamed }: ProfileRowProps): React.JSX.Element {
+const ProfileRow = memo(function ProfileRow({ name, note, open, locationSettings, canSetLocation, onLocationSettings, refresh, enabled, signIn, focusOpen, onFocused, onDeleted, onRenamed }: ProfileRowProps): React.JSX.Element {
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState<'open' | 'delete' | 'save'>()
   const [editing, setEditing] = useState(false)
@@ -55,6 +58,10 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
     if (editing) (open ? noteField : nameField).current?.focus()
     else if (restoreMore.current) { moreButton.current?.focus(); restoreMore.current = false }
   }, [editing, open])
+  const settingLocation = locationSettings !== undefined
+  useEffect(() => {
+    if (!settingLocation && restoreMore.current) { moreButton.current?.focus(); restoreMore.current = false }
+  }, [settingLocation])
   const next = draftName.trim()
   const changed = next !== name || draftNote.trim() !== (note ?? '')
   const stopEditing = (): void => { if (running.current) return; setProblem(''); restoreMore.current = true; setEditing(false) }
@@ -98,6 +105,7 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
   const choices: readonly Choice[] = [
     ...(remote ? [] : [{ value: 'show', label: 'Show in GeckIt', icon: 'display', ...(enabled ? {} : { disabled: true }) }]),
     { value: 'edit', label: 'Edit', icon: 'pencil' },
+    ...(canSetLocation ? [{ value: 'location', label: 'Location and language', icon: 'globe' }] : []),
     { value: 'delete', label: 'Delete', icon: 'trash', danger: true },
   ]
   const pick = (value: string): void => {
@@ -105,7 +113,12 @@ const ProfileRow = memo(function ProfileRow({ name, note, open, refresh, enabled
     setProblem('')
     if (value === 'show') signIn(name, moreButton.current)
     else if (value === 'edit') { setDraftName(name); setDraftNote(note ?? ''); setEditing(true) }
+    else if (value === 'location') onLocationSettings(name)
     else setAsking(true)
+  }
+  if (locationSettings !== undefined) {
+    const close = (): void => { restoreMore.current = true; onLocationSettings(undefined) }
+    return <li className="browser-profile asking editing"><BrowserLocationEditor name={name} open={open} settings={locationSettings} onClose={close} onSaved={async () => { await refresh(); close() }} /></li>
   }
   if (editing) {
     const nameId = `browser-profile-${name}-name`
@@ -153,15 +166,21 @@ export function BrowserProfiles({ testing, refresh, enabled, loading = false }: 
   const [problem, setProblem] = useState('')
   const [created, setCreated] = useState<Profile['name']>()
   const [signing, setSigning] = useState<Profile['name']>()
+  const [locationFor, setLocationFor] = useState<Profile['name'] | null>()
   const nameInput = useRef<HTMLInputElement>(null)
   const newButton = useRef<HTMLButtonElement>(null)
+  const defaultsButton = useRef<HTMLButtonElement>(null)
   const running = useRef(false)
   const restoreNew = useRef(false)
+  const restoreDefaults = useRef(false)
   const signInOpener = useRef<HTMLButtonElement | null>(null)
   useEffect(() => {
     if (making) nameInput.current?.focus()
     else if (restoreNew.current) { newButton.current?.focus(); restoreNew.current = false }
   }, [making])
+  useEffect(() => {
+    if (locationFor === undefined && restoreDefaults.current) { defaultsButton.current?.focus(); restoreDefaults.current = false }
+  }, [locationFor])
   const onFocused = useCallback((): void => setCreated(undefined), [])
   const onDeleted = useCallback((): void => newButton.current?.focus(), [])
   const onRenamed = useCallback((profile: Profile['name']): void => setCreated(profile), [])
@@ -212,6 +231,8 @@ export function BrowserProfiles({ testing, refresh, enabled, loading = false }: 
     }
   }
   const empty = testing.profiles.length === 0
+  const defaults = testing.locationDefaults
+  const closeDefaults = (): void => { restoreDefaults.current = true; setLocationFor((current) => current === null ? undefined : current) }
   return <section className="browser-profiles" aria-labelledby="browser-profiles-title">
     <header className="browser-profiles-header">
       <div className="browser-profiles-heading">
@@ -225,6 +246,11 @@ export function BrowserProfiles({ testing, refresh, enabled, loading = false }: 
       : download !== undefined ? <div className="browser-profiles-notice"><p>{download.phase === 'installing' ? 'Installing Camoufox without bundled fonts...' : <>Downloading Camoufox, {Math.round(download.received / 1e6)} of {Math.round(download.total / 1e6)} MB.</>}</p><div className="progress"><span style={{ width: `${download.total === 0 ? 0 : Math.round((download.received / download.total) * 100)}%` }} /></div></div>
       : testing.version === undefined ? <p className="browser-profiles-notice">Camoufox downloads on first use, about 150-180 MB. This font-free build uses the fonts installed on this computer.</p> : null}
     {testing.migrated ? <p className="browser-profiles-notice">Previous Chrome profiles need a new sign-in in Camoufox. Their original Chrome data is preserved.</p> : null}
+    {defaults === undefined ? null : locationFor === null ? <div className="browser-profiles-group"><BrowserLocationEditor name={null} open={false} settings={defaults} onClose={closeDefaults} onSaved={async () => { await refresh(); closeDefaults() }} /></div>
+      : <div className="browser-profiles-group browser-location-defaults-row">
+        <div className="browser-profiles-heading"><h4>Camoufox defaults</h4><p>{Object.keys(defaults.overrides).length > 0 ? 'Custom defaults' : 'Use system settings'}</p></div>
+        <button ref={defaultsButton} type="button" className="quiet" aria-label="Edit Camoufox defaults" onClick={() => setLocationFor(null)}>Edit defaults</button>
+      </div>}
     <div className="browser-profiles-group">
       {making ? <form className="browser-profiles-form" onSubmit={(event) => { event.preventDefault(); void create() }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() } }}>
         <label htmlFor="browser-profile-name">Profile name</label>
@@ -235,7 +261,7 @@ export function BrowserProfiles({ testing, refresh, enabled, loading = false }: 
         <div className="browser-profiles-form-actions browser-profiles-form-wide"><button type="button" className="quiet" disabled={creating} onClick={cancel}>Cancel</button><button type="submit" className="primary" disabled={!valid || creating}>{creating ? 'Creating...' : 'Create profile'}</button></div>
       </form> : null}
       {empty ? (making ? null : <p className="browser-profiles-empty">No browser profiles yet. Create one, then open it to sign in.</p>)
-        : <ul className="browser-profiles-list">{testing.profiles.map((one) => <ProfileRow key={one.name} {...one} refresh={refresh} enabled={enabled} signIn={signIn} focusOpen={created === one.name} onFocused={onFocused} onDeleted={onDeleted} onRenamed={onRenamed} />)}</ul>}
+        : <ul className="browser-profiles-list">{testing.profiles.map(({ locationSettings, ...one }) => <ProfileRow key={one.name} {...one} {...(locationFor === one.name && locationSettings !== undefined ? { locationSettings } : {})} canSetLocation={locationSettings !== undefined} onLocationSettings={setLocationFor} refresh={refresh} enabled={enabled} signIn={signIn} focusOpen={created === one.name} onFocused={onFocused} onDeleted={onDeleted} onRenamed={onRenamed} />)}</ul>}
     </div>
     {signing === undefined ? null : <LiveView name={signing} api={liveApi} {...(window.geckitRemoteComputer === undefined ? {} : { computer: window.geckitRemoteComputer.server.name, title: `geckit:${signing}` })} onClose={() => { setSigning(undefined); signInOpener.current?.focus() }} />}
   </section>

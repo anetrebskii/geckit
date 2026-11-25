@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, extname, join } from 'node:path'
-import type { TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
+import type { BrowserLocationOverrides, BrowserLocationSettings, TestBrowsersState, ViewFrame, ViewInput } from '../shared/api'
 import background from '../../extension/background.js?raw'
 import { browserFolder, findIn, profiles, serveAsks, type Reply } from './browser'
 import { signInLink, tabHandoffLink } from './live-view'
@@ -18,7 +18,8 @@ import { alive, camoufoxLibraries, camoufoxSupported, downloading, migrateChrome
 import { prepareLaunch } from './launch'
 import { MEDIA_FILE, mediaPrefs } from './launch-settings'
 import { HIDDEN_SCRIPT, PAINT_SCRIPT, type PictureJob } from './hidden-page'
-import { isServer, presentationOf, setPresentation } from './desktop-identity'
+import { identityFile, isServer, languageOf, parseIdentity, presentationNow, presentationOf, setPresentation } from './desktop-identity'
+import { preserveBrowserLanguage, readBrowserLocation, writeBrowserLocation } from './browser-location'
 import { acquireTestLock, browserConversation, browserStateFolder, conversationTestName, forgetTestAccount, saveTestAccount, testAccount, TEST_BROWSER_CLOSING, TEST_TAB_READ_ONLY, TestTabOwners } from './browser-lifecycle'
 
 export { profilesFolder, testingFolder, testingCamoufox, camoufoxHeadless, downloading } from './camoufox'
@@ -235,16 +236,22 @@ export async function testBrowser(name: string, folder: string = browserFolder()
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   const libraries = camoufoxLibraries(binary.path, root)
   const { firefox } = await import('playwright-core')
-  const launch = await prepareLaunch(binary.path, testingFolder(root), profilesFolder(root), name, (line) => process.stderr.write(`${line}\n`))
+  const location = { ...readBrowserLocation(testingFolder(root)), ...readBrowserLocation(dir) }
+  const launch = await prepareLaunch(binary.path, testingFolder(root), profilesFolder(root), name, (line) => process.stderr.write(`${line}\n`), location)
   process.once('exit', () => launch.virtual?.stop())
   let savedMedia: string | undefined
   try { savedMedia = readFileSync(join(dir, MEDIA_FILE), 'utf8') } catch { savedMedia = undefined }
   const prefs = { 'gfx.bundled-fonts.activate': 0, 'browser.link.open_newwindow': 3, 'browser.link.open_newwindow.disabled_in_fullscreen': false, ...mediaPrefs(savedMedia) }
+  const customLocale = location.language !== undefined || location.region !== undefined
+  const startupPrefs = customLocale ? { ...prefs, 'intl.regional_prefs.use_os_locales': true } : prefs
+  const appliedLanguage = launch.config['locale:all'] ?? launch.config['navigator.language'] ?? launch.config['locale:region']
+  preserveBrowserLanguage(dir, customLocale && typeof appliedLanguage === 'string')
   const context = await firefox.launchPersistentContext(dir, {
     executablePath: binary.path,
     headless: launch.headless,
     viewport: null,
-    env: { ...process.env, ...(libraries.length === 0 ? {} : { LD_LIBRARY_PATH: [...libraries, process.env['LD_LIBRARY_PATH'] ?? ''].filter((one) => one !== '').join(':') }), ...(launch.display === undefined ? {} : { DISPLAY: launch.display }), CAMOU_CONFIG_1: JSON.stringify(launch.config), CAMOU_PREFS_1: JSON.stringify(prefs) },
+    ...(location.geolocation === undefined ? {} : { geolocation: location.geolocation }),
+    env: { ...process.env, ...(libraries.length === 0 ? {} : { LD_LIBRARY_PATH: [...libraries, process.env['LD_LIBRARY_PATH'] ?? ''].filter((one) => one !== '').join(':') }), ...(launch.display === undefined ? {} : { DISPLAY: launch.display }), CAMOU_CONFIG_1: JSON.stringify(launch.config), CAMOU_PREFS_1: JSON.stringify(startupPrefs) },
     firefoxUserPrefs: prefs,
     timeout: 30_000,
   }).catch((error: unknown) => { launch.virtual?.stop(); throw error })
@@ -1060,13 +1067,48 @@ export function testBrowsersState(root?: string): TestBrowsersState {
   try { names = readdirSync(profilesFolder(root)).filter((one) => validTestName(one) && statSync(join(profilesFolder(root), one)).isDirectory()) } catch { names = [] }
   const camoufox = testingCamoufox(root)
   const fetching = downloading(root)
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const sharedOverrides = readBrowserLocation(testingFolder(root))
+  const server = isServer()
+  let desktopDefaults: BrowserLocationSettings['defaults'] = { timezone }
+  if (server && names.length > 0) {
+    let serverLocale = languageOf(process.env['LC_ALL'] || process.env['LANG'])
+    let serverTimezone = timezone
+    try {
+      const identity = parseIdentity(readFileSync(identityFile(testingFolder(root)), 'utf8'))
+      serverLocale = identity.language
+      serverTimezone = identity.timezone
+    } catch { /* Camoufox uses the host defaults until its first launch. */ }
+    const { language, region } = new Intl.Locale(serverLocale)
+    desktopDefaults = { timezone: serverTimezone, language, ...(region === undefined ? {} : { region }) }
+  }
   return {
     supported: camoufoxSupported(),
+    locationDefaults: { defaults: { timezone }, overrides: sharedOverrides },
     ...(migrated ? { migrated: true } : {}),
     ...(camoufox === undefined ? {} : { version: camoufox.version }),
     ...(fetching === undefined ? {} : { download: { received: fetching.received, total: fetching.total, phase: fetching.phase, ...(fetching.error === undefined ? {} : { error: fetching.error }) } }),
-    profiles: names.sort().map((name) => { const note = testAccount(name, join(root ?? homedir(), '.geckit', 'browser'))?.note; return { name, open: open.has(name), ...(note === undefined || note === '' ? {} : { note }) } }),
+    profiles: names.sort().map((name) => {
+      const note = testAccount(name, join(root ?? homedir(), '.geckit', 'browser'))?.note
+      const overrides = readBrowserLocation(join(profilesFolder(root), name))
+      const system = server && presentationNow(testingFolder(root), profilesFolder(root), name) === 'desktop' ? desktopDefaults : { timezone }
+      const defaults = { ...system, ...sharedOverrides }
+      return { name, open: open.has(name), ...(note === undefined || note === '' ? {} : { note }), locationSettings: { defaults, overrides } }
+    }),
   }
+}
+
+export function updateBrowserLocation(name: string | null, location: BrowserLocationOverrides, root?: string): void {
+  if (name === null) {
+    const directory = testingFolder(root)
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    writeBrowserLocation(directory, location)
+    return
+  }
+  if (!validTestName(name)) throw new Error('Choose a Camoufox profile.')
+  const directory = join(profilesFolder(root), name)
+  if (!existsSync(directory)) throw new Error(`There is no ${TEST_PREFIX}${name}.`)
+  writeBrowserLocation(directory, location)
 }
 
 /** On a Linux server, has a profile made before the desktop identity show it from its next start; sites see a new device. */

@@ -16787,6 +16787,40 @@ html.phone .live-view-picture {
 .browser-profiles-form-wide { grid-column: 2; }
 .browser-profiles-form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-block-start: 2px; }
 .browser-profiles-form-actions button { padding: 4px 12px; font-size: 12px; }
+.browser-location-editor { display: grid; gap: 14px; min-width: 0; padding: 14px; color: var(--text); background: var(--bg-sunken); border-radius: var(--radius); }
+.browser-location-heading { display: grid; gap: 3px; }
+.browser-location-heading h4 { margin: 0; font-size: 13px; }
+.browser-location-editor p { margin: 0; }
+.browser-location-editor .browser-profiles-hint { color: var(--text-dim); }
+.browser-location-defaults-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; }
+.browser-location-defaults-row h4 { margin: 0; font-size: 13px; }
+.browser-location-defaults-row button { font-size: 12px; }
+.browser-location-summary { margin: 0; font-size: 12px; }
+.browser-location-summary dt { color: var(--text-dim); }
+.browser-location-summary dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+.browser-location-fields { display: grid; gap: 8px; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.browser-location-fields legend { padding: 0 0 6px; font-size: 12px; font-weight: 600; }
+.browser-location-fields label { display: grid; gap: 4px; min-width: 0; font-size: 12px; }
+.browser-location-fields input, .browser-location-fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 28px; padding: 5px 8px; color: var(--text); background: var(--field); border: 1px solid var(--border-strong); border-radius: var(--radius); font: inherit; font-size: 12px; }
+.browser-location-fields input::placeholder { color: var(--text-dim); }
+.browser-location-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.browser-location-clear { justify-self: start; }
+.browser-location-map-group { display: grid; gap: 8px; }
+.browser-location-city { display: grid; gap: 4px; }
+.browser-location-viewport, .browser-location-map-loading { position: relative; overflow: hidden; background: var(--bg-raised); border: 1px solid var(--border-strong); border-radius: var(--radius); }
+.browser-location-map-loading { display: grid; place-items: center; aspect-ratio: 2; color: var(--text-dim); }
+.browser-location-map { display: block; width: 100%; aspect-ratio: 2; padding: 0; border: 0; background: none; cursor: crosshair; }
+.browser-location-map svg { display: block; width: 100%; }
+.browser-location-map:focus-visible { outline-offset: -3px; }
+.browser-location-land { fill: var(--fill-strong); stroke: var(--text-faint); stroke-width: .55; }
+.browser-location-pin { fill: var(--accent); stroke: var(--bg-raised); stroke-width: 2; }
+.browser-location-zoom { display: grid; position: absolute; inset-block-end: 6px; inset-inline-end: 6px; gap: 4px; }
+.browser-location-zoom button { width: 28px; height: 28px; padding: 0; color: var(--text); background: var(--bg-raised); border-color: var(--border-strong); }
+html.phone .browser-location-editor { padding: 14px 16px; }
+html.phone .browser-location-heading h4, html.phone .browser-location-cancel { display: none; }
+html.phone .browser-location-fields input, html.phone .browser-location-fields select, html.phone .browser-location-editor button { min-height: 44px; }
+html.phone .browser-location-zoom button { width: 44px; }
+html.phone .browser-location-fields input, html.phone .browser-location-fields select { font-size: 16px; }
 html.phone .browser-profiles-form { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 html.phone .browser-profiles-form label { text-align: start; }
 html.phone .browser-profiles-form-wide { grid-column: 1; }

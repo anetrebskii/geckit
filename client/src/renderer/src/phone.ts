@@ -434,6 +434,7 @@ export function installGeckit(first: Link | undefined, boot: Boot, mac: string):
       openTest: (name) => call('browser.openTest', name),
       deleteTest: (name) => call('browser.deleteTest', name),
       updateTest: (name, next, note) => call('browser.updateTest', name, next, note),
+      locationSettings: (name, location) => call('browser.locationSettings', name, location),
       account: (name, note) => call('browser.account', name, note),
       viewStart: (name, url, token) => call('browser.viewStart', name, url, token),
       viewFrame: (name) => call('browser.viewFrame', name),

@@ -99,7 +99,7 @@ describe('Chrome profile preservation', () => {
     writeFileSync(join(old, 'Cookies'), 'keep old encrypted Chrome data')
     saveTestAccount('work', 'GitHub as work', join(root, '.geckit', 'browser'))
     expect(migrateChromeProfiles(root)).toBe(true)
-    expect(testBrowsersState(root).profiles).toEqual([{ name: 'work', note: 'GitHub as work', open: false }])
+    expect(testBrowsersState(root).profiles).toMatchObject([{ name: 'work', note: 'GitHub as work', open: false }])
     expect(readdirSync(join(profilesFolder(root), 'work'))).toEqual([])
     updateTestProfile('work', 'renamed', 'GitHub as work', root)
     expect(testBrowsersState(root).profiles.map((one) => one.name)).toEqual(['renamed'])

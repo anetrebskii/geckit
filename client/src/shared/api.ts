@@ -902,15 +902,28 @@ export type ViewInput =
 /** One picture of the sign-in tab, a JPEG in base64, with the page it shows. */
 export interface ViewFrame { readonly jpeg: string; readonly width: number; readonly height: number; readonly url: string; readonly title: string; readonly caret?: { readonly x: number; readonly y: number; readonly height: number; readonly color?: string }; readonly pointer?: { readonly x: number; readonly y: number }; readonly fields?: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[]; readonly focusedField?: NonNullable<ViewFrame['fields']>[number] }
 
+export interface BrowserCoordinates { readonly latitude: number; readonly longitude: number }
+export interface BrowserLocationOverrides {
+  readonly geolocation?: BrowserCoordinates
+  readonly language?: string
+  readonly region?: string
+  readonly timezone?: string
+}
+export interface BrowserLocationSettings {
+  readonly overrides: BrowserLocationOverrides
+  readonly defaults: BrowserLocationOverrides
+}
+
 /** Test browsers: Camoufox driven by GeckIt, each profile kept by name. */
 export interface TestBrowsersState {
   readonly supported: boolean
   /** The Camoufox version a test browser starts, when there is one. */
   readonly version?: string
   readonly migrated?: boolean
+  readonly locationDefaults?: BrowserLocationSettings
   readonly download?: { readonly received: number; readonly total: number; readonly phase?: 'downloading' | 'installing'; readonly error?: string }
   /** note: which account a profile made for one account is signed in to. */
-  readonly profiles: readonly { readonly name: string; readonly open: boolean; readonly note?: string }[]
+  readonly profiles: readonly { readonly name: string; readonly open: boolean; readonly note?: string; readonly locationSettings?: BrowserLocationSettings }[]
 }
 
 /** The model dictation hears with on this computer, and how far its one download has come. */

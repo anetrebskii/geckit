@@ -354,3 +354,72 @@ The existing **Open browser**, **Show in GeckIt** and CLI `open --profile geckit
 | The last tab closes | Camoufox shuts down quietly. The next open starts the same profile with its saved sign-ins. |
 
 A private handoff of a conversation tab keeps its exclusive sign-in behavior and returns the existing tab to the chat when the person finishes. Repeated **Open browser** focuses the person's existing native tab. If a new open arrives during shutdown, GeckIt starts the profile again once the closing driver releases it. The browser reports launch failures in the existing error surface. The app uses its existing opening indicator, focus behavior and controls. No extra permissions or lifecycle notifications are needed, and the approved Done and close actions are the causes of tab removal. This lifecycle applies to Camoufox profiles managed by GeckIt. Personal Chrome has its own extension workflow.
+
+## Camoufox location and language (2026-11-25)
+
+### 1. Journey
+
+From Settings > Web Browser on desktop or Browsers on phone, open a profile's More menu and choose **Location and language**. Review its saved settings and browser defaults, then set only the values needed. Choose a point on the map, find a city on the map, or enter exact coordinates. Save, then reopen Camoufox when ready to use the new values. Sign-ins and open tabs stay available while editing. A site reads the coordinates after it gets location permission.
+
+### 2. Surfaces
+
+The desktop uses the profile's inline editor. The phone uses its existing full sheet. The location map sits above the latitude and longitude fields. Language, Region and Time zone appear below the location group. The profile's host stores the settings and provides the time zone fallback. Older hosts omit the action until they support the settings.
+
+### 3. States
+
+| State | What appears | Next action |
+|---|---|---|
+| Browser defaults | “Browser default” in blank fields, with the fallback value where available | Enter a value, choose a point, or close |
+| Edited | New values and map pin, with Save available when valid | Save or Cancel |
+| Invalid coordinates | “Enter latitude from −90 to 90 and longitude from −180 to 180.” | Correct both fields or clear the location |
+| Open profile | “Changes apply the next time this profile starts.” | Save and reopen after closing the browser |
+| Saving | “Saving…” and disabled controls | Wait for the result |
+| Save failed | Local error, with the draft retained | Correct the value or retry |
+
+### 4. Transitions
+
+| From | Event | To | What appears |
+|---|---|---|---|
+| Profile row | Choose Location and language | Editor | Saved values or defaults |
+| Editor | Tap map, choose city or edit coordinates | Edited | Coordinate fields and marker update immediately |
+| Edited | Clear location or empty a locale field | Edited | That override shows “Browser default” |
+| Edited | Save succeeds | Profile row | The editor closes and the saved values appear on reopening it |
+| Edited | Save fails | Editor | Local error with the same draft |
+| Editor | Cancel, Back or Escape | Profile row | Draft is discarded |
+| Browser closed | Open profile | Browser open | Camoufox starts with the saved settings |
+
+### 5. What stays silent
+
+There is no toast, location permission request in Settings, or notification on reopening the browser.
+
+### 6. Limits
+
+Coordinates use the Geolocation API's latitude and longitude bounds. The browser accepts language subtags, region codes and named time zones. The offline map is a world map with reference cities. Coordinate fields are available for positions beyond the map's visual precision.
+
+### 7. Wording
+
+“Location and language”, “Browser default”, “Find a city”, “Latitude”, “Longitude”, “Clear location”, “Language”, “Region”, “Time zone”, “Changes apply the next time this profile starts.” and “Your public IP stays the same.”
+
+### 8. Edge cases
+
+An empty field restores the browser default. Both coordinate fields must be set or both left empty. Cancel preserves the saved values. A save can be retried after a host disconnect. The bundled map requires no network and receives no real location. A saved location applies to tabs in the same profile and goes with the profile on rename or backup.
+
+### 9. What is deliberately absent
+
+Proxy, IP, VPN and account changes are outside this profile editor. Changing the map point does not choose a region, language or time zone automatically.
+
+### 10. Decision and accessibility
+
+Use separate profile settings so a change applies consistently to the profile's tabs. Map picks are direct and immediate. City and coordinate fields offer keyboard equivalents, and clearing overrides is reversible before saving. A running browser is never closed by this editor. Site permissions stay with existing browser controls.
+
+### 11. Requirements
+
+The requested defaults, editable location, language, region and time zone are covered above. Desktop and phone use the same fields. Verify that the browser reports the selected values and that the renderer preserves and clears values through the normal save path.
+
+Map data: [Natural Earth v5.1.2](https://github.com/nvkelso/natural-earth-vector/tree/v5.1.2/geojson), [public domain](https://www.naturalearthdata.com/about/terms-of-use/).
+
+### Shared Camoufox defaults
+
+In **Settings > Browsers**, choose **Camoufox defaults** to review or change the starting settings for all Camoufox profiles on that computer. **Use system settings** shows the existing system and browser defaults. **Set custom defaults** opens the same map, coordinate and locale controls used by a single profile. Blank fields use their usual system and browser defaults. Save applies the selection at each profile's next start. Cancel, Back and Escape discard the draft.
+
+A profile can override each field separately. Editing a profile shows inherited values in blank fields and the inherited location on the map. For location, latitude and longitude are inherited or overridden together. On older hosts without shared defaults, the profile editor keeps its existing behavior. Shared defaults can be set before a profile is created, and apply to already-created profiles and future ones. Switching back to **Use system settings** clears shared values when saved. Values stay in the draft if the user switches back to **Set custom defaults** before saving.

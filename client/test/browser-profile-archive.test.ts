@@ -41,7 +41,7 @@ describe('profile archive round trip', () => {
     expect(statSync(join(restored, 'Default', 'nested', 'empty')).size).toBe(0)
     expect(existsSync(join(restored, 'Default', 'Cache'))).toBe(false)
     expect(testAccount('restored', bridge(destination))?.note).toBe('GitHub as alex')
-    expect(testBrowsersState(destination).profiles).toEqual([{ name: 'restored', note: 'GitHub as alex', open: false }])
+    expect(testBrowsersState(destination).profiles).toMatchObject([{ name: 'restored', note: 'GitHub as alex', open: false }])
   })
 
   it('supports an empty legacy profile without inventing an account note', async () => {

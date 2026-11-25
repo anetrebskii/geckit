@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { promisify } from 'node:util'
 import { afterEach, expect, it, vi } from 'vitest'
-import { makeTestAccount, profilesFolder, serveTestLaunches, updateTestProfile } from '../src/cli/testing'
+import { makeTestAccount, profilesFolder, serveTestLaunches, updateBrowserLocation, updateTestProfile } from '../src/cli/testing'
 import { exportTestProfile, importTestProfile } from '../src/cli/profile-archive'
 import { registerBrowserConversation } from '../src/cli/browser-lifecycle'
 import { openTest } from '../src/cli/browser'
@@ -43,6 +43,51 @@ async function ask(path: string, request: object, fail = true): Promise<Reply> {
 }
 async function stop(path: string): Promise<void> { await ask(path, { cmd: 'quit' }); await until(() => cards(path).length === 0); child = undefined }
 afterEach(async () => { child?.kill('SIGTERM'); child = undefined; if (server !== undefined) await new Promise<void>((done) => server?.close(() => done())); server = undefined; for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }) })
+
+it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('reports shared and profile location settings in real Camoufox and restores system defaults', async () => {
+  server = createServer((request, response) => {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
+    response.end(`<!doctype html><title>Location check</title><main>${request.headers['accept-language'] ?? ''}</main>`)
+  })
+  await new Promise<void>((done) => server?.listen(0, '127.0.0.1', done))
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('No local server address.')
+  const path = root()
+  const geolocation = { latitude: 40.7128, longitude: -74.006 }
+  const url = `http://127.0.0.1:${address.port}`
+  const localeCode = '({language:navigator.language,languages:navigator.languages,locale:new Intl.DateTimeFormat().resolvedOptions().locale,timezone:new Intl.DateTimeFormat().resolvedOptions().timeZone,header:document.querySelector("main").textContent})'
+  makeTestAccount('regional', '', path, true)
+  mkdirSync(join(profilesFolder(path), 'regional'), { recursive: true })
+  writeFileSync(join(profilesFolder(path), 'regional', 'prefs.js'), 'user_pref("intl.accept_languages", "fr, en");\n')
+  await start(path, 'regional')
+  const initialTab = (await ask(path, { cmd: 'open', url })).result?.id
+  const systemDefaults = (await ask(path, { cmd: 'eval', tab: initialTab, code: localeCode })).result?.value
+  expect(systemDefaults).toMatchObject({ language: 'fr' })
+  await stop(path)
+  updateBrowserLocation(null, { geolocation, language: 'es', region: 'US', timezone: 'Pacific/Honolulu' }, path)
+  updateBrowserLocation('regional', { language: 'en' }, path)
+  await start(path, 'regional')
+  const { result } = await ask(path, { cmd: 'open', url })
+  const tab = result?.id
+  expect(tab).toBeTypeOf('number')
+  const locale = await ask(path, { cmd: 'eval', tab, code: localeCode })
+  expect(locale.result?.value).toMatchObject({ language: 'en-US', languages: expect.arrayContaining(['en-US']), locale: 'en-US', timezone: 'Pacific/Honolulu', header: 'en-US,en;q=0.5' })
+  await ask(path, { cmd: 'permission', tab, kind: 'geolocation', setting: 'allow' })
+  const location = await ask(path, { cmd: 'eval', tab, code: 'new Promise(resolve => navigator.geolocation.getCurrentPosition(({coords}) => resolve({latitude:coords.latitude,longitude:coords.longitude}), error => resolve({error:error.message}), {timeout:4000}))' })
+  expect(location.result?.value).toMatchObject(geolocation)
+  updateBrowserLocation('regional', {}, path)
+  expect((await ask(path, { cmd: 'eval', tab, code: localeCode })).result?.value).toEqual(locale.result?.value)
+  await stop(path)
+  await start(path, 'regional')
+  const reopened = (await ask(path, { cmd: 'open', url })).result?.id
+  expect((await ask(path, { cmd: 'eval', tab: reopened, code: localeCode })).result?.value).toMatchObject({ language: 'es-US', locale: 'es-US', timezone: 'Pacific/Honolulu', header: 'es-US,es;q=0.5' })
+  await stop(path)
+  updateBrowserLocation(null, {}, path)
+  await start(path, 'regional')
+  const reset = (await ask(path, { cmd: 'open', url })).result?.id
+  expect((await ask(path, { cmd: 'eval', tab: reset, code: localeCode })).result?.value).toEqual(systemDefaults)
+  await stop(path)
+}, 45_000)
 
 it.skipIf(process.env['GECKIT_CAMOUFOX_INTEGRATION'] !== '1')('runs persistent profiles, live sign-in, rename, archive restore and conversation ownership in real Camoufox', async () => {
   server = createServer((request, response) => {

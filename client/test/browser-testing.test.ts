@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { pickProfile } from '../src/cli/browser'
 import { HIDDEN_SCRIPT } from '../src/cli/hidden-page'
-import { deleteTestProfile, extensionSource, makeTestAccount, nearScript, pageScript, scrubSecrets, wheelStep, updateTestProfile, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
+import { deleteTestProfile, extensionSource, makeTestAccount, nearScript, pageScript, scrubSecrets, wheelStep, updateBrowserLocation, updateTestProfile, serveTestLaunches, testBrowsersState, validTestName } from '../src/cli/testing'
 
 describe('test browsers', () => {
   it('replaces filled secret values in what eval returns', () => {
@@ -71,7 +71,22 @@ describe('test browsers', () => {
   it('makes a profile without a description', () => {
     const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
     makeTestAccount('plain', '  ', root, true)
-    expect(testBrowsersState(root).profiles).toEqual([{ name: 'plain', open: false }])
+    expect(testBrowsersState(root).profiles).toMatchObject([{ name: 'plain', open: false, locationSettings: { overrides: {} } }])
+  })
+
+  it('shows shared settings as defaults for a new profile and preserves its overrides when the defaults are cleared', () => {
+    const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
+    const defaults = { language: 'en', region: 'GB', timezone: 'Europe/London', geolocation: { latitude: 51.5072, longitude: -0.1276 } }
+    updateBrowserLocation(null, defaults, root)
+    expect(testBrowsersState(root).locationDefaults?.overrides).toEqual(defaults)
+    makeTestAccount('plain', '', root, true)
+    updateBrowserLocation('plain', { language: 'fr' }, root)
+    expect(testBrowsersState(root).profiles).toMatchObject([{ locationSettings: { defaults, overrides: { language: 'fr' } } }])
+    updateBrowserLocation(null, {}, root)
+    const reset = testBrowsersState(root)
+    expect(reset.locationDefaults?.overrides).toEqual({})
+    expect(reset.profiles[0]?.locationSettings?.defaults.geolocation).toBeUndefined()
+    expect(reset.profiles[0]?.locationSettings?.overrides).toEqual({ language: 'fr' })
   })
 
   it('renames a profile and changes its description, keeping its files', () => {
@@ -79,20 +94,23 @@ describe('test browsers', () => {
     makeTestAccount('old', 'GitHub as alex', root, true)
     writeFileSync(join(root, '.geckit', 'camoufox', 'profiles', 'old', 'Cookies'), 'kept')
     makeTestAccount('taken', '', root, true)
+    expect(() => updateBrowserLocation('old', { geolocation: { latitude: 91, longitude: 0 } }, root)).toThrow('Enter latitude')
+    updateBrowserLocation('old', { language: 'es', region: 'us', timezone: 'America/New_York' }, root)
     updateTestProfile('old', 'old', 'GitHub as work', root)
     expect(testBrowsersState(root).profiles.find((one) => one.name === 'old')?.note).toBe('GitHub as work')
     expect(() => updateTestProfile('old', 'taken', '', root)).toThrow('already exists')
     updateTestProfile('old', 'github-work', 'GitHub as work', root)
-    expect(testBrowsersState(root).profiles).toEqual([{ name: 'github-work', open: false, note: 'GitHub as work' }, { name: 'taken', open: false }])
+    expect(testBrowsersState(root).profiles).toMatchObject([{ name: 'github-work', open: false, note: 'GitHub as work' }, { name: 'taken', open: false }])
+    expect(testBrowsersState(root).profiles.map((profile) => profile.locationSettings?.overrides)).toEqual([{ language: 'es', region: 'US', timezone: 'America/New_York' }, {}])
     expect(readFileSync(join(root, '.geckit', 'camoufox', 'profiles', 'github-work', 'Cookies'), 'utf8')).toBe('kept')
   })
 
   it('lists kept profiles and deletes one with its folder', () => {
     const root = mkdtempSync(join(tmpdir(), 'geckit-testing-'))
     for (const one of ['store', 'staging', 'Not Valid']) mkdirSync(join(root, '.geckit', 'camoufox', 'profiles', one), { recursive: true })
-    expect(testBrowsersState(root).profiles).toEqual([{ name: 'staging', open: false }, { name: 'store', open: false }])
+    expect(testBrowsersState(root).profiles).toMatchObject([{ name: 'staging', open: false }, { name: 'store', open: false }])
     deleteTestProfile('store', root)
-    expect(testBrowsersState(root).profiles).toEqual([{ name: 'staging', open: false }])
+    expect(testBrowsersState(root).profiles).toMatchObject([{ name: 'staging', open: false }])
   })
 
   it('starts one driver per launch file, outside the conversation that left it', async () => {
