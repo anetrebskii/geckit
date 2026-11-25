@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeckIt - Tags on tasks</title>
+<!-- The app's own stylesheet; only what tags add is written below. The UX is docs/ux/task-tags.md. -->
+<link rel="stylesheet" href="../../client/src/renderer/src/styles.css">
+<style>
+  body { margin: 0; background: var(--bg-sunken); color: var(--text); font-size: 13px; }
+  .proto { max-width: 1240px; margin: 0 auto; padding: 24px 24px 80px; display: flex; flex-direction: column; gap: 28px; }
+  .proto-top { display: flex; align-items: center; gap: 12px; }
+  .proto-top h1 { margin: 0; font-size: 17px; }
+  .proto-top p { margin: 0; color: var(--text-faint); }
+  .proto h2 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+  .proto .hint { margin: 0 0 10px; color: var(--text-faint); font-size: 12px; }
+  .win { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+  .win-bar { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+  .win-bar .where { font-weight: 600; }
+  .win .board { height: 470px; display: flex; flex-direction: column; }
+
+  /* New: a tag wherever a task is shown. Neutral chip; the colour is only in its dot. */
+  .tag.user-tag { max-width: 120px; gap: 4px; }
+  .tag.user-tag .tag-name { overflow: hidden; text-overflow: ellipsis; }
+  .tag-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tint); }
+  .tag.more { color: var(--text-faint); }
+
+  /* New: the tag picker, a menu with a field over it. Each row: the tag, which checks it, and its "...". */
+  .menu.tag-picker { width: 270px; }
+  .menu.tag-picker .menu-search { margin-bottom: 4px; }
+  .tag-line { display: flex; align-items: center; border-radius: 5px; }
+  .tag-line:hover, .tag-line.at { background: var(--bg-hover); }
+  .tag-line .menu-item { flex: 1; min-width: 0; display: grid; grid-template-columns: 14px 8px minmax(0, 1fr); gap: 8px; background: none !important; }
+  .tag-line .mark { display: flex; color: var(--accent); }
+  .tag-line .tag-dot { width: 8px; height: 8px; }
+  .tag-line .label { max-width: none !important; overflow: hidden; text-overflow: ellipsis; }
+  .tag-line .row-more { flex: none; width: 24px; height: 24px; margin-right: 3px; opacity: 0; }
+  .tag-line:hover .row-more, .tag-line:focus-within .row-more, .tag-line .row-more.open { opacity: 1; }
+  .tag-line.editing { display: block; padding: 3px 4px; background: none; }
+  .tag-line.editing input { width: 100%; padding: 5px 7px; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--accent); border-radius: var(--radius); }
+  .tag-line .error { padding: 4px 3px 2px; color: var(--danger); font-size: 12px; }
+  .tag-create { display: grid !important; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; color: var(--text-dim); }
+  .tag-create .mark { color: var(--text-faint); }
+  .tag-create.at { background: var(--bg-hover); }
+  .menu-divider-line { height: 1px; margin: 4px 6px; background: var(--border); }
+  .menu-item .check-col { display: inline-flex; width: 14px; color: var(--accent); }
+  .menu-item .tag-dot { width: 8px; height: 8px; }
+  .swatches { display: grid; grid-template-columns: repeat(4, 22px); gap: 8px; padding: 6px 9px 8px; }
+  .swatch { width: 22px; height: 22px; border-radius: 50%; background: var(--tint); }
+  .swatch.on { box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 3.5px var(--tint); }
+
+  /* The conversation: head, transcript and the details panel on the right. */
+  .talk { display: flex; height: 470px; }
+  .talk-main { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+  .proto-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .proto-head .title { font-weight: 600; font-size: 13px; }
+  .head-tags-button { display: inline-flex; gap: 4px; align-items: center; padding: 0; border-radius: 5px; }
+  .head-tags-button:hover .tag { border-color: var(--border-strong); color: var(--text); }
+  .proto-body { flex: 1; padding: 18px 22px; color: var(--text-dim); }
+  .icon-button.inspector-toggle.on { color: var(--accent); background: var(--accent-soft); }
+  .details-tags { padding: 14px 16px 12px; border-bottom: 1px solid var(--border); }
+  .details-label { margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+  .details-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .details-chips .tag.user-tag { max-width: 100%; padding-right: 2px; font-size: 12px; line-height: 20px; }
+  .chip-remove { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--text-faint); border-radius: 3px; }
+  .chip-remove:hover { color: var(--text); background: var(--bg-hover); }
+  .add-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; font-size: 12px; line-height: 20px; color: var(--text-dim); border: 1px dashed var(--border-strong); border-radius: 4px; }
+  .add-tag:hover { color: var(--text); border-color: var(--text-faint); }
+  .check-items { display: flex; flex-direction: column; gap: 2px; padding: 0 12px 12px; }
+  .check-item { display: flex; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 6px; }
+  .check-item.now { background: var(--accent-soft); font-weight: 600; }
+  .check-box { flex: none; width: 15px; height: 15px; border: 1.5px solid var(--border-strong); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--accent-text); }
+  .check-item.ticked .check-box { background: var(--accent); border-color: var(--accent); }
+  .check-item.ticked span:last-child { color: var(--text-faint); }
+
+  /* The phone, drawn at 390 wide with the sheet inside its frame. */
+  .phones { display: flex; gap: 28px; flex-wrap: wrap; }
+  .phone-frame { position: relative; width: 390px; height: 720px; overflow: hidden; border: 1px solid var(--border); border-radius: 28px; background: var(--bg-sunken); --sheet: var(--bg-sunken); --separator: var(--border); --fill-strong: var(--border-strong); --top: 0px; --bottom: 16px; font-size: 15px; }
+  .phone-frame .phone-title { padding: 52px 18px 8px; font-size: 28px; font-weight: 700; }
+  .phone-frame .phone-list { display: flex; flex-direction: column; gap: 8px; padding: 0 14px; }
+  .phone-frame .board-card { content-visibility: visible; }
+  .phone-frame .sheet, .phone-frame .sheet-scrim { position: absolute; }
+  .phone-frame .sheet-option { font-size: 16px; }
+  .phone-frame .sheet-row { position: relative; display: flex; align-items: center; }
+  .phone-frame .sheet-row + .sheet-row::before { position: absolute; top: 0; inset-inline: 16px 0; height: 0.5px; content: ''; background: var(--separator); }
+  .phone-frame .sheet-row .sheet-option { flex: 1; min-width: 0; }
+  .phone-frame .sheet-row .sheet-option::before { display: none; }
+  .phone-frame .sheet-row .row-more { flex: none; width: 44px; height: 44px; color: var(--text-faint); }
+  .phone-frame .opt { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .phone-frame .opt .tag-dot { width: 10px; height: 10px; }
+  .phone-frame .sheet-field input { font-size: 16px; }
+  .info-group { margin: 0 14px; background: var(--bg-raised); border-radius: 12px; overflow: hidden; }
+  .info-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 48px; padding: 0 14px; font-size: 16px; text-align: left; }
+  .info-row + .info-row { border-top: 0.5px solid var(--border); }
+  .info-row .value { display: flex; gap: 4px; align-items: center; color: var(--text-faint); min-width: 0; overflow: hidden; }
+
+  .confirm-wrap { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; background: var(--scrim); }
+  .phone-frame .confirm-wrap { position: absolute; }
+  .confirm-wrap h3 { margin: 0 0 8px; font-size: 15px; }
+  .confirm-wrap p { margin: 0; color: var(--text-dim); }
+  .board-empty .quiet { margin-left: 6px; }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="proto">
+  <div class="proto-top">
+    <div>
+      <h1>Tags on tasks</h1>
+      <p>Prototype for docs/ux/task-tags.md. Everything is live: right-click a card, use Filters, use the details panel, press the phone's Tags row.</p>
+    </div>
+    <span class="spacer"></span>
+    <button type="button" class="quiet" id="theme">Dark</button>
+    <button type="button" class="quiet" id="reset">Start empty</button>
+  </div>
+
+  <section>
+    <h2>Board</h2>
+    <p class="hint">Right-click a card, then Tags. Type to find or create a tag. Point at a tag for its "..." with Rename, Colour and Delete. Cmd+click picks several cards; the picker then applies to all, with a dash where they differ.</p>
+    <div class="win">
+      <div class="win-bar">
+        <span class="where">Tasks</span>
+        <span class="spacer"></span>
+        <button type="button" class="icon-button task-filters board-view-options" id="filters" aria-label="Filters" aria-haspopup="menu">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 4h7M12 4h2M2 12h3M8 12h6"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="6.5" cy="12" r="1.5"/></svg>
+          <span class="board-view-dot" aria-hidden="true" id="filters-dot" hidden></span>
+        </button>
+      </div>
+      <div class="board"><div id="board-empty"></div><div class="board-columns" id="columns"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Open conversation, details panel</h2>
+    <p class="hint">The conversation last clicked on the board. The panel on the right, opened by the sidebar button in the head, has Tags above the checklist: remove with x, add with Add tag. The same picker manages tags here.</p>
+    <div class="win talk" id="talk"></div>
+  </section>
+
+  <section>
+    <h2>Phone</h2>
+    <p class="hint">Tasks with tags on their rows; the conversation's info with a Tags row that opens the picker as a sheet. Each tag's "..." renames, recolours or deletes it.</p>
+    <div class="phones">
+      <div class="phone-frame"><div class="phone-title">Tasks</div><div class="phone-list" id="phone-list"></div></div>
+      <div class="phone-frame" id="phone-info"></div>
+    </div>
+  </section>
+</div>
+
+<div id="layer"></div>
+
+<script>
+const CHECK = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2l2.3 2.3 4.7-5"/></svg>'
+const DASH = '<svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6h6"/></svg>'
+const PLUS = '<svg width="12" height="12" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 2.5v7M2.5 6h7"/></svg>'
+const CROSS = '<svg width="9" height="9" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5"/></svg>'
+const MORE = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 2l3 3-3 3"/></svg>'
+const DOTS = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/><circle cx="11" cy="7" r="1.2"/></svg>'
+const SIDEBAR = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M10 2.5v11"/></svg>'
+const MAX = 32, SHOWN = 3
+
+const START = {
+  tags: [
+    { id: 't1', name: 'release', color: 1, used: 5 },
+    { id: 't2', name: 'client', color: 4, used: 4 },
+    { id: 't3', name: 'bug', color: 6, used: 3 },
+    { id: 't4', name: 'docs', color: 5, used: 2 },
+    { id: 't5', name: 'later', color: 7, used: 1 },
+  ],
+  cards: [
+    { id: 'c1', col: 0, title: 'Build the sidebar', project: 'geckit', color: 0, says: 'Working', tone: 'said-working', tags: ['t1'] },
+    { id: 'c2', col: 0, title: 'Which redirect should staging use after sign-in?', project: 'site', color: 2, says: 'Asks to run a command', tone: 'said-asks', asks: true, tags: ['t2', 't1'] },
+    { id: 'c3', col: 0, title: 'Fix login redirect on staging', project: 'site', color: 2, says: 'Working', tone: 'said-working', tags: ['t3', 't1', 't2', 't5', 't4'] },
+    { id: 'c4', col: 1, title: 'Write the changelog for 1.316', project: 'geckit', color: 0, says: '', tags: ['t1', 't4'], work: 'OPS-12' },
+    { id: 'c5', col: 1, title: 'Answer the pricing email', project: 'notula', color: 4, says: '', tags: ['t2'] },
+    { id: 'c6', col: 2, title: 'Fix the board scroll', project: 'geckit', color: 0, says: '', tags: [] },
+    { id: 'c7', col: 2, title: 'Update README screenshots', project: 'geckit', color: 0, says: '', tags: ['t4', 't3'] },
+  ],
+}
+let state = structuredClone(START)
+let filter = []
+let picked = new Set()
+let openCard = 'c3'
+let panelShown = true
+let pickerAt
+const COLUMNS = ['In progress', 'In review', 'Done']
+
+const esc = (text) => text.replace(/[&<>"]/g, (one) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[one])
+const tagOf = (id) => state.tags.find((one) => one.id === id)
+const count = (id) => state.cards.filter((card) => card.tags.includes(id)).length
+const tint = (color) => `--tint: var(--project-${color})`
+const chip = (tag) => `<span class="tag user-tag" style="${tint(tag.color)}" title="${esc(tag.name)}"><span class="tag-dot"></span><span class="tag-name">${esc(tag.name)}</span></span>`
+function chips(card) {
+  const tags = card.tags.map(tagOf).filter(Boolean)
+  const rest = tags.slice(SHOWN)
+  return tags.slice(0, SHOWN).map(chip).join('') + (rest.length === 0 ? '' : `<span class="tag more" title="${esc(rest.map((one) => one.name).join('\n'))}">+${rest.length}</span>`)
+}
+const matches = (card) => filter.length === 0 || (filter.includes('none') ? card.tags.length === 0 : card.tags.some((id) => filter.includes(id)))
+const current = () => state.cards.find((one) => one.id === openCard)
+
+function cardHtml(card, phone = false) {
+  const classes = ['board-card', card.asks ? 'waits asks' : '', picked.has(card.id) ? 'picked' : '', !phone && openCard === card.id ? 'on' : ''].join(' ')
+  return `<div class="${classes}" data-card="${card.id}" role="button" tabindex="0">
+    <div class="board-card-head"><span class="board-card-title">${esc(card.title)}</span><span class="changed">2h</span></div>
+    <div class="board-card-foot"><span><span class="tinted" style="${tint(card.color)}">${card.project}</span></span>${card.work ? `<button type="button" class="tag work">${card.work}</button>` : ''}${chips(card)}<span class="spacer"></span></div>
+    ${card.says ? `<div class="board-card-state"><span class="state-said ${card.tone}"><span class="state-dot"></span>${card.says}</span></div>` : ''}
+  </div>`
+}
+
+function render() {
+  const shown = state.cards.filter(matches)
+  document.getElementById('columns').innerHTML = COLUMNS.map((title, at) => {
+    const rows = shown.filter((card) => card.col === at)
+    return `<div class="board-column"><div class="board-column-head">${title}<span class="spacer"></span><span class="count">${rows.length}</span></div><div class="board-cards">${rows.map((card) => cardHtml(card)).join('')}</div></div>`
+  }).join('')
+  document.getElementById('board-empty').innerHTML = shown.length === 0 ? '<div class="board-empty">No tasks match these filters <button type="button" class="quiet" data-clear>Clear filters</button></div>' : ''
+  document.getElementById('filters-dot').hidden = filter.length === 0
+
+  const card = current()
+  const tags = card.tags.map(tagOf).filter(Boolean)
+  document.getElementById('talk').innerHTML = `<div class="talk-main">
+      <div class="proto-head">
+        <button type="button" class="title">${esc(card.title)}</button>
+        <span class="tinted" style="font-size:12px;${tint(card.color)}">${card.project}</span>
+        ${tags.length === 0 ? '' : `<button type="button" class="head-tags-button" data-open-picker aria-label="Tags: ${esc(tags.map((one) => one.name).join(', '))}">${chips(card)}</button>`}
+        <span class="spacer"></span>
+        <button type="button" class="icon-button inspector-toggle${panelShown ? ' on' : ''}" data-toggle-panel title="${panelShown ? 'Hide details' : 'Show details'}" aria-label="Details" aria-pressed="${panelShown}">${SIDEBAR}</button>
+      </div>
+      <div class="proto-body">The conversation.</div>
+    </div>
+    ${panelShown ? `<aside class="task-checklist-panel" aria-label="Details">
+      <section class="details-tags" aria-label="Tags">
+        <div class="details-label">Tags</div>
+        <div class="details-chips">
+          ${tags.map((tag) => `<span class="tag user-tag" style="${tint(tag.color)}"><span class="tag-dot"></span><span class="tag-name">${esc(tag.name)}</span><button type="button" class="chip-remove" data-remove="${tag.id}" aria-label="Remove ${esc(tag.name)}" title="Remove ${esc(tag.name)}">${CROSS}</button></span>`).join('')}
+          <button type="button" class="add-tag" data-open-picker>${PLUS}Add tag</button>
+        </div>
+      </section>
+      <header class="task-checklist-panel-head">
+        <div class="task-checklist-panel-title"><h3>Checklist</h3><span>2 of 4 done</span></div>
+        <button type="button" class="icon-button" aria-label="Checklist actions" title="More">${DOTS}</button>
+      </header>
+      <div class="check-items">
+        <div class="check-item ticked"><span class="check-box">${CHECK}</span><span>Reproduce the redirect</span></div>
+        <div class="check-item ticked"><span class="check-box">${CHECK}</span><span>Fix the callback URL</span></div>
+        <div class="check-item now"><span class="check-box"></span><span>Tests pass</span></div>
+        <div class="check-item"><span class="check-box"></span><span>Alex approves</span></div>
+      </div>
+    </aside>` : ''}`
+
+  document.getElementById('phone-list').innerHTML = state.cards.filter((one) => one.col === 0).map((one) => cardHtml(one, true)).join('')
+  if (!document.querySelector('#phone-info .sheet')) renderPhone()
+}
+
+/* ---- What a set of cards has, shared by the desktop picker and the phone sheet ---- */
+function pickerRows(targets, typed) {
+  const text = typed.trim()
+  const lower = text.toLowerCase()
+  const has = (tag) => {
+    const n = targets.filter((card) => card.tags.includes(tag.id)).length
+    return n === 0 ? 'off' : n === targets.length ? 'on' : 'mixed'
+  }
+  const rows = state.tags
+    .filter((tag) => tag.name.toLowerCase().includes(lower))
+    .sort((a, b) => (has(a) === 'off') - (has(b) === 'off') || b.used - a.used)
+    .map((tag) => ({ tag, has: has(tag) }))
+  const exact = state.tags.some((tag) => tag.name.toLowerCase() === lower)
+  return { rows, create: text !== '' && !exact ? text : undefined, first: state.tags.length === 0 }
+}
+
+function toggle(targets, id) {
+  const all = targets.every((card) => card.tags.includes(id))
+  for (const card of targets) card.tags = all ? card.tags.filter((one) => one !== id) : card.tags.includes(id) ? card.tags : [...card.tags, id]
+  const tag = tagOf(id); if (tag && !all) tag.used = Date.now()
+  render()
+}
+function make(targets, name) {
+  const id = `t${Date.now()}`
+  state.tags.push({ id, name: name.trim(), color: state.tags.length % 8, used: Date.now() })
+  for (const card of targets) card.tags = [...card.tags, id]
+  render()
+}
+function rename(id, name) {
+  const clean = name.trim()
+  if (clean === '') return 'empty'
+  if (state.tags.some((tag) => tag.id !== id && tag.name.toLowerCase() === clean.toLowerCase())) return 'A tag with this name exists'
+  tagOf(id).name = clean; render(); return undefined
+}
+function remove(id) {
+  state.tags = state.tags.filter((tag) => tag.id !== id)
+  for (const card of state.cards) card.tags = card.tags.filter((one) => one !== id)
+  filter = filter.filter((one) => one !== id)
+  render()
+}
+function confirmDelete(id, into, after) {
+  const tag = tagOf(id), n = count(id)
+  if (n === 0) { remove(id); after(); return }
+  const box = document.createElement('div')
+  box.className = 'confirm-wrap'
+  box.innerHTML = `<div class="dialog" role="alertdialog" aria-labelledby="del-title" style="width:min(340px,88%)">
+    <h3 id="del-title">Delete tag "${esc(tag.name)}"?</h3>
+    <p>It is removed from ${n === 1 ? '1 task' : `${n} tasks`}. The tasks stay.</p>
+    <div class="dialog-actions"><button type="button" class="quiet" data-cancel>Cancel</button><button type="button" class="primary danger" data-delete>Delete</button></div>
+  </div>`
+  into.append(box)
+  const cancel = box.querySelector('[data-cancel]')
+  cancel.focus()
+  const close = () => { box.remove(); after() }
+  cancel.onclick = close
+  box.querySelector('[data-delete]').onclick = () => { remove(id); close() }
+  box.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.stopPropagation(); close() } })
+  box.addEventListener('mousedown', (event) => { if (event.target === box) close() })
+}
+
+/* ---- Menus ---- */
+function place(el, anchor, side = false) {
+  const box = el.getBoundingClientRect()
+  let left = side ? anchor.right + 2 : anchor.left
+  let top = side ? anchor.top - 4 : anchor.bottom + 4
+  if (left + box.width > innerWidth - 8) left = side ? anchor.left - box.width - 2 : innerWidth - box.width - 8
+  if (top + box.height > innerHeight - 8) top = Math.max(8, innerHeight - box.height - 8)
+  el.style.left = `${left}px`; el.style.top = `${top}px`
+}
+function closeMenus() { document.getElementById('layer').innerHTML = ''; pickerAt = undefined }
+function openLayer(html) {
+  const layer = document.getElementById('layer')
+  layer.innerHTML = `<div class="scrim menu-scrim" data-scrim style="position:fixed;inset:0;background:none"></div>${html}`
+  return layer
+}
+const targetsOf = (id) => picked.has(id) && picked.size > 1 ? state.cards.filter((card) => picked.has(card.id)) : state.cards.filter((card) => card.id === id)
+
+function cardMenu(id, anchor) {
+  const many = picked.has(id) && picked.size > 1
+  const layer = openLayer(`<div class="floating menu" role="menu" id="card-menu">
+    <button type="button" class="menu-item"><span class="label">Add to favorites</span></button>
+    <button type="button" class="menu-item"><span class="label">Mark as</span><span class="menu-more">${MORE}</span></button>
+    <button type="button" class="menu-item" data-open-tags><span class="label">Tags</span><span class="menu-more">${MORE}</span></button>
+    <button type="button" class="menu-item"><span class="label">Move</span><span class="menu-more">${MORE}</span></button>
+    ${many ? `<button type="button" class="menu-item"><span class="label">Archive ${picked.size}</span></button><button type="button" class="menu-item"><span class="label">Hide ${picked.size} from this list</span></button><button type="button" class="menu-item danger"><span class="label">Delete ${picked.size}</span></button>`
+    : `<button type="button" class="menu-item"><span class="label">Rename</span></button><button type="button" class="menu-item"><span class="label">Save as a shortcut...</span></button><button type="button" class="menu-item"><span class="label">Terminal</span><span class="menu-more">${MORE}</span></button><button type="button" class="menu-item"><span class="label">Archive</span></button><button type="button" class="menu-item"><span class="label">Hide from this list</span></button><button type="button" class="menu-item danger"><span class="label">Delete</span></button>`}
+  </div>`)
+  const el = layer.querySelector('#card-menu')
+  place(el, anchor)
+  const item = el.querySelector('[data-open-tags]')
+  const open = () => { if (pickerAt) return; item.classList.add('open'); picker(id, item.getBoundingClientRect(), true) }
+  item.addEventListener('mouseenter', open)
+  item.addEventListener('click', open)
+  item.focus()
+}
+
+/* The picker. `view` is what the field holds, which row is highlighted, and a tag being renamed or whose options are open. */
+function picker(id, anchor, side = false, view = { typed: '', at: 0 }) {
+  pickerAt = { id, anchor, side }
+  document.getElementById('tag-picker')?.remove()
+  document.getElementById('row-menu')?.remove()
+  const targets = targetsOf(id)
+  const { rows, create, first } = pickerRows(targets, view.typed)
+  const total = rows.length + (create === undefined ? 0 : 1)
+  const at = Math.min(view.at, Math.max(0, total - 1))
+  const el = document.createElement('div')
+  el.className = 'floating menu tag-picker' + (side ? ' menu-side' : '')
+  el.id = 'tag-picker'
+  el.setAttribute('role', 'menu')
+  el.innerHTML = `<input class="menu-search" aria-label="Search or create a tag" placeholder="Search or create a tag" value="${esc(view.typed)}" maxlength="64">
+    ${rows.map(({ tag, has }, n) => view.renaming === tag.id
+      ? `<div class="tag-line editing"><input aria-label="Rename ${esc(tag.name)}" value="${esc(view.draft ?? tag.name)}" maxlength="${MAX}" data-rename="${tag.id}">${view.error ? `<div class="error">${view.error}</div>` : ''}</div>`
+      : `<div class="tag-line${n === at && view.renaming === undefined ? ' at' : ''}" style="${tint(tag.color)}">
+          <button type="button" class="menu-item" data-toggle="${tag.id}" tabindex="-1"><span class="mark">${has === 'on' ? CHECK : has === 'mixed' ? DASH : ''}</span><span class="tag-dot"></span><span class="label">${esc(tag.name)}</span></button>
+          <button type="button" class="icon-button row-more${view.options === tag.id ? ' open' : ''}" data-options="${tag.id}" aria-label="${esc(tag.name)} options" title="${esc(tag.name)} options" aria-haspopup="menu">${DOTS}</button>
+        </div>`).join('')}
+    ${create === undefined ? '' : `<button type="button" class="menu-item tag-create${rows.length === at ? ' at' : ''}" data-create ${create.length > MAX ? 'disabled' : ''}><span class="mark">${PLUS}</span><span class="label">Create tag "${esc(create)}"</span></button>`}
+    ${first && create === undefined ? '<div class="menu-note" style="padding-left:9px">Type a name to create a tag</div>' : ''}
+    ${create !== undefined && create.length > MAX ? '<div class="menu-note" style="padding-left:9px">Tag names are up to 32 characters</div>' : ''}`
+  document.getElementById('layer').append(el)
+  place(el, anchor, side)
+  const field = el.querySelector('.menu-search')
+  const again = (next) => picker(id, anchor, side, { typed: field.value, at, ...next })
+
+  const renameField = el.querySelector('[data-rename]')
+  if (renameField) {
+    renameField.focus()
+    if (view.draft === undefined) renameField.select()
+    renameField.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key === 'Escape') again({ renaming: undefined, draft: undefined, error: undefined })
+      if (event.key === 'Enter') {
+        const said = rename(view.renaming, renameField.value)
+        if (said === 'empty') return
+        said === undefined ? again({ renaming: undefined, draft: undefined, error: undefined }) : again({ draft: renameField.value, error: said })
+      }
+    })
+  } else {
+    field.focus(); field.setSelectionRange(view.typed.length, view.typed.length)
+  }
+  field.addEventListener('input', () => picker(id, anchor, side, { typed: field.value, at: 0 }))
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') { event.preventDefault(); again({ at: Math.min(at + 1, total - 1) }) }
+    if (event.key === 'ArrowUp') { event.preventDefault(); again({ at: Math.max(at - 1, 0) }) }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeMenus(); render() }
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (at < rows.length) { toggle(targets, rows[at].tag.id); again({}) }
+      else if (create !== undefined && create.length <= MAX) { make(targets, create); picker(id, anchor, side, { typed: '', at: 0 }) }
+    }
+  })
+  el.addEventListener('click', (event) => {
+    const one = event.target.closest('[data-toggle]')
+    if (one) { toggle(targets, one.dataset.toggle); again({}) }
+    if (event.target.closest('[data-create]') && create.length <= MAX) { make(targets, create); picker(id, anchor, side, { typed: '', at: 0 }) }
+    const options = event.target.closest('[data-options]')
+    if (options) { again({ options: options.dataset.options }); rowMenu(options.dataset.options, document.querySelector(`[data-options="${options.dataset.options}"]`).getBoundingClientRect(), field.value) }
+  })
+}
+
+function rowMenu(tagId, anchor, typed, page = 'main') {
+  document.getElementById('row-menu')?.remove()
+  const tag = tagOf(tagId)
+  const el = document.createElement('div')
+  el.className = 'floating menu menu-side'
+  el.id = 'row-menu'
+  el.setAttribute('role', 'menu')
+  el.innerHTML = page === 'main'
+    ? `<button type="button" class="menu-item" data-act="rename"><span class="label">Rename</span></button><button type="button" class="menu-item" data-act="colour"><span class="label">Colour</span><span class="menu-more">${MORE}</span></button><button type="button" class="menu-item danger" data-act="delete"><span class="label">Delete</span></button>`
+    : `<div class="menu-title">Colour</div><div class="swatches">${[0, 1, 2, 3, 4, 5, 6, 7].map((color) => `<button type="button" class="swatch${tag.color === color ? ' on' : ''}" style="${tint(color)}" aria-label="Colour ${color + 1}" data-color="${color}"></button>`).join('')}</div>`
+  document.getElementById('layer').append(el)
+  place(el, anchor, true)
+  el.querySelector('button').focus()
+  const back = (next = {}) => { const { id, anchor: a, side } = pickerAt; picker(id, a, side, { typed, at: 0, ...next }) }
+  el.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.stopPropagation(); back() } })
+  el.addEventListener('click', (event) => {
+    const act = event.target.closest('[data-act]')?.dataset.act
+    if (act === 'rename') back({ renaming: tagId })
+    if (act === 'colour') rowMenu(tagId, anchor, typed, 'colour')
+    if (act === 'delete') { el.remove(); confirmDelete(tagId, document.getElementById('layer'), () => back()) }
+    const color = event.target.closest('[data-color]')?.dataset.color
+    if (color !== undefined) { tag.color = Number(color); render(); back() }
+  })
+}
+
+function filtersMenu(anchor, page = 'filters') {
+  const label = filter.length === 0 ? 'All tags' : filter.includes('none') ? 'No tags' : filter.map((id) => tagOf(id)?.name).join(', ')
+  const html = page === 'filters'
+    ? `<div class="floating menu explained" role="menu" id="filters-menu"><div class="menu-title">Filters</div>
+        <button type="button" class="menu-item"><span></span><span class="label">Folders</span><span class="says">All folders</span></button>
+        <button type="button" class="menu-item"><span></span><span class="label">Employees</span><span class="says">All employees</span></button>
+        ${state.tags.length === 0 ? '' : `<button type="button" class="menu-item" data-tags-page><span></span><span class="label">Tags</span><span class="says">${esc(label)}</span></button>`}
+        <button type="button" class="menu-item"><span></span><span class="label">Visible columns</span><span class="says">All columns</span></button>
+        ${filter.length === 0 ? '' : '<button type="button" class="menu-item" data-clear><span></span><span class="label">Clear filters</span></button>'}
+      </div>`
+    : `<div class="floating menu" role="menu" id="filters-menu" style="min-width:200px"><div class="menu-title">Tags</div>
+        <button type="button" class="menu-item${filter.length === 0 ? ' on' : ''}" data-filter="all"><span class="check-col">${filter.length === 0 ? CHECK : ''}</span><span class="label">All tags</span></button>
+        <button type="button" class="menu-item${filter.includes('none') ? ' on' : ''}" data-filter="none"><span class="check-col">${filter.includes('none') ? CHECK : ''}</span><span class="label">No tags</span></button>
+        <div class="menu-divider-line"></div>
+        ${state.tags.map((tag) => `<button type="button" class="menu-item" data-filter="${tag.id}" style="${tint(tag.color)}"><span class="check-col">${filter.includes(tag.id) ? CHECK : ''}</span><span class="tag-dot"></span><span class="label">${esc(tag.name)}</span></button>`).join('')}
+      </div>`
+  const layer = openLayer(html)
+  const el = layer.querySelector('#filters-menu')
+  place(el, anchor)
+  el.querySelector('button')?.focus()
+  el.addEventListener('click', (event) => {
+    if (event.target.closest('[data-tags-page]')) filtersMenu(anchor, 'tags')
+    if (event.target.closest('[data-clear]')) { filter = []; render(); closeMenus() }
+    const one = event.target.closest('[data-filter]')
+    if (one) {
+      const value = one.dataset.filter
+      if (value === 'all') filter = []
+      else if (value === 'none') filter = filter.includes('none') ? [] : ['none']
+      else filter = filter.includes(value) ? filter.filter((id) => id !== value) : [...filter.filter((id) => id !== 'none'), value]
+      render(); filtersMenu(anchor, 'tags')
+    }
+  })
+}
+
+/* ---- Phone: info screen, the Tags sheet, a tag's actions and rename ---- */
+let phone = { sheet: false, typed: '', options: undefined, renaming: undefined, error: undefined, colour: false }
+function renderPhone() {
+  const card = current()
+  const tags = card.tags.map(tagOf).filter(Boolean)
+  const frame = document.getElementById('phone-info')
+  let sheet = ''
+  if (phone.sheet && phone.renaming) {
+    const tag = tagOf(phone.renaming)
+    sheet = `<div class="sheet-scrim"></div><div class="sheet" role="dialog" aria-label="Rename tag">
+      <div class="sheet-grab"><div class="sheet-handle"></div><div class="sheet-title">Rename "${esc(tag.name)}"</div></div>
+      <div class="sheet-field"><input aria-label="Tag name" value="${esc(phone.draft ?? tag.name)}" maxlength="${MAX}" data-phone-rename></div>
+      ${phone.error ? `<div class="sheet-note" style="color:var(--danger)">${phone.error}</div>` : ''}
+      <div class="sheet-list" style="margin-top:10px"><button type="button" class="sheet-option sheet-cancel" data-phone-save>Save</button></div>
+      <div class="sheet-list" style="margin-top:10px"><button type="button" class="sheet-option sheet-cancel" style="font-weight:400" data-phone-back>Cancel</button></div>
+    </div>`
+  } else if (phone.sheet && phone.options) {
+    const tag = tagOf(phone.options)
+    sheet = `<div class="sheet-scrim" data-phone-back></div><div class="sheet" role="dialog" aria-label="${esc(tag.name)} options">
+      <div class="sheet-grab"><div class="sheet-handle"></div><div class="sheet-title">${esc(tag.name)}</div></div>
+      ${phone.colour
+        ? `<div class="sheet-list"><div class="swatches" style="grid-template-columns:repeat(8,28px);justify-content:space-between;padding:14px 16px">${[0, 1, 2, 3, 4, 5, 6, 7].map((color) => `<button type="button" class="swatch${tag.color === color ? ' on' : ''}" style="${tint(color)};width:28px;height:28px" aria-label="Colour ${color + 1}" data-phone-color="${color}"></button>`).join('')}</div></div>`
+        : `<div class="sheet-list"><button type="button" class="sheet-option" data-phone-act="rename">Rename</button><button type="button" class="sheet-option" data-phone-act="colour">Colour</button><button type="button" class="sheet-option danger" data-phone-act="delete">Delete</button></div>`}
+      <div class="sheet-list" style="margin-top:10px"><button type="button" class="sheet-option sheet-cancel" data-phone-back>Cancel</button></div>
+    </div>`
+  } else if (phone.sheet) {
+    const { rows, create, first } = pickerRows([card], phone.typed)
+    sheet = `<div class="sheet-scrim" data-phone-done></div><div class="sheet" role="dialog" aria-label="Tags">
+      <div class="sheet-grab"><div class="sheet-handle"></div><div class="sheet-title">Tags</div></div>
+      <div class="sheet-field"><input aria-label="Search or create a tag" placeholder="Search or create a tag" value="${esc(phone.typed)}" maxlength="64" data-phone-field></div>
+      ${first && create === undefined ? '<div class="sheet-note">Type a name to create a tag</div>' : ''}
+      ${rows.length === 0 && create === undefined ? '' : `<div class="sheet-list" role="menu">
+        ${rows.map(({ tag, has }) => `<div class="sheet-row" style="${tint(tag.color)}"><button type="button" class="sheet-option" data-phone-toggle="${tag.id}"><span class="opt"><span class="tag-dot"></span><span>${esc(tag.name)}</span></span>${has === 'on' ? CHECK : ''}</button><button type="button" class="row-more" data-phone-options="${tag.id}" aria-label="${esc(tag.name)} options">${DOTS}</button></div>`).join('')}
+        ${create === undefined ? '' : `<div class="sheet-row"><button type="button" class="sheet-option" data-phone-create ${create.length > MAX ? 'disabled' : ''}><span class="opt">${PLUS}<span>Create tag "${esc(create)}"</span></span></button></div>`}
+      </div>`}
+      ${create !== undefined && create.length > MAX ? '<div class="sheet-note">Tag names are up to 32 characters</div>' : ''}
+      <div class="sheet-list" style="margin-top:10px"><button type="button" class="sheet-option sheet-cancel" data-phone-done>Done</button></div>
+    </div>`
+  }
+  frame.innerHTML = `<div class="phone-title" style="font-size:20px">${esc(card.title)}</div>
+    <div class="info-group">
+      <div class="info-row"><span>Folder</span><span class="value tinted" style="${tint(card.color)}">${card.project}</span></div>
+      <div class="info-row"><span>Employee</span><span class="value">None</span></div>
+      <button type="button" class="info-row" data-phone-tags><span>Tags</span><span class="value">${tags.length === 0 ? 'None' : chips(card)}${MORE}</span></button>
+      <div class="info-row"><span>Checklist</span><span class="value">2 of 4 done${MORE}</span></div>
+    </div>${sheet}`
+  const input = frame.querySelector('[data-phone-field], [data-phone-rename]')
+  if (input) { input.focus(); if (input.matches('[data-phone-rename]') && phone.draft === undefined) input.select(); else input.setSelectionRange(input.value.length, input.value.length) }
+}
+function phoneSet(next) { phone = { ...phone, ...next }; renderPhone() }
+function phoneSave() {
+  const input = document.querySelector('[data-phone-rename]')
+  const said = rename(phone.renaming, input.value)
+  if (said === 'empty') return
+  said === undefined ? phoneSet({ renaming: undefined, options: undefined, draft: undefined, error: undefined }) : phoneSet({ draft: input.value, error: said })
+}
+
+/* ---- Wiring ---- */
+document.addEventListener('contextmenu', (event) => {
+  const card = event.target.closest('#columns [data-card]')
+  if (!card) return
+  event.preventDefault()
+  cardMenu(card.dataset.card, new DOMRect(event.clientX, event.clientY, 0, 0))
+})
+
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#layer')) { if (event.target.closest('[data-scrim]')) { closeMenus(); render() } return }
+  if (event.target.closest('[data-clear]') && event.target.closest('#board-empty')) { filter = []; render(); return }
+  const card = event.target.closest('#columns [data-card]')
+  if (card) {
+    if (event.metaKey || event.ctrlKey) { picked.has(card.dataset.card) ? picked.delete(card.dataset.card) : picked.add(card.dataset.card) }
+    else { picked.clear(); openCard = card.dataset.card; phone = { sheet: false, typed: '' } }
+    render(); renderPhone(); return
+  }
+  const opener = event.target.closest('[data-open-picker]')
+  if (opener) { openLayer(''); picker(openCard, opener.getBoundingClientRect()); return }
+  const removing = event.target.closest('[data-remove]')
+  if (removing) { const card = current(); card.tags = card.tags.filter((one) => one !== removing.dataset.remove); render(); document.querySelector('.add-tag')?.focus(); return }
+  if (event.target.closest('[data-toggle-panel]')) { panelShown = !panelShown; render(); return }
+  if (event.target.closest('#filters')) { filtersMenu(document.getElementById('filters').getBoundingClientRect()); return }
+
+  if (event.target.closest('[data-phone-tags]')) { phoneSet({ sheet: true, typed: '' }); return }
+  if (event.target.closest('[data-phone-done]')) { phoneSet({ sheet: false, typed: '' }); return }
+  if (event.target.closest('[data-phone-back]')) { phoneSet({ options: undefined, renaming: undefined, colour: false, draft: undefined, error: undefined }); return }
+  if (event.target.closest('[data-phone-save]')) { phoneSave(); return }
+  const phoneToggle = event.target.closest('[data-phone-toggle]')
+  if (phoneToggle) { toggle([current()], phoneToggle.dataset.phoneToggle); renderPhone(); return }
+  const phoneOptions = event.target.closest('[data-phone-options]')
+  if (phoneOptions) { phoneSet({ options: phoneOptions.dataset.phoneOptions, colour: false }); return }
+  const act = event.target.closest('[data-phone-act]')?.dataset.phoneAct
+  if (act === 'rename') { phoneSet({ renaming: phone.options, draft: undefined, error: undefined }); return }
+  if (act === 'colour') { phoneSet({ colour: true }); return }
+  if (act === 'delete') { const id = phone.options; confirmDelete(id, document.getElementById('phone-info'), () => phoneSet({ options: undefined })); return }
+  const colour = event.target.closest('[data-phone-color]')?.dataset.phoneColor
+  if (colour !== undefined) { tagOf(phone.options).color = Number(colour); render(); phoneSet({ colour: false, options: undefined }); return }
+  if (event.target.closest('[data-phone-create]')) {
+    const name = phone.typed.trim()
+    if (name !== '' && name.length <= MAX) { make([current()], name); phoneSet({ typed: '' }) }
+  }
+})
+
+document.addEventListener('input', (event) => {
+  if (event.target.matches('[data-phone-field]')) phoneSet({ typed: event.target.value })
+})
+
+document.addEventListener('keydown', (event) => {
+  if (event.target.matches('[data-phone-rename]')) {
+    if (event.key === 'Enter') phoneSave()
+    if (event.key === 'Escape') phoneSet({ renaming: undefined, draft: undefined, error: undefined })
+    return
+  }
+  if (event.target.matches('[data-phone-field]') && event.key === 'Enter') {
+    const name = phone.typed.trim()
+    const match = state.tags.find((tag) => tag.name.toLowerCase() === name.toLowerCase())
+    if (match) toggle([current()], match.id)
+    else if (name !== '' && name.length <= MAX) make([current()], name)
+    phoneSet({ typed: '' })
+    return
+  }
+  if (event.key === 'Escape' && document.getElementById('layer').innerHTML !== '') { closeMenus(); render() }
+  if (event.key === 'Enter' && event.target.matches('#columns [data-card]')) { openCard = event.target.dataset.card; render(); renderPhone() }
+})
+
+document.getElementById('theme').onclick = (event) => {
+  const dark = document.documentElement.dataset.theme !== 'dark'
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  event.target.textContent = dark ? 'Light' : 'Dark'
+}
+document.getElementById('reset').onclick = (event) => {
+  const empty = event.target.textContent === 'Start empty'
+  state = structuredClone(START)
+  if (empty) { state.tags = []; for (const card of state.cards) card.tags = [] }
+  filter = []; picked.clear(); phone = { sheet: false, typed: '' }; closeMenus(); render(); renderPhone()
+  event.target.textContent = empty ? 'Sample tags' : 'Start empty'
+}
+if (new URLSearchParams(location.search).get('theme') === 'dark') document.getElementById('theme').click()
+render()
+renderPhone()
+</script>
+</body>
+</html>

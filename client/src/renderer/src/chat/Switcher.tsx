@@ -1,4 +1,5 @@
 import { matchesEmployee } from '../employees/Employees'
+import { matchesTags } from '../../../shared/tags'
 import { ProviderIcon } from './ProviderIcon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -39,13 +40,14 @@ const MOST = 50
 
 const used = (session: ChatSession): number => Math.max(session.seen ?? 0, session.at)
 
-const named = (session: ChatSession, words: readonly string[]): boolean => {
-  const against = `${session.title} ${projectLabel(session.root)} ${session.root} ${session.stands}`.toLowerCase()
+/** Whether the words are all in its name, folder, last line or the names of its tags. */
+export const named = (session: ChatSession, words: readonly string[], tags = ''): boolean => {
+  const against = `${session.title} ${projectLabel(session.root)} ${session.root} ${session.stands} ${tags}`.toLowerCase()
   return words.every((word) => against.includes(word))
 }
 
 /** Whether opening the row goes to what was found in what was said: only when its name did not answer. */
-export const seeks = (row: Row, words: readonly string[]): boolean => row.hit !== undefined && !named(row.session, words)
+export const seeks = (row: Row, words: readonly string[]): boolean => row.hit !== undefined && !named(row.session, words, row.tagged)
 
 /** How closely the title answers: 0 starts with what was typed, 1 has a word starting with it, 2 holds it, 3 only the project or the last line does. */
 function closeness(session: ChatSession, words: readonly string[]): number {
@@ -97,6 +99,8 @@ export function Marked({ text, words }: { readonly text: string; readonly words:
 
 interface Row {
   readonly session: ChatSession
+  /** The names of its tags, which a search matches too. */
+  readonly tagged?: string
   readonly hit?: ChatFound
   /** The first of those found only by what was said, which starts their own part of the list. */
   readonly heads?: boolean
@@ -129,9 +133,11 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
   // Every project's, kept current as conversations start, are renamed and move, rather than read once.
   const every = chat.everyone.length > 0 ? chat.everyone : chat.sessions
   const front = chat.shown.kind === 'session' ? chat.shown.id : undefined
+  const tagsOf = chat.tagsOf
   // Worked out again only when the list or what is asked changes, not each time a row is pointed at.
   return useMemo(() => {
-    const all = every.filter((one) => matchesEmployee(one, chat.settings.employeeFilter) && (within === undefined || homeOf(one) === within))
+    const all = every.filter((one) => matchesEmployee(one, chat.settings.employeeFilter) && matchesTags(one, chat.settings.tagFilter) && (within === undefined || homeOf(one) === within))
+    const tagged = (session: ChatSession): string => tagsOf(session).map((tag) => tag.name).join(' ')
 
     const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
     const byId = new Map(all.map((one) => [one.id, one]))
@@ -146,7 +152,7 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
       return { found: recent, words }
     }
     const byName = [...all]
-      .filter((one) => named(one, words))
+      .filter((one) => named(one, words, tagged(one)))
       .map((session) => ({ session, close: closeness(session, words) }))
       .sort((one, other) => one.close - other.close || used(other.session) - used(one.session))
       .map(({ session }) => session)
@@ -158,12 +164,13 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
     const found = [
       ...byName.map((session) => {
         const hit = said.get(session.id)
-        return hit === undefined ? { session } : { session, hit }
+        const tags = tagged(session)
+        return { session, ...(hit === undefined ? {} : { hit }), ...(tags === '' ? {} : { tagged: tags }) }
       }),
       ...bySaid.map((row, index) => (index === 0 && byName.length > 0 ? { ...row, heads: true } : row)),
     ].slice(0, MOST)
     return { found, words }
-  }, [every, within, asked, hits, front, chat.settings.employeeFilter])
+  }, [every, within, asked, hits, front, chat.settings.employeeFilter, chat.settings.tagFilter, tagsOf])
 }
 
 /** The rows themselves, the same under the field in the board as inside the Cmd+P panel. */

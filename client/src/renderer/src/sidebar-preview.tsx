@@ -1,7 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { DEFAULT_SETTINGS } from '../../shared/api'
-import type { ChatSession, Settings, Shortcut } from '../../shared/api'
+import type { ChatSession, Settings, Shortcut, TagChange, TaskTag } from '../../shared/api'
+import { changedTags, cleanTagName, findTag } from '../../shared/tags'
 import type { ChannelsView } from '../../shared/channels'
 import type { HostView } from '../../shared/hosts'
 import { DEFAULT_MANAGER_CONFIG, MANAGER_MAIN_THREAD } from '../../shared/manager'
@@ -26,6 +27,9 @@ const questions = [
   session('question-2', 'Which model is cheaper for long runs?', query.has('questionAsks') ? 'asks' : 'idle', { question: true }),
 ]
 let sessions: ChatSession[] = [...waiting, session('working', 'Build the sidebar', 'working'), session('done', 'Fix the board scroll', 'idle'), ...questions]
+// With `tags`, a catalog of five and tasks carrying none, two and all five, so chips, "+N", the picker and Filters can be reviewed.
+const taskTags: TaskTag[] = query.has('tags') ? ['Release', 'Client', 'Bug', 'Waiting on design review', 'Later'].map((name, color) => ({ id: `tag-${String(color)}`, name, color, used: at - color * 60_000 })) : []
+if (query.has('tags')) sessions = sessions.map((one, index) => (one.question === true ? one : index % 3 === 0 ? { ...one, tags: ['tag-0', 'tag-1'] } : index % 3 === 1 ? { ...one, tags: taskTags.map((tag) => tag.id) } : one))
 const hostNames = ['build-box', 'staging', 'mac-mini', 'gpu-runner', 'office', 'lab-1', 'lab-2', 'lab-3', 'lab-4', 'lab-5', 'lab-6', 'lab-7']
 let hosts: HostView[] = hostNames.slice(0, number('hosts', 2)).map((name, index) => ({ id: name, name, address: `${name}.local`, user: 'alex', port: 22, auth: 'key', state: index === 0 ? 'up' : 'idle', remembered: false, canRemember: true }))
 let settings: Settings = {
@@ -34,6 +38,7 @@ let settings: Settings = {
   hosts: hosts.map(({ id, name, address, user, port, auth }) => ({ id, name, address, user, port, auth })),
   showGecko: !query.has('geckoHidden'),
   analyticsAsked: true,
+  taskTags,
   theme: query.get('theme') === 'dark' ? 'dark' : 'light',
   ...(query.has('place') ? { chatPlace: query.get('place') ?? 'tasks' } : {}),
   ...(query.has('noNames') ? { navNames: false } : {}),
@@ -97,6 +102,35 @@ const answers: Record<string, (...args: readonly RendererArgument[]) => unknown>
   'settings:set': (change) => { settings = { ...settings, ...(change as Partial<Settings>) }; keep(); tell('settings:changed', settings); return settings },
   'hosts:remove': (id) => { hosts = hosts.filter((one) => one.id !== id); settings = { ...settings, hosts: settings.hosts.filter((one) => one.id !== id) }; keep(); tell('hosts:changed', hosts); tell('settings:changed', settings) },
   'chat:list': () => sessions,
+  'chat:send': (message) => {
+    const asked = message as { root: string; text: string; tags?: readonly string[] }
+    const made = session(`new-${String(Date.now())}`, asked.text, 'working', { root: asked.root, ...(asked.tags === undefined ? {} : { tags: asked.tags }) })
+    sessions = [made, ...sessions]
+    tell('chat:sessions', sessions)
+    return made.id
+  },
+  'chat:tag': (ids, change) => {
+    const asked = change as TagChange
+    const made = (asked.create ?? []).map((raw) => { const name = cleanTagName(raw); const found = findTag(settings.taskTags, name); if (found !== undefined) return found; const tag = { id: `tag-${String(Date.now())}-${name}`, name, color: settings.taskTags.length % 8, used: Date.now() }; settings = { ...settings, taskTags: [...settings.taskTags, tag] }; return tag })
+    sessions = sessions.map((one) => ((ids as string[]).includes(one.id) ? { ...one, tags: changedTags(one.tags, [...(asked.add ?? []), ...made.map((tag) => tag.id)], asked.remove ?? []) } : one))
+    tell('settings:changed', settings); tell('chat:sessions', sessions)
+    return made
+  },
+  'tags:edit': (id, change) => {
+    const asked = change as { name?: string; color?: number }
+    const name = asked.name === undefined ? undefined : cleanTagName(asked.name)
+    if (name !== undefined && settings.taskTags.some((one) => one.id !== id && one.name.toLowerCase() === name.toLowerCase())) return Promise.reject(new Error('A tag with this name exists'))
+    settings = { ...settings, taskTags: settings.taskTags.map((one) => (one.id === id ? { ...one, ...(name === undefined ? {} : { name }), ...(asked.color === undefined ? {} : { color: asked.color }) } : one)) }
+    tell('settings:changed', settings)
+    return settings.taskTags.find((one) => one.id === id)
+  },
+  'tags:delete': (id) => {
+    const removedFrom = sessions.filter((one) => one.tags?.includes(id as string) === true).length
+    sessions = sessions.map((one) => ({ ...one, tags: (one.tags ?? []).filter((tag) => tag !== id) }))
+    settings = { ...settings, taskTags: settings.taskTags.filter((one) => one.id !== id), tagFilter: settings.tagFilter.filter((one) => one !== id) }
+    tell('settings:changed', settings); tell('chat:sessions', sessions)
+    return { removedFrom }
+  },
   'chat:listStatus': () => [],
   'lineup:state': () => ({ working: 1, limit: 6 }),
   'hosts:list': () => hosts,
@@ -132,9 +166,23 @@ const answers: Record<string, (...args: readonly RendererArgument[]) => unknown>
   'shortcuts:runs': () => [],
   'shortcuts:destinations': () => [],
 }
+// With `live=<port>`, tags, the task list and settings go to a real service through a local bridge.
+const LIVE = ['chat:list', 'chat:tag', 'tags:edit', 'tags:delete', 'settings:get', 'settings:set', 'chat:send', 'chat:schedule']
+const live = query.get('live')
+const toLive = async (channel: string, args: readonly RendererArgument[]): Promise<unknown> => {
+  const answer = (await (await fetch(`http://localhost:${live ?? ''}/call`, { method: 'POST', body: JSON.stringify({ channel, args }) })).json()) as { result?: unknown; error?: string; sessions: ChatSession[]; settings: Settings }
+  sessions = answer.sessions
+  settings = { ...settings, ...answer.settings }
+  tell('settings:changed', settings)
+  tell('chat:sessions', sessions)
+  if (answer.error !== undefined) throw new Error(answer.error)
+  return answer.result
+}
+if (live !== null) await toLive('chat:list', [])
 const transport = {
   invoke: <Result,>(channel: string, ...args: readonly RendererArgument[]): Promise<Result> => {
     calls.set(channel, (calls.get(channel) ?? 0) + 1)
+    if (live !== null && LIVE.includes(channel)) return toLive(channel, args) as Promise<Result>
     const answer = answers[channel]
     if (answer === undefined && !unknown.has(channel)) { unknown.add(channel); console.warn('[preview] unanswered', channel) }
     return Promise.resolve(answer?.(...args) as Result)

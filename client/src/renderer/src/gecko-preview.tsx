@@ -41,7 +41,7 @@ const trays = ['asleep', 'working', 'waiting'] as const
 
 const session: ChatSession = { id: 'claude:preview', root: '/work/trailmap', title: 'Trail difficulty ratings', stands: 'Working', state: 'working', at: Date.now(), here: true, mode: 'auto', queued: [] }
 const chat: Chat = {
-    employees: [], employeesById: new Map(),
+    employees: [], employeesById: new Map(), tagsOf: () => [],
   settings: { ...DEFAULT_SETTINGS, chatView: 'board', phrases: [] }, hosts: [], prompts: [], lineup: { working: 1, limit: 6 }, full: false, change: noop,
   root: session.root, scope: session.root, sessions: [session], listed: true, listLoading: false, listProblem: undefined, listStatus: [], everyone: [session], questions: [], waiting: [], notices: [], shown: { kind: 'new' }, session: undefined,
   items: [], itemsFor: '', earlier: 0, showEarlier: () => Promise.resolve(), loadSteps: noop, draft: '', pictures: [], trouble: '', checkingIp: false, retrying: false, retry: noop, uploading: false,

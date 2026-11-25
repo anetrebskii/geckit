@@ -19,6 +19,7 @@ An employee can run several tasks in parallel. Each task has its own GeckIt chat
 | Find checklists | `checklists list --project <project>` |
 | Assign new work | `sessions start --project <project> --text <assignment> --goal <condition> --employee <active-id>` |
 | Change a worker's employee | `sessions assign --id <managed-worker-id> --employee <active-id\|none>` |
+| Tag a worker when the user asks | `sessions tag --id <managed-worker-id> --add <tag name>` or `--remove <tag name>` |
 | Assign with a checklist | `sessions start --project <project> --text <assignment> --checklist <id-or-name>` or `--items <JSON array>` in place of `--goal` |
 | Change a running task's checklist | `sessions checklist --id <full-id> --items <JSON array>` |
 | Continue same outcome | `sessions send --id <full-id> --text <next-step>` |

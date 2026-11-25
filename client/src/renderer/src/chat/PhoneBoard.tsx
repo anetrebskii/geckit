@@ -1,7 +1,9 @@
 import { awaitingApproval, checklistDone, checklistProgress } from '../../../shared/checklists'
 import { AssignSheet, EmployeeAvatar, EmployeeFilter } from '../employees/Employees'
 import { ProviderIcon } from './ProviderIcon'
-import { Tags } from './Tags'
+import { TagChips, Tags } from './Tags'
+import { TagPicker, tagState } from './TagPicker'
+import { TagFilter } from './TaskFilters'
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -93,6 +95,7 @@ export function PhoneBoard({
   const [deleting, setDeleting] = useState<ChatSession | undefined>()
   const [hiding, setHiding] = useState<ChatSession | undefined>()
   const [assigning, setAssigning] = useState<ChatSession | undefined>()
+  const [tagging, setTagging] = useState<ChatSession | undefined>()
   // The row whose actions are showing; a touch anywhere else puts it back.
   const [open, setOpen] = useState<string | undefined>()
   const [unfolded, setUnfolded] = useState(false)
@@ -335,6 +338,7 @@ export function PhoneBoard({
           <h1 className="phone-large">Tasks</h1>
           <span className="phone-title-tools">
             <EmployeeFilter chat={chat} compact />
+            <TagFilter chat={chat} />
             <ScopeButton chat={chat} onPress={() => setScoping(true)} />
           </span>
         </div>
@@ -381,7 +385,7 @@ export function PhoneBoard({
         ) : rows.length === 0 && taskListSettled(chat) ? (
           <div className="phone-empty">
             {emptyProfile(chat.settings) === undefined
-              ? chat.settings.employeeFilter !== '' ? 'No tasks match these filters' : column.empty
+              ? chat.settings.employeeFilter !== '' || chat.settings.tagFilter.length > 0 ? 'No tasks match these filters' : column.empty
               : `No folders in ${emptyProfile(chat.settings) ?? ''}. Tick some in Settings, Profiles.`}
           </div>
         ) : null}
@@ -513,6 +517,7 @@ export function PhoneBoard({
           onMove={(to) => move(pressed.session, to)}
           onRename={() => setRenaming(pressed.session)}
           onEmployee={pressed.session.question === true || pressed.session.manager === true ? undefined : () => setAssigning(pressed.session)}
+          onTags={pressed.session.manager === true ? undefined : () => setTagging(pressed.session)}
           onShortcut={() => onShortcut(pressed.session)}
           onHide={() => setHiding(pressed.session)}
           onDelete={() => setDeleting(pressed.session)}
@@ -541,6 +546,16 @@ export function PhoneBoard({
       )}
       {deleting === undefined ? null : <DeleteSheet session={deleting} chat={chat} onClose={() => setDeleting(undefined)} />}
       {hiding === undefined ? null : <HideSheet session={hiding} chat={chat} onClose={() => setHiding(undefined)} />}
+      {tagging === undefined ? null : (
+        <TagPicker
+          anchor={new DOMRect()}
+          catalog={chat.settings.taskTags}
+          has={(id) => tagState([chat.everyone.find((one) => one.id === tagging.id)?.tags], id)}
+          apply={(change) => window.geckit.chat.tag([tagging.id], change)}
+          usedBy={(id) => chat.everyone.filter((one) => one.tags?.includes(id) === true).length}
+          onClose={() => setTagging(undefined)}
+        />
+      )}
       {assigning === undefined ? null : <AssignSheet chat={chat} session={chat.everyone.find((one) => one.id === assigning.id) ?? assigning} onClose={() => setAssigning(undefined)} />}
       {renaming === undefined ? null : <Rename session={renaming} chat={chat} onClose={() => setRenaming(undefined)} />}
       {ways ? (
@@ -639,6 +654,7 @@ export function RowBody({
           </span>
           {employee === undefined ? null : <span className="phone-row-employee"><EmployeeAvatar employee={employee} />{employee.name.split(/\s+/)[0]}</span>}
           <Tags session={session} marked={false} />
+          <TagChips tags={chat.tagsOf(session)} />
           {session.status === 'blocked' ? <span className="phone-row-tag blocked">Blocked</span> : null}
           {session.checklist !== undefined && session.checklist.items.length > 0 ? <span className={`phone-row-tag${checklistDone(session.checklist) ? ' met' : awaitingApproval(session.checklist) !== undefined ? ' asks' : ''}`}>{awaitingApproval(session.checklist) !== undefined ? 'Approve' : `${String(checklistProgress(session.checklist).passed)}/${String(checklistProgress(session.checklist).all)}`}</span> : goalMet(session) ? <span className="phone-row-tag met">Goal reached</span> : session.goal === undefined ? null : <span className="phone-row-tag">Goal</span>}
           {helpers === 0 ? null : <span className="phone-row-tag">{helpers === 1 ? 'a helper running' : `${helpers} helpers running`}</span>}
@@ -676,6 +692,7 @@ const PhoneRow = memo(
   (was, now) =>
     was.chat.showProviders === now.chat.showProviders &&
     was.session === now.session &&
+    was.chat.tagsOf(was.session) === now.chat.tagsOf(now.session) &&
     was.chat.employeesById.get(was.session.employeeId ?? '') === now.chat.employeesById.get(now.session.employeeId ?? '') &&
     was.now === now.now &&
     was.column === now.column &&
@@ -912,6 +929,7 @@ function Pressed({
   onMove,
   onRename,
   onEmployee,
+  onTags,
   onShortcut,
   onHide,
   onDelete,
@@ -928,6 +946,7 @@ function Pressed({
   readonly onMove: (to: 'top' | 'bottom') => void
   readonly onRename: () => void
   readonly onEmployee?: (() => void) | undefined
+  readonly onTags?: (() => void) | undefined
   readonly onShortcut: () => void
   readonly onHide: () => void
   readonly onDelete: () => void
@@ -1016,6 +1035,12 @@ function Pressed({
           <button type="button" role="menuitem" onClick={() => pick(onEmployee)}>
             {session.employeeId === undefined ? 'Assign employee...' : 'Change employee...'}
             <Icon name="plus" size={16} />
+          </button>
+        )}
+        {onTags === undefined ? null : (
+          <button type="button" role="menuitem" onClick={() => pick(onTags)}>
+            Tags...
+            <Icon name="tag" size={16} />
           </button>
         )}
         <button type="button" role="menuitem" onClick={() => pick(onShortcut)}>

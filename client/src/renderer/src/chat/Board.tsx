@@ -34,6 +34,10 @@ import { queueWhy } from './Queued'
 import { HostTag } from './HostTag'
 import { emptyProfile, hostName, projectLabel, projectName, tint } from './project'
 import { STATUS_ICONS, Tags, Views } from './Sidebar'
+import { TagChips } from './Tags'
+import { TagPicker, tagState } from './TagPicker'
+import { TagsChoice } from './TaskTags'
+import type { TaskTag } from '../../../shared/api'
 import { BoardSearch } from './Switcher'
 import type { Seek } from './Switcher'
 import { cardSays, running, useNeedsYou, working } from './Tasks'
@@ -42,7 +46,7 @@ import type { Link } from '../../../shared/links'
 import { ago, byDay } from './time'
 import type { Chat } from './useChat'
 import { TaskListStatus, taskListSettled } from './TaskListStatus'
-import { TaskFilters } from './TaskFilters'
+import { TagFilter, TaskFilters } from './TaskFilters'
 import { popsOut } from './solo'
 
 /**
@@ -78,7 +82,7 @@ export function TopBar({
       <div className="board-views no-drag" role="group" aria-label="View controls">
         <Views chat={chat} />
       </div>
-      {ON_PHONE ? <><Projects chat={chat} /><EmployeeFilter chat={chat} /></> : <TaskFilters chat={chat} />}
+      {ON_PHONE ? <><Projects chat={chat} /><EmployeeFilter chat={chat} /><TagFilter chat={chat} /></> : <TaskFilters chat={chat} />}
       <BoardSearch chat={chat} onSeek={onSeek} />
       <span className="spacer" />
       {/* Writing it is the usual way; the arrow offers the others, each saying what it does, so recording and speaking read as ways to start a task. */}
@@ -130,7 +134,7 @@ export function TopBar({
   )
 }
 
-type BoardChat = Pick<Chat, 'employees' | 'refresh' | 'employeesById' | 'sessions' | 'everyone' | 'settings' | 'hosts' | 'lineup' | 'shown' | 'showProviders' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove' | 'root' | 'listed' | 'listLoading' | 'listProblem' | 'listStatus'>
+type BoardChat = Pick<Chat, 'employees' | 'refresh' | 'employeesById' | 'sessions' | 'everyone' | 'settings' | 'hosts' | 'lineup' | 'shown' | 'showProviders' | 'show' | 'goTo' | 'change' | 'rename' | 'hide' | 'mark' | 'terminal' | 'copyTerminal' | 'letGo' | 'remove' | 'root' | 'listed' | 'listLoading' | 'listProblem' | 'listStatus' | 'tagsOf'>
 
 interface BoardProps {
   readonly chat: BoardChat
@@ -170,8 +174,9 @@ export function Board({ chat, onShortcutFrom }: BoardProps): React.JSX.Element {
     listLoading: chat.listLoading,
     listProblem: chat.listProblem,
     listStatus: chat.listStatus,
+    tagsOf: chat.tagsOf,
     ...actions,
-  }), [chat.employees, chat.employeesById, chat.sessions, chat.everyone, chat.settings, chat.hosts, chat.lineup, chat.shown, chat.showProviders, chat.root, chat.listed, chat.listLoading, chat.listProblem, chat.listStatus, actions])
+  }), [chat.tagsOf, chat.employees, chat.employeesById, chat.sessions, chat.everyone, chat.settings, chat.hosts, chat.lineup, chat.shown, chat.showProviders, chat.root, chat.listed, chat.listLoading, chat.listProblem, chat.listStatus, actions])
   const shortcutFrom = useCallback((session: ChatSession) => latest.current.onShortcutFrom(session), [])
   return <BoardView chat={view} onShortcutFrom={shortcutFrom} />
 }
@@ -184,6 +189,7 @@ const BoardView = memo(function BoardView({
   const [menu, setMenu] = useState<{ readonly id: string; readonly at: DOMRect } | undefined>()
   const [renaming, setRenaming] = useState<string | undefined>()
   const [deleting, setDeleting] = useState<readonly ChatSession[] | undefined>()
+  const [tagging, setTagging] = useState<{ readonly ids: readonly string[]; readonly at: DOMRect } | undefined>()
   // The cards being dragged, and the column the pointer is over.
   const held = useRef<readonly string[]>([])
   const [over, setOver] = useState<string | undefined>()
@@ -351,11 +357,11 @@ const BoardView = memo(function BoardView({
   return (
     <div className={`board${tiled ? ' tiled' : ''}`}>
       <TaskListStatus chat={chat} />
-      {taskListSettled(chat) && chat.sessions.length === 0 && chat.settings.employeeFilter === '' && emptyProfile(chat.settings) === undefined ? <div className="board-empty">{chat.root === undefined ? 'Add a folder to start.' : 'No tasks in these folders yet.'}</div> : null}
+      {taskListSettled(chat) && chat.sessions.length === 0 && chat.settings.employeeFilter === '' && chat.settings.tagFilter.length === 0 && emptyProfile(chat.settings) === undefined ? <div className="board-empty">{chat.root === undefined ? 'Add a folder to start.' : 'No tasks in these folders yet.'}</div> : null}
       {emptyProfile(chat.settings) === undefined ? null : (
         <div className="board-empty">No folders in {emptyProfile(chat.settings)}. Tick some in Settings, Profiles.</div>
       )}
-      {taskListSettled(chat) && chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? <div className="board-empty">No tasks match these filters <button type="button" className="quiet" onClick={() => chat.change({ employeeFilter: '' })}>Clear employee filter</button></div> : null}
+      {taskListSettled(chat) && (chat.settings.employeeFilter !== '' || chat.settings.tagFilter.length > 0) && chat.sessions.length === 0 ? <div className="board-empty">No tasks match these filters <button type="button" className="quiet" onClick={() => chat.change({ employeeFilter: '', tagFilter: [] })}>Clear filters</button></div> : null}
       <div className="board-columns">
         {columns.map((column) => (
             <div
@@ -412,6 +418,7 @@ const BoardView = memo(function BoardView({
                         parent={originFor(chat, session)}
                         showProviders={chat.showProviders}
                         session={session}
+                        tags={chat.tagsOf(session)}
                         now={now}
                         renaming={renaming === session.id}
                         picked={picked.has(session.id)}
@@ -471,6 +478,7 @@ const BoardView = memo(function BoardView({
                 on: targets(menu.id).every((id) => chat.everyone.some((session) => session.id === id && session.status === one.status)),
               })),
             },
+            ...(chat.everyone.some((session) => session.id === menu.id && session.manager !== true) ? [{ value: 'tags', label: 'Tags', icon: 'tag' }] : []),
             ...(targets(menu.id).every((id) => columnHolding(menu.id)?.rows.some((session) => session.id === id) === true)
               ? [
                   {
@@ -527,6 +535,7 @@ const BoardView = memo(function BoardView({
               if (column.order === 'lineup') chat.change({ progressOrder: movedOrder(chat.settings.progressOrder, ids, value) })
               else chat.change({ columnOrders: { ...chat.settings.columnOrders, [column.id]: movedOrder(column.rows.map((session) => session.id), ids, value) } })
             }
+            if (value === 'tags') setTagging({ ids: targets(menu.id), at: menu.at })
             if (value === 'window') window.geckit.chat.popOut(menu.id)
             if (value === 'rename') setRenaming(menu.id)
             if (value === 'shortcut') {
@@ -544,6 +553,17 @@ const BoardView = memo(function BoardView({
             }
           }}
           onClose={() => setMenu(undefined)}
+        />
+      )}
+
+      {tagging === undefined ? null : (
+        <TagPicker
+          anchor={tagging.at}
+          catalog={chat.settings.taskTags}
+          has={(id) => tagState(chat.everyone.filter((one) => tagging.ids.includes(one.id)).map((one) => one.tags), id)}
+          apply={(change) => window.geckit.chat.tag(tagging.ids, change)}
+          usedBy={(id) => chat.everyone.filter((one) => one.tags?.includes(id) === true).length}
+          onClose={() => setTagging(undefined)}
         />
       )}
 
@@ -572,6 +592,7 @@ function Card({
   employee,
   parent,
   session,
+  tags,
   now,
   renaming,
   picked,
@@ -594,6 +615,8 @@ function Card({
   /** The conversation that asked for this one, while it is still there. */
   readonly parent: ChatSession | undefined
   readonly session: ChatSession
+  /** Its tags as they are in the catalog now. */
+  readonly tags: readonly TaskTag[]
   readonly now: number
   readonly renaming: boolean
   readonly picked: boolean
@@ -680,6 +703,7 @@ function Card({
           )}
         </span>
         <Tags session={session} marked={false} />
+        <TagChips tags={tags} />
         <span className="spacer" />
         {links.length === 0 ? null : (
           <button
@@ -779,6 +803,8 @@ const BoardCard = memo(
   (was, now) =>
     was.showProviders === now.showProviders &&
     was.session === now.session &&
+    was.tags.length === now.tags.length &&
+    was.tags.every((tag, at) => tag === now.tags[at]) &&
     was.now === now.now &&
     was.renaming === now.renaming &&
     was.picked === now.picked &&
@@ -807,6 +833,7 @@ interface KeptTask {
   readonly goal?: string
   readonly checklist?: TaskChecklist
   readonly employeeId?: Employee['id']
+  readonly tags?: readonly string[]
 }
 
 /** What Start will do about the checklist, said under the form. */
@@ -956,15 +983,18 @@ export function NewTask({
     return said === '' ? was : was.trim() === '' ? said : `${was.trimEnd()}\n${said}`
   })
   const [employeeId, setEmployeeId] = useState(kept?.employeeId ?? '')
+  const [tagIds, setTagIds] = useState<readonly string[]>(kept?.tags ?? [])
+  const startTags = tagIds.filter((id) => chat.settings.taskTags.some((one) => one.id === id))
   const chosenEmployee = chat.employeesById.get(employeeId)
   const unavailableEmployee = employeeId !== '' && (chosenEmployee === undefined || chosenEmployee.archived)
 
-  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, checklist, employeeId })), [question, root, text, checklist, employeeId])
+  useEffect(() => localStorage.setItem(keptKey(question), JSON.stringify({ root, text, checklist, employeeId, tags: tagIds })), [question, root, text, checklist, employeeId, tagIds])
   // Closed on purpose, it is let go of; a restart does not unmount it, so what was written stays for the next start.
   useEffect(() => () => localStorage.removeItem(keptKey(question)), [question])
   const [pictures, setPictures] = useState<readonly SessionImage[]>(seed)
   const [starting, setStarting] = useState(false)
   const employeeChoice = <div className={ON_PHONE ? 'phone-task-group' : 'new-task-label'}><div className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}><span>Employee</span><EmployeeSelect className={ON_PHONE ? 'picker employee-select' : 'select employee-select'} employees={chat.employees} value={employeeId} onPick={setEmployeeId} disabled={starting} onManage={onEmployees} /></div>{unavailableEmployee ? <p className="employee-alert" role="alert">Choose an active employee or None.</p> : null}</div>
+  const tagsChoice = <div className={ON_PHONE ? 'phone-task-group' : 'new-task-label'}><div className={ON_PHONE ? 'phone-task-cell' : 'new-task-label'}><span>Tags</span><TagsChoice className={ON_PHONE ? 'picker tags-select' : 'select tags-select'} catalog={chat.settings.taskTags} value={startTags} onChange={setTagIds} usedBy={(id) => chat.everyone.filter((one) => one.tags?.includes(id) === true).length} disabled={starting} /></div></div>
   const startingRef = useRef(false)
   const [startError, setStartError] = useState<string | undefined>()
   const [over, setOver] = useState(false)
@@ -1080,7 +1110,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void (question ? chat.ask(said, sent) : chat.startTask(root, said, checklist, sent, employeeId || undefined)).then(onClose, (error: Error) => {
+    void (question ? chat.ask(said, sent) : chat.startTask(root, said, checklist, sent, employeeId || undefined, startTags)).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1096,7 +1126,7 @@ export function NewTask({
     setStarting(true)
     onStarting(true)
     setStartError(undefined)
-    void chat.planTask(root, text.trim(), checklist, employeeId || undefined).then(onClose, (error: Error) => {
+    void chat.planTask(root, text.trim(), checklist, employeeId || undefined, startTags).then(onClose, (error: Error) => {
       startingRef.current = false
       setStarting(false)
       onStarting(false)
@@ -1131,7 +1161,7 @@ export function NewTask({
         recorded={recorded === undefined ? undefined : { seconds: recorded.seconds, video: recorded.videos.length > 0 }}
         onUnrecord={() => setRecorded(undefined)}
         copying={copying}
-        modelChoices={<>{question ? null : employeeChoice}{modelChoices}</>}
+        modelChoices={<>{question ? null : employeeChoice}{question ? null : tagsChoice}{modelChoices}</>}
       />
     )
   }
@@ -1244,6 +1274,7 @@ export function NewTask({
             </div>
           )}
           {question ? null : employeeChoice}
+          {question ? null : tagsChoice}
           {!chat.showProviders ? null : <label className="new-task-label">
             Assistant
             <select className="new-task-where" value={provider} onChange={(event) => chat.change({ chatProvider: event.target.value as SessionProvider })}>

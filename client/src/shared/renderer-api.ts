@@ -2,6 +2,8 @@ import type { ChecklistEdit, TaskChecklist } from './checklists'
 import type { ShortcutRun } from './shortcut-runs'
 import type { ShortcutDestinationChannel } from './shortcut-destinations'
 import type {
+  TagChange,
+  TaskTag,
   ViewFrame,
   ViewInput,
   Answered,
@@ -327,6 +329,11 @@ return {
     mode: (id: string, mode: SessionMode): void => rendererTransport.send('chat:mode', id, mode),
     transport: (id: string, transport: ClaudeTransport): void => rendererTransport.send('chat:transport', id, transport),
     assignEmployee: (id: string, employeeId: string | null): Promise<void> => rendererTransport.invoke('chat:assignEmployee', id, employeeId),
+    /** Puts tags on these tasks, takes others off and makes the named ones that do not exist yet, which it answers with. */
+    tag: (ids: readonly string[], change: TagChange): Promise<readonly TaskTag[]> => rendererTransport.invoke('chat:tag', ids, change),
+    editTag: (id: string, change: { readonly name?: string; readonly color?: number }): Promise<TaskTag | undefined> => rendererTransport.invoke('tags:edit', id, change),
+    /** Deletes a tag and takes it off every task, saying how many had it. */
+    deleteTag: (id: string): Promise<{ readonly removedFrom: number }> => rendererTransport.invoke('tags:delete', id),
     rename: (id: string, title: string): void => rendererTransport.send('chat:rename', id, title),
     setChecklist: (id: string, checklist: TaskChecklist, edit?: ChecklistEdit): void => rendererTransport.send('chat:setChecklist', id, checklist, edit),
     mark: (id: string, status: SessionStatus | undefined): void => rendererTransport.send('chat:mark', id, status ?? null),

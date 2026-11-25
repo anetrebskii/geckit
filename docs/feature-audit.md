@@ -2,6 +2,10 @@
 
 This is the supporting audit. The concise, user-approved feature list is [docs/features.md](features.md).
 
+## Task tags - 2026-11-25 (main, working tree, not released)
+
+Alex approved the feature list entry in Claude session https://claude.ai/code/session_012rPUxWsXTcMRCW46DRYa3G. Design: [docs/ux/task-tags.md](ux/task-tags.md), prototype [docs/design/task-tags.html](design/task-tags.html), spec [specs/038-task-tags/](../specs/038-task-tags/). Implementation: catalog and filter in `Settings.taskTags` / `Settings.tagFilter` normalised in `main/store.ts`; `core/tags.ts` (create, edit, delete, colour rotation) and `shared/tags.ts` (name rules, `matchesTags`, `tagLookup`); ids on the session note in `main/sessions/index.ts`, carried through prepared and planned tasks; service methods `chat:tag`, `tags:edit`, `tags:delete`; renderer `chat/TagPicker.tsx`, `chat/TaskTags.tsx`, `TagChips` in `chat/Tags.tsx`, wired into `Board.tsx`, `Sidebar.tsx`, `PhoneBoard.tsx`, `PhoneInfo.tsx`, `Chat.tsx`, `TaskFilters.tsx` and `Switcher.tsx`; CLI `sessions tag` and `sessions list --tag` in `core/product-sessions.ts`, documented in `skills/manage-worker-lifecycle/references/commands.md`. Tests: `client/test/tags.test.ts`, `tags-sessions.test.ts`, `tags-cli.test.ts`, plus `switcher.test.ts` and `store.test.ts`; full suite 2337 passed. Rendered review on a fake backend in Camoufox at 1440x900 light, 1024x768 dark, 390x844 and 320x568 phone, with keyboard and 200-card performance checks, recorded in [specs/038-task-tags/design.md](../specs/038-task-tags/design.md). Not checked against a running service, a real CLI call or the rebuilt native phone app.
+
 ## Manager token economy - 2026-11-19 (working tree, not released)
 
 Spec `specs/037-manager-token-economy/`, prompted by the EntechBot incident (Manager on Claude Max 5x spending the plan with nobody using it). The features.md entry awaits Alex's approval.

@@ -92,6 +92,7 @@ import { asksToType, runInTerminal, runShell, toldClaude, wantsKeyboard } from '
 import type { Running } from './shell'
 import { taskFile, taskOutput } from './tasks'
 import type { Usage } from './usage'
+import { changedTags } from '../../shared/tags'
 import {
   answeredLine,
   cardFor,
@@ -115,6 +116,8 @@ import {
 
 export interface SessionNote {
   readonly employeeId?: Employee['id']
+  /** The person's tags on it, by id, in the order added. */
+  readonly tags?: readonly string[]
   readonly employeeRoot?: ChatSession['root']
   readonly prepared?: Pick<SessionMessage, 'text'>
   readonly preparedDestination?: ChatSession['id']
@@ -816,7 +819,7 @@ export class Sessions {
       throw new Error('The originating request changed. No worker message was sent.')
     }
     this.#fresh(id, message.root, firstLine(message.text, 80), message.mode)
-    this.#note(id, { ...ownership, here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
+    this.#note(id, { ...ownership, here: true, parent, managerOwner: owner, managerOperation: operation, ...(message.tags === undefined || message.tags.length === 0 ? {} : { tags: [...message.tags] }), ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), unborn: message.root, title: firstLine(message.text, 80) })
     return this.send({ ...message, session: id })
   }
 
@@ -1368,6 +1371,7 @@ export class Sessions {
       sessions.push({
         id,
         ...(note?.employeeId === undefined ? {} : { employeeId: note.employeeId }),
+        ...(note?.tags === undefined || note.tags.length === 0 || this.isManager(id) ? {} : { tags: note.tags }),
         ...(note?.prepared === undefined ? {} : { prepared: true as const }),
         ...(live?.state !== 'working' || live.retryNotice === undefined ? {} : { retryNotice: live.retryNotice }),
         ...(note?.delivery === undefined ? {} : { delivery: note.delivery }),
@@ -1852,7 +1856,7 @@ export class Sessions {
     if (backend.localOnly && isRemote(message.root)) throw new Error(`${backend.name} is available for local folders.`)
     const id = `${provider === 'claude' ? '' : `${provider}:`}copy-${randomUUID()}`
     const title = firstLine(message.text, 80)
-    const note: SessionNote = { ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), prepared: { text: message.text }, unborn: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }), ...(message.reasoning === undefined ? {} : { reasoning: message.reasoning }), title, here: true, created: this.#now() }
+    const note: SessionNote = { ...(message.tags === undefined || message.tags.length === 0 ? {} : { tags: [...message.tags] }), ...(message.employeeId === undefined ? {} : { employeeId: message.employeeId, employeeRoot: message.root }), prepared: { text: message.text }, unborn: message.root, mode: message.mode, ...(message.model === undefined ? {} : { model: message.model }), ...(message.reasoning === undefined ? {} : { reasoning: message.reasoning }), title, here: true, created: this.#now() }
     this.#deps.notes.set(id, note)
     const live = this.#fresh(id, message.root, title, message.mode)
     live.chosen = message.model
@@ -1904,6 +1908,33 @@ export class Sessions {
     const { employeeId: _employee, employeeRoot: _root, ...kept } = note ?? {}
     this.#deps.notes.set(id, { ...kept, ...(employeeId === null ? {} : { employeeId, employeeRoot: root }) })
     this.#changed()
+  }
+
+  /** Puts tags on these tasks and takes others off; Manager conversations have none. */
+  setTags(ids: readonly ChatSession['id'][], add: readonly string[], remove: readonly string[]): void {
+    for (const id of ids) if (this.isManager(id)) throw new Error('This conversation cannot have tags.')
+    for (const id of ids) {
+      const note = this.#deps.notes.all()[id]
+      if (note === undefined && !this.#rows.has(id) && !this.#live.has(id)) throw new Error('This conversation is no longer available.')
+      const tags = changedTags(note?.tags, add, remove)
+      const { tags: _tags, ...kept } = note ?? {}
+      this.#deps.notes.set(id, tags.length === 0 ? kept : { ...kept, tags })
+    }
+    this.#changed()
+  }
+
+  /** Takes a deleted tag off every task, and says how many had it. */
+  stripTag(tag: string): number {
+    let count = 0
+    for (const [id, note] of Object.entries(this.#deps.notes.all())) {
+      if (note.tags?.includes(tag) !== true) continue
+      count += 1
+      const tags = note.tags.filter((one) => one !== tag)
+      const { tags: _tags, ...kept } = note
+      this.#deps.notes.set(id, tags.length === 0 ? kept : { ...kept, tags })
+    }
+    if (count > 0) this.#changed()
+    return count
   }
 
   employeeAssignment(id: ChatSession['id']): Employee['id'] | undefined {
@@ -2406,7 +2437,8 @@ export class Sessions {
       this.#preparedSending.add(id)
       try {
         const employeeId = this.#deps.notes.all()[id]?.employeeId
-        const sent = await this.send({ ...first, ...(employeeId === undefined ? {} : { employeeId }), ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
+        const tags = this.#deps.notes.all()[id]?.tags
+        const sent = await this.send({ ...first, ...(employeeId === undefined ? {} : { employeeId }), ...(tags === undefined || tags.length === 0 ? {} : { tags }), ...(goal !== undefined && isCodexProvider(provider) ? { goal } : {}) }, go, id, queued, delegateFrom, guardAttempt, delivery)
         if (goal !== undefined && !isCodexProvider(provider)) await this.send({ session: sent, root: message.root, mode: message.mode, text: `/goal ${goal}`, ...(message.model === undefined ? {} : { model: message.model }) })
         return sent
       } finally { this.#preparedSending.delete(id) }
@@ -2447,9 +2479,10 @@ export class Sessions {
     }
     if (target?.checkingIp === true) throw new Error('Not sent: another public IP check is in progress. Try again when it finishes.')
     if (message.session === undefined && guardSource !== undefined) {
-      const { employeeId: _employee, ...request } = message
+      const { employeeId: _employee, tags: _tags, ...request } = message
       const employeeId = this.#deps.notes.all()[guardSource]?.employeeId
-      message = { ...request, ...(employeeId === undefined ? {} : { employeeId }) }
+      const tags = this.#deps.notes.all()[guardSource]?.tags
+      message = { ...request, ...(employeeId === undefined ? {} : { employeeId }), ...(tags === undefined || tags.length === 0 ? {} : { tags }) }
       if (employeeId !== undefined) this.#deps.validateEmployee?.(employeeId)
     }
     const operation: Extract<HeldOperation, { kind: 'message' }> = { kind: 'message', message, go, queued, delegateFrom }
@@ -2460,6 +2493,7 @@ export class Sessions {
       const id = message.submission ?? `${provider === 'claude' ? '' : `${provider}:`}pending-${randomUUID()}`
       target = this.#fresh(id, message.question === true ? homedir() : message.root, firstLine(message.text, 80), message.mode, message.question === true)
       if (message.employeeId !== undefined) this.#note(id, { employeeId: message.employeeId, employeeRoot: target.root })
+      if (message.tags !== undefined && message.tags.length > 0) this.#note(id, { tags: [...message.tags] })
     }
     const attempt: GuardAttempt | undefined = guardAttempt ?? (target === undefined ? undefined : { live: target, guardGeneration: target.guardGeneration, deadline: Date.now() + 10_000 })
     try {
@@ -2538,6 +2572,7 @@ export class Sessions {
         await this.#reread(live)
       }
       if (message.employeeId !== undefined) this.#note(id, { employeeId: message.employeeId, employeeRoot: root })
+      if (message.session === undefined && message.tags !== undefined && message.tags.length > 0) this.#note(id, { tags: [...message.tags] })
       if (live.question) this.#keepNote(live)
     } else {
       await this.#applyPendingProvider(live)

@@ -24,6 +24,7 @@ import { MANAGER_MAIN_THREAD, managerProjects } from '../shared/manager'
 import type { ManagerConfig, ManagerInstructionsResult, ManagerRequestSource } from '../shared/manager'
 import type { ManagerThreadName } from '../shared/api'
 import { withColors } from '../shared/project-color'
+import { createTags, findTag, knownTags, usedTags } from '../core/tags'
 import { requestedProvider } from '../cli/start'
 import { attachmentFilename, attachmentImage } from './channel-attachments'
 import type { ChannelAttachments } from './channel-attachments'
@@ -109,6 +110,7 @@ export const MANAGER_CAPABILITIES = {
     'employees show <employee-id>',
     'employees memory <employee-id> [--cursor <next>]',
     'sessions assign --id <managed-worker-id> --employee <active-employee-id|none>',
+    'sessions tag --id <managed-worker-id> [--add <tag name>] [--remove <tag name>] (only when the user asks to tag; --add makes a missing tag; list rows show tag ids, settings show taskTags names them)',
     'sessions list [--managed]',
     'sessions show --id <full-session-id> [--last <1-30>]',
     'sessions checklist --id <managed-worker-id> --items <JSON array> (replaces the task\'s own checklist copy; an item whose title is unchanged keeps whether it passed; items with check person are approved only by the person, never by Manager)',
@@ -149,7 +151,7 @@ export const MANAGER_CAPABILITIES = {
   ],
 } as const
 
-const THREAD_WORKER_COMMANDS = ['list', 'show', 'start', 'assign', 'send', 'retry', 'steer', 'stop', 'mark', 'answer']
+const THREAD_WORKER_COMMANDS = ['list', 'show', 'start', 'assign', 'tag', 'send', 'retry', 'steer', 'stop', 'mark', 'answer']
 
 interface CommandShape {
   readonly domain: string
@@ -172,6 +174,7 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'sessions', command: 'checklist', flags: ['--id', '--items'] },
   { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--checklist', '--items', '--title', '--provider', '--employee', '--model'] },
   { domain: 'sessions', command: 'assign', flags: ['--id', '--employee'] },
+  { domain: 'sessions', command: 'tag', flags: ['--id', '--add', '--remove'] },
   { domain: 'sessions', command: 'send', flags: ['--id', '--text'] },
   { domain: 'sessions', command: 'retry', flags: ['--id'] },
   { domain: 'sessions', command: 'steer', flags: ['--id', '--text'] },
@@ -610,6 +613,17 @@ export class ManagerOperations {
         if (choice !== 'none') { if (this.#deps.employees === undefined) throw new Error('Employees are not ready yet.'); this.#deps.employees.active(choice) }
         this.#deps.sessions.assignEmployee(id, choice === 'none' ? null : choice)
         return JSON.stringify({ id, employeeId: choice === 'none' ? null : choice })
+      }
+      if (command === 'tag') {
+        if (!flags.has('--add') && !flags.has('--remove')) throw new Error('Supply --add <name>, --remove <name> or both.')
+        const settings = this.#deps.settings()
+        const removing = flags.has('--remove') ? findTag(settings.taskTags, required(flags, '--remove')) : undefined
+        if (flags.has('--remove') && removing === undefined) throw new Error(`No tag named "${required(flags, '--remove').trim()}".`)
+        const made = createTags(settings.taskTags, flags.has('--add') ? [required(flags, '--add')] : [], Date.now())
+        this.#deps.sessions.setTags([id], made.tags.map((one) => one.id), removing === undefined ? [] : [removing.id])
+        const catalog = usedTags(made.catalog, made.tags.map((one) => one.id), Date.now())
+        this.#deps.saveSettings({ taskTags: catalog })
+        return JSON.stringify({ id, tags: knownTags(this.#deps.notes.all()[id]?.tags, catalog).map((one) => one.name) })
       }
       if (command === 'attach') {
         if (this.#deps.managed(id)) return JSON.stringify({ id, attached: false, alreadyManaged: true })

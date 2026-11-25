@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util'
 
 import { dataDirectory } from '../core/platform'
 import { readPreferences, writePreferences } from '../core/configuration'
+import { normalTags } from '../core/tags'
 
 import { DEFAULT_SETTINGS, sessionMode } from '../shared/api'
 import { newKey } from '../shared/pairing'
@@ -111,6 +112,7 @@ export function getSettings(): Settings {
       channels: found.channels ?? [],
       projectAssistants: found.projectAssistants ?? [],
       employeeFilter: typeof found.employeeFilter === 'string' ? found.employeeFilter : '',
+      ...normalTags(found.taskTags, found.tagFilter),
       providerAutoUpdate: found.providerAutoUpdate ?? true,
       providerUpdatesReady: found.providerUpdatesReady ?? [],
       providerRemovalPending: found.providerRemovalPending ?? false,

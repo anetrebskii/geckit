@@ -11,7 +11,7 @@ export const PREFERENCE_SECTIONS = {
   integrations: ['browserNames', 'guideClaude', 'guideCodex', 'guidePlugins', 'chromeBridge', 'chromeBridgeDefault', 'phone', 'vpnIpCheck', 'vpnAllowedIps', 'channels', 'channelAutoUpdate'],
 } as const satisfies { readonly [section: string]: readonly (keyof Settings)[] }
 
-export const LOCAL_SETTINGS = ['audioDevices', 'client', 'transcriptions', 'favorites', 'phoneKey', 'progressOrder', 'columnOrders', 'providerUpdatesReady', 'providerRemovalPending', 'conversationWindows'] as const satisfies readonly (keyof Settings)[]
+export const LOCAL_SETTINGS = ['audioDevices', 'client', 'transcriptions', 'favorites', 'phoneKey', 'progressOrder', 'columnOrders', 'providerUpdatesReady', 'providerRemovalPending', 'conversationWindows', 'taskTags', 'tagFilter'] as const satisfies readonly (keyof Settings)[]
 
 type ShortcutHistory = Pick<Shortcut, 'id' | 'since' | 'lastRun' | 'lastSession' | 'runSessions'>
 export type ConfiguredShortcut = Omit<Shortcut, Exclude<keyof ShortcutHistory, 'id'>>

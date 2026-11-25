@@ -1,13 +1,13 @@
 import { EmployeeBadge } from '../employees/Employees'
 import type { Employee } from '../../../shared/employees'
 import { ProviderIcon } from './ProviderIcon'
-import { Tags } from './Tags'
+import { TagChips, Tags } from './Tags'
 export { Tags } from './Tags'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
 import { homeOf, letsGo, SESSION_STATUSES } from '../../../shared/api'
-import type { ChatGrouping, ChatSession, SessionStatus } from '../../../shared/api'
+import type { ChatGrouping, ChatSession, SessionStatus, TaskTag } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { Menu } from '../ui/Menu'
 import { MOD } from '../ui/Shortcuts'
@@ -157,6 +157,7 @@ const Row = memo(function Row({
   showProviders,
   employee,
   session,
+  tags,
   on,
   picking,
   picked,
@@ -178,6 +179,7 @@ const Row = memo(function Row({
   readonly showProviders: boolean
   readonly employee: Employee | undefined
   readonly session: ChatSession
+  readonly tags: readonly TaskTag[]
   readonly on: boolean
   /** Rows are being picked to be deleted together, and a press picks rather than opens. */
   readonly picking: boolean
@@ -280,6 +282,7 @@ const Row = memo(function Row({
         <span className="foot">
           <EmployeeBadge employee={employee} />
           <Tags session={session} />
+          <TagChips tags={tags} />
           <span className="stands">
             {where === undefined ? null : (
               <span className="where tinted" style={tint(color)}>
@@ -310,6 +313,7 @@ const Row = memo(function Row({
 const Rows = memo(function Rows({
   showProviders,
   employees,
+  tagsOf,
   groups,
   places,
   by,
@@ -333,6 +337,7 @@ const Rows = memo(function Rows({
   onLand,
 }: {
   readonly employees: ReadonlyMap<Employee['id'], Employee>
+  readonly tagsOf: Chat['tagsOf']
   readonly showProviders: boolean
   readonly groups: readonly Group[]
   readonly places: ReadonlyMap<string, number>
@@ -416,6 +421,7 @@ const Rows = memo(function Rows({
                 showProviders={showProviders}
                 employee={employees.get(session.employeeId ?? '')}
                 session={session}
+                tags={tagsOf(session)}
                 on={!picking && session.id === shownId}
                 picking={picking}
                 picked={picked.has(session.id)}
@@ -677,13 +683,14 @@ export function Sidebar({
       <Rows
         showProviders={chat.showProviders}
         employees={chat.employeesById}
+        tagsOf={chat.tagsOf}
         groups={groups}
         places={places}
         by={by}
         now={now}
         scope={chat.scope}
         colors={chat.settings}
-        empty={!taskListSettled(chat) && chat.sessions.length === 0 ? '' : chat.root === undefined ? 'Add a folder to start.' : chat.settings.employeeFilter !== '' && chat.sessions.length === 0 ? 'No tasks match these filters' : undefined}
+        empty={!taskListSettled(chat) && chat.sessions.length === 0 ? '' : chat.root === undefined ? 'Add a folder to start.' : (chat.settings.employeeFilter !== '' || chat.settings.tagFilter.length > 0) && chat.sessions.length === 0 ? 'No tasks match these filters' : undefined}
         shownId={shownId}
         folded={folded}
         renaming={renaming}

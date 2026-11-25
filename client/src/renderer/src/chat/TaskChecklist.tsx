@@ -45,7 +45,7 @@ export interface SaveAs {
   readonly root: string | undefined
 }
 
-export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onClear, onClose, panel = false, canStart = false, saveAs }: {
+export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onClear, onClose, panel = false, canStart = false, saveAs, above }: {
   readonly checklist: TaskChecklist
   /** The conversation's goal now, so the item it was set from stands out. */
   readonly goal?: string | undefined
@@ -58,6 +58,8 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
   readonly panel?: boolean
   readonly canStart?: boolean
   readonly saveAs?: SaveAs | undefined
+  /** What the panel shows over the checklist: the task's tags. */
+  readonly above?: React.ReactNode
 }): React.JSX.Element {
   const [items, setItems] = useState<readonly ChecklistItem[]>(() => (checklist.items.length === 0 ? [newItem()] : checklist.items))
   const [ticked, setTicked] = useState<ReadonlyMap<string, boolean>>(new Map())
@@ -186,7 +188,8 @@ export function TaskChecklistEditor({ checklist, goal, personItem, onSave, onCle
   ) : null
   const clearButton = checklist.items.length === 0 ? null : <button type="button" className="quiet danger" onClick={clear}>Clear checklist</button>
   if (panel) return (
-    <aside className="task-checklist-panel" aria-label={title}>
+    <aside className="task-checklist-panel" aria-label="Details">
+      {above}
       <header className="task-checklist-panel-head">
         <div className="task-checklist-panel-title">
           <h3>{title}</h3>

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { CoreMethods } from './application'
 import type { ProductAuthority } from '../shared/product-cli'
-import type { PreparedConversationDraft, SessionMessage } from '../shared/api'
+import type { ChatSession, PreparedConversationDraft, SessionMessage, TaskTag } from '../shared/api'
+import { findTag, knownTags } from '../shared/tags'
 import { providerOf } from '../shared/api'
 import { getSettings } from '../main/store'
 import { taskPlan } from '../shared/checklists'
@@ -10,13 +11,13 @@ import { flagsFrom, required, expectedValues, jsonInput, onlyFields } from './pr
 
 export const SESSION_READS = ['list', 'show', 'search', 'hidden', 'status', 'plans', 'links', 'waiting', 'task-output', 'draft']
 export const SESSION_COMMANDS = {
-  list: ['--project'], show: ['--id', '--last'], search: ['--text', '--project'], hidden: [], status: [], plans: [],
+  list: ['--project', '--tag'], show: ['--id', '--last'], search: ['--text', '--project'], hidden: [], status: [], plans: [],
   start: ['--project', '--provider', '--mode', '--text', '--goal', '--checklist', '--items', '--model', '--employee'],
   prepare: ['--project', '--provider', '--mode', '--text', '--goal', '--checklist', '--items', '--model', '--employee'],
   schedule: ['--project', '--provider', '--mode', '--text', '--goal', '--checklist', '--items', '--model', '--employee'],
   send: ['--id', '--text'], stop: ['--id'], retry: ['--id'], steer: ['--id', '--text'], proceed: ['--id'],
   rename: ['--id', '--title'], mark: ['--id', '--status'], hide: ['--id'], delete: ['--id'], bring: ['--id'], read: ['--id'], release: ['--id'],
-  assign: ['--id', '--employee'], mode: ['--id', '--mode'], transport: ['--id', '--transport'], keep: ['--id', '--on'],
+  assign: ['--id', '--employee'], tag: ['--id', '--add', '--remove'], mode: ['--id', '--mode'], transport: ['--id', '--transport'], keep: ['--id', '--on'],
   export: ['--id'], copy: ['--id', '--provider', '--model', '--text'], continue: ['--id', '--provider', '--model', '--text'],
   unqueue: ['--id', '--queued'], requeue: ['--id', '--queued', '--text'], reorder: ['--id', '--queued', '--target', '--after'],
   delegate: ['--id', '--queued', '--history'], 'inject-queued': ['--id', '--queued'],
@@ -32,7 +33,18 @@ export async function productSessions(api: CoreMethods, args: readonly string[],
   const json = <T>(value: T): string => JSON.stringify(value ?? null)
   const project = flags.get('--project')
   if (project !== undefined && !getSettings().projects.includes(project)) throw new Error('Choose an exact registered project root from projects list.')
-  if (command === 'list') return json(await api['chat:list'](project))
+  const catalog = getSettings().taskTags
+  const named = (session: ChatSession): ChatSession | (Omit<ChatSession, 'tags'> & { readonly tags: readonly string[] }) => ({ ...session, tags: knownTags(session.tags, catalog).map((one) => one.name) })
+  const tagNamed = (name: string): TaskTag => {
+    const found = findTag(catalog, name)
+    if (found === undefined) throw new Error(`No tag named "${name.trim()}".`)
+    return found
+  }
+  if (command === 'list') {
+    const asked = flags.get('--tag')
+    const tag = asked === undefined ? undefined : tagNamed(asked)
+    return json((await api['chat:list'](project)).filter((one) => tag === undefined || one.tags?.includes(tag.id) === true).map(named))
+  }
   if (command === 'search') return json(await api['chat:search'](required(flags, '--text'), project))
   if (command === 'hidden') return json(await api['chat:hidden'](true))
   if (command === 'status') return json(api['chat:listStatus']())
@@ -116,6 +128,13 @@ export async function productSessions(api: CoreMethods, args: readonly string[],
     return json({ id, releaseRequested: true, notice: 'Provider disable rechecks held and closing runtimes before saving.' })
   }
   else if (command === 'read') api['chat:read'](id)
+  else if (command === 'tag') {
+    if (!flags.has('--add') && !flags.has('--remove')) throw new Error('Supply --add <name>, --remove <name> or both.')
+    const remove = flags.has('--remove') ? [tagNamed(required(flags, '--remove')).id] : []
+    await api['chat:tag']([id], { remove, ...(flags.has('--add') ? { create: [required(flags, '--add')] } : {}) })
+    const now = (await api['chat:list'](undefined)).find((one) => one.id === id)
+    return json({ id, tags: knownTags(now?.tags, getSettings().taskTags).map((one) => one.name) })
+  }
   else if (command === 'assign') api['chat:assignEmployee'](id, required(flags, '--employee') === 'none' ? null : required(flags, '--employee'))
   else if (command === 'mode') {
     const selected = mode(required(flags, '--mode'))

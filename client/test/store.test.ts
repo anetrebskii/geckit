@@ -70,6 +70,23 @@ it('reads a column chosen by an earlier build as that column ticked, and In revi
   }
 })
 
+it('loads tags made safe, with a filter naming only tags that exist', () => {
+  loadVpnSettings({ taskTags: [{ id: 'a', name: ' Urgent ', color: 3, used: 1 }, { id: 'b', name: 'urgent', color: 1, used: 2 }, { id: 'c', name: 'Big', color: 40, used: 0 }], tagFilter: ['c', 'gone'] } as unknown as Partial<Settings>)
+  try {
+    expect(getSettings().taskTags).toEqual([{ id: 'a', name: 'Urgent', color: 3, used: 1 }, { id: 'c', name: 'Big', color: 0, used: 0 }])
+    expect(getSettings().tagFilter).toEqual(['c'])
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+  loadVpnSettings({})
+  try {
+    expect(getSettings().taskTags).toEqual([])
+    expect(getSettings().tagFilter).toEqual([])
+  } finally {
+    rmSync(state.folder, { recursive: true, force: true })
+  }
+})
+
 it('reads a card an earlier build put in In review as In progress', async () => {
   state.folder = mkdtempSync(join(tmpdir(), 'geckit-review-notes-'))
   try {

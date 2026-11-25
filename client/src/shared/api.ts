@@ -411,6 +411,8 @@ export interface ChatSession {
   readonly managerThread?: ManagerThreadName
   /** What the channel that started it says about it. */
   readonly labels?: ManagerLabels
+  /** The person's own tags on it, in the order added. */
+  readonly tags?: readonly TaskTag['id'][]
   readonly provider?: SessionProvider
   readonly transport?: ClaudeTransport
   readonly reasoning?: ReasoningEffort | ''
@@ -618,6 +620,8 @@ export interface ChatFound {
 /** What is sent when Send is pressed. */
 export interface SessionMessage {
   readonly employeeId?: Employee['id']
+  /** A new task's tags. */
+  readonly tags?: readonly TaskTag['id'][]
   readonly submission?: string
   readonly provider?: SessionProvider
   readonly reasoning?: ReasoningEffort | ''
@@ -1187,8 +1191,27 @@ export interface PhoneView {
   readonly trouble?: string
 }
 
+/** A tag the person marks tasks with: shared by every folder on this computer; the colour is a place in the project palette. */
+export interface TaskTag {
+  readonly id: string
+  readonly name: string
+  readonly color: number
+  /** When it was last put on a task, which orders the picker. */
+  readonly used: number
+}
+
+/** What `chat:tag` does to some tasks: tags put on, tags taken off, and names to put on, made first where they do not exist. */
+export interface TagChange {
+  readonly add?: readonly TaskTag['id'][]
+  readonly remove?: readonly TaskTag['id'][]
+  readonly create?: readonly string[]
+}
+
 export interface Settings {
   readonly employeeFilter: string
+  readonly taskTags: readonly TaskTag[]
+  /** Empty is every task, ['none'] the untagged ones, otherwise tasks with any of these tags. */
+  readonly tagFilter: readonly string[]
   readonly theme: Theme
   readonly vpnIpCheck: boolean
   readonly vpnAllowedIps: readonly string[]
@@ -1416,6 +1439,8 @@ export function shownProjects(settings: Pick<Settings, 'projects' | 'profiles' |
 
 export const DEFAULT_SETTINGS: Settings = {
   employeeFilter: '',
+  taskTags: [],
+  tagFilter: [],
   theme: 'system',
   vpnIpCheck: false,
   vpnAllowedIps: [],

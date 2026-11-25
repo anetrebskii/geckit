@@ -17328,3 +17328,62 @@ html.phone .task-checklist-phone .phone-head { margin-top: 0; }
 @media (prefers-reduced-motion: reduce) { .remote-dropped { animation: none; } }
 .remote-opening.quick { gap: 16px; color: var(--text-dim); font-size: 13px; }
 .remote-opening-line { display: flex; align-items: center; gap: 10px; }
+
+/* Tags on tasks: a neutral chip with the tag's colour only in its dot. */
+.tag.user-tag { max-width: 120px; gap: 4px; }
+.tag.user-tag .tag-name { overflow: hidden; text-overflow: ellipsis; }
+.tag-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tint); }
+.tag.more { color: var(--text-faint); }
+.board-card-foot .tag.user-tag, .row .foot .tag.user-tag { min-width: 0; flex-shrink: 1; }
+.head-tags { display: inline-flex; flex-shrink: 1; gap: 4px; align-items: center; min-width: 0; padding: 0; border-radius: 5px; }
+.head-tags:hover .tag { color: var(--text); border-color: var(--border-strong); }
+
+/* The picker: a field over the tags, each row checking its tag and carrying its own "...". */
+.menu.tag-picker { width: 270px; }
+.tag-line { display: flex; align-items: center; border-radius: 5px; }
+.tag-line:hover, .tag-line.at { background: var(--bg-hover); }
+.tag-line .menu-item { display: grid; flex: 1; grid-template-columns: 14px 8px minmax(0, 1fr); gap: 8px; min-width: 0; background: none; }
+.tag-line .tag-dot { width: 8px; height: 8px; }
+.tag-line .label { max-width: none; overflow: hidden; text-overflow: ellipsis; }
+.tag-mark { display: flex; color: var(--accent); }
+.tag-line-more { flex: none; width: 24px; height: 24px; margin-right: 3px; opacity: 0; }
+.tag-line:hover .tag-line-more, .tag-line:focus-within .tag-line-more, .tag-line-more.open, .tag-line.at .tag-line-more { opacity: 1; }
+.tag-line.editing { display: block; padding: 3px 4px; background: none; }
+.tag-line.editing input { width: 100%; padding: 5px 7px; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--accent); border-radius: var(--radius); }
+.tag-line-error { padding: 4px 3px 2px; color: var(--danger); font-size: 12px; }
+.tag-create { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; color: var(--text-dim); }
+.tag-create .tag-mark { color: var(--text-faint); }
+.tag-create.at { background: var(--bg-hover); }
+.tag-note { padding-left: 9px; }
+.tag-failed { color: var(--danger); }
+.menu.tag-options { z-index: 82; }
+.tag-swatches { display: grid; grid-template-columns: repeat(4, 22px); gap: 8px; padding: 6px 9px 8px; }
+.tag-swatch { width: 22px; height: 22px; border-radius: 50%; background: var(--tint); }
+.tag-swatch.on { box-shadow: 0 0 0 2px var(--bg-raised), 0 0 0 3.5px var(--tint); }
+.dialog-scrim.tag-delete-scrim { z-index: 90; }
+.tag-sheet .menu-search { inline-size: calc(100% - 24px); margin: 12px; font-size: 16px; }
+.tag-sheet .tag-line .menu-item { min-height: 48px; padding: 9px 16px; font-size: 17px; }
+.tag-sheet .tag-line-more { width: 44px; height: 44px; opacity: 1; }
+.tag-sheet .tag-create { min-height: 48px; padding: 9px 16px; font-size: 17px; }
+
+/* The details panel's Tags, over the checklist. */
+.task-tags { padding: 14px 16px 12px; border-bottom: 1px solid var(--border); }
+.task-tags h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.task-tags-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.task-tags-list .tag.user-tag { max-width: 100%; padding-right: 2px; font-size: 12px; line-height: 20px; }
+.tag-remove { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--text-faint); border-radius: 3px; }
+.tag-remove:hover { color: var(--text); background: var(--bg-hover); }
+.task-tags-add { display: inline-flex; gap: 4px; align-items: center; padding: 1px 7px; font-size: 12px; line-height: 20px; color: var(--text-dim); border: 1px dashed var(--border-strong); border-radius: 4px; }
+.task-tags-add:hover, .task-tags-add.on { color: var(--text); border-color: var(--text-faint); }
+
+/* The New task form's Tags control and the phone's info row. */
+.tags-select { display: inline-flex; gap: 6px; align-items: center; max-inline-size: 240px; min-block-size: 28px; overflow: hidden; }
+.new-task-side .tags-select { max-inline-size: none; }
+html.phone .tags-select { min-block-size: 38px; font-size: 14px; }
+.tags-choice { display: inline-flex; gap: 4px; min-width: 0; overflow: hidden; }
+.phone-info-tags { display: inline-flex; gap: 4px; min-width: 0; overflow: hidden; }
+html.phone .tag-swatches { grid-template-columns: repeat(4, 44px); justify-content: space-between; gap: 14px; padding: 14px 16px; }
+html.phone .tag-swatch { width: 44px; height: 44px; }
+div.phone-task-cell > span:first-child { color: var(--text); margin-inline-start: 0; }
+.phone-task-cell .tags-choice span { margin-inline-start: 0; color: inherit; }
+.phone-task-cell .tags-choice .tag-name { display: block; }

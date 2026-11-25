@@ -37,6 +37,8 @@ import { startedCount } from './started'
 import { computerName, needsComputer } from './PhoneHosts'
 import { homePath, projectLabel, projectName, tint } from './project'
 import { Sidebar, Tags } from './Sidebar'
+import { TagChips } from './Tags'
+import { HeaderTags, TaskTags } from './TaskTags'
 import { Status, TalkStatus } from './Status'
 import { Notices } from './Notices'
 import { Recent } from './Recent'
@@ -777,6 +779,7 @@ export function Chat(): React.JSX.Element {
                 </span>
                 {host === undefined ? null : <HostChip host={host} onTerminal={() => window.geckit.hosts.terminal(host.id)} />}
                 <Tags session={chat.session} marked={false} />
+                {chat.session.manager === true ? null : <HeaderTags session={chat.session} tags={chat.tagsOf(chat.session)} catalog={chat.settings.taskTags} everyone={chat.everyone} chips={<TagChips tags={chat.tagsOf(chat.session)} />} />}
                 <EmployeeAssignment key={chat.session.id} chat={chat} onManage={openTeam} />
               </>
             ) : chat.root === undefined ? null : (
@@ -918,8 +921,8 @@ export function Chat(): React.JSX.Element {
                   <button
                     type="button"
                     className={`icon-button no-drag inspector-toggle${checklistShown ? ' on' : ''}`}
-                    title={checklistShown ? 'Hide checklist' : 'Show checklist'}
-                    aria-label="Checklist"
+                    title={checklistShown ? 'Hide details' : 'Show details'}
+                    aria-label="Details"
                     aria-pressed={checklistShown}
                     onClick={() => showChecklist(!checklistShown)}
                   >
@@ -1048,6 +1051,7 @@ export function Chat(): React.JSX.Element {
               onSave={(next, edit) => { if (chat.session !== undefined) chat.setChecklist(chat.session.id, next, edit) }}
               onClear={() => { if (chat.session === undefined) return; chat.setChecklist(chat.session.id, { items: [] }); if (chat.session.goal !== undefined) chat.say('/goal clear') }}
               onClose={() => showChecklist(false)}
+              above={chat.session.manager === true ? null : <TaskTags session={chat.session} tags={chat.tagsOf(chat.session)} catalog={chat.settings.taskTags} everyone={chat.everyone} />}
             />
           ) : null}
         </div>

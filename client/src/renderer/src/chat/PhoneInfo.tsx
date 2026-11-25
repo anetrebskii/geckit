@@ -9,6 +9,8 @@ import { hostOf } from '../../../shared/hosts'
 import type { Link } from '../../../shared/links'
 import { Menu } from '../ui/Menu'
 import { Cell, Drawer } from './PhoneKit'
+import { TagChips } from './Tags'
+import { TagPicker, tagState } from './TagPicker'
 import { projectLabel } from './project'
 import { quotaValue } from './ProviderUsage'
 import { childSaid } from './Request'
@@ -124,6 +126,7 @@ export function PhoneInfo({
   readonly onClose: () => void
 }): React.JSX.Element | null {
   const [asking, setAsking] = useState<'compact' | 'clear'>()
+  const [tagging, setTagging] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer) }, [])
   const session = chat.session
@@ -151,6 +154,16 @@ export function PhoneInfo({
 
   return (
     <Drawer title="Conversation" {...(pulled === undefined ? {} : { pulled })} onClose={onClose}>
+      {tagging ? (
+        <TagPicker
+          anchor={new DOMRect()}
+          catalog={chat.settings.taskTags}
+          has={(id) => tagState([session.tags], id)}
+          apply={(change) => window.geckit.chat.tag([session.id], change)}
+          usedBy={(id) => chat.everyone.filter((one) => one.tags?.includes(id) === true).length}
+          onClose={() => setTagging(false)}
+        />
+      ) : null}
       <div className="phone-head">This conversation</div>
       <div className="phone-group">
         {spend?.used !== undefined ? (
@@ -163,6 +176,7 @@ export function PhoneInfo({
         {spend?.cost === undefined ? null : <Cell label={spend.costKind === 'billed' ? 'Billed cost' : 'API equivalent'} says={spend.costKind === 'billed' ? 'Reported by the provider' : 'At API prices; not a subscription charge'} value={money(spend.cost, spend.currency)} />}
         <Cell label="Mode" value={SESSION_MODES.find((one) => one.mode === session.mode)?.label ?? '-'} />
         <Cell label="Folder" value={projectLabel(homeOf(session))} />
+        {session.manager === true ? null : <Cell label="Tags" value={chat.tagsOf(session).length === 0 ? 'Add tag' : <span className="phone-info-tags"><TagChips tags={chat.tagsOf(session)} limit={1} /></span>} onPress={() => setTagging(true)} />}
         {session.managerThread === undefined ? null : <Cell label="Reports to" value={session.managerThread.said} />}
         {Object.entries(session.labels ?? {}).map(([key, value]) => <Cell key={`label:${key}`} label={key} value={value} />)}
         {parent === undefined ? null : (

@@ -34,7 +34,8 @@ import { hostOf, isRemote } from '../../../shared/hosts'
 import type { HostPrompt, HostView } from '../../../shared/hosts'
 import { asImage, canShow } from '../pictures'
 import { useSettings } from '../settings'
-import type { Settings } from '../../../shared/api'
+import type { Settings, TaskTag } from '../../../shared/api'
+import { matchesTags, tagLookup } from '../../../shared/tags'
 import { hostName } from './project'
 import { useHosts } from './useHosts'
 import { updatedItems } from '../../../shared/transcript-items'
@@ -74,6 +75,8 @@ const keyOf = (shown: Shown): string => (shown.kind === 'new' ? NEW : shown.id)
 export interface Chat {
   readonly employees: readonly Employee[]
   readonly employeesById: ReadonlyMap<Employee['id'], Employee>
+  /** A task's tags that still exist, in its own order: built once per change to the tags, not per card. */
+  readonly tagsOf: (session: Pick<ChatSession, 'tags'>) => readonly TaskTag[]
   readonly settings: Settings
   /** Other computers conversations run on, and how each stands. */
   readonly hosts: readonly HostView[]
@@ -171,9 +174,9 @@ export interface Chat {
   /** A general question, in no project, which the board and the list never show. */
   ask: (text: string, images?: readonly SessionImage[]) => Promise<void>
   /** A new conversation from the board's form: the work goes first, then the goal. */
-  startTask: (root: string, text: string, checklist: TaskChecklist, images?: readonly SessionImage[], employeeId?: Employee['id']) => Promise<void>
+  startTask: (root: string, text: string, checklist: TaskChecklist, images?: readonly SessionImage[], employeeId?: Employee['id'], tags?: readonly string[]) => Promise<void>
   /** A new task put in To do, nothing sent: the words wait in its composer and the goal goes with its first message. */
-  planTask: (root: string, text: string, checklist: TaskChecklist, employeeId?: Employee['id']) => Promise<void>
+  planTask: (root: string, text: string, checklist: TaskChecklist, employeeId?: Employee['id'], tags?: readonly string[]) => Promise<void>
   /** Words sent to the open conversation as they are, the field left alone: `/compact`, `/goal clear`. */
   say: (text: string) => void
   answer: (card: string, answer: CardAnswer | string) => void
@@ -341,7 +344,10 @@ export function useChat(): Chat {
     return listStatus.filter((one) => enabled.includes(one.provider) && one.roots.some((root) => roots.includes(root)))
   }, [listStatus, chosen, settings, enabled])
   const sessions = useMemo(() => storedSessions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedSessions, enabled])
-  const visibleSessions = useMemo(() => sessions.filter((one) => matchesEmployee(one, settings.employeeFilter)), [sessions, settings.employeeFilter])
+  const visibleSessions = useMemo(() => sessions.filter((one) => matchesEmployee(one, settings.employeeFilter) && matchesTags(one, settings.tagFilter)), [sessions, settings.employeeFilter, settings.tagFilter])
+  // Settings arrive whole on every write, so the catalog is compared by what it holds; otherwise every tagged card is drawn again.
+  const tagsKey = JSON.stringify(settings.taskTags)
+  const tagsOf = useMemo(() => tagLookup(JSON.parse(tagsKey) as TaskTag[]), [tagsKey])
   const everyone = useMemo(() => storedEveryone.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedEveryone, enabled])
   const questions = useMemo(() => storedQuestions.filter((one) => one.manager !== true && enabled.includes(providerOf(one.id))), [storedQuestions, enabled])
   const visibleNotices = useMemo(() => notices.filter((one) => one.session === '' || enabled.includes(providerOf(one.session))), [notices, enabled])
@@ -921,13 +927,13 @@ export function useChat(): Chat {
   )
 
   const startTask = useCallback(
-    (root: string, text: string, checklist: TaskChecklist, images: readonly SessionImage[] = [], employeeId?: Employee['id']) => {
+    (root: string, text: string, checklist: TaskChecklist, images: readonly SessionImage[] = [], employeeId?: Employee['id'], tags: readonly string[] = []) => {
       const now = held.current
       const provider = assistantFor(now.settings, root)
       const chosen = providerModel(now.settings, provider)
       const model = chosen === '' ? {} : { model: chosen }
       const carried = images.length === 0 ? {} : { images }
-      return window.geckit.chat.send({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(hasItems(checklist) ? { checklist: taskChecklist(checklist) } : {}) }).then((id) => {
+      return window.geckit.chat.send({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(tags.length === 0 ? {} : { tags }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...carried, ...model, ...(hasItems(checklist) ? { checklist: taskChecklist(checklist) } : {}) }).then((id) => {
         if (chosenRef.current.length > 0 && !chosenRef.current.includes(root)) {
           const next = [...chosenRef.current, root]
           chosenRef.current = next
@@ -939,12 +945,12 @@ export function useChat(): Chat {
     [open],
   )
 
-  const planTask = useCallback((root: string, text: string, checklist: TaskChecklist, employeeId?: Employee['id']) => {
+  const planTask = useCallback((root: string, text: string, checklist: TaskChecklist, employeeId?: Employee['id'], tags: readonly string[] = []) => {
     const now = held.current
     const provider = assistantFor(now.settings, root)
     const chosen = providerModel(now.settings, provider)
     return window.geckit.chat
-      .schedule({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...(chosen === '' ? {} : { model: chosen }), ...(hasItems(checklist) ? { checklist: taskChecklist(checklist) } : {}) })
+      .schedule({ root, provider, ...(employeeId === undefined ? {} : { employeeId }), ...(tags.length === 0 ? {} : { tags }), ...(!isCodexProvider(provider) ? {} : { reasoning: now.settings.codexReasoning }), mode: now.mode, text, ...(chosen === '' ? {} : { model: chosen }), ...(hasItems(checklist) ? { checklist: taskChecklist(checklist) } : {}) })
       .then(() => undefined)
   }, [])
 
@@ -1101,6 +1107,7 @@ export function useChat(): Chat {
   return {
     employees: employees.view.employees,
     employeesById: employees.byId,
+    tagsOf,
     settings,
     hosts,
     prompts,

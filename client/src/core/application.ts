@@ -4,9 +4,10 @@ import { assertProviderUnused } from '../main/provider-settings'
 import type { ChannelScreenRequest } from '../shared/channel-ui'
 import type { ProductAuthority } from '../shared/product-cli'
 import { dispatchProduct } from './product-cli'
+import { createTags, deleteTag, editTag, usedTags } from './tags'
 import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
-import type { BrowserLocationOverrides, ViewInput } from '../shared/api'
+import type { BrowserLocationOverrides, ChatSession, TagChange, TaskTag, ViewInput } from '../shared/api'
 import type { Answered, ConversationContinuation, CorrectRequest, Recording, SessionMessage, Settings, ShortcutDraft, TranscribeRequest } from '../shared/api'
 import { assistantsIn, providerOf, shownProjects, resumeCommand } from '../shared/api'
 import type { EmployeeDraft } from '../shared/employees'
@@ -366,6 +367,26 @@ export function application(runtime: CoreRuntime) {
     'chat:clearTask': (...args: Parameters<Sessions['clearTask']>) => sessions.clearTask(...args),
     'chat:taskOutput': (...args: Parameters<Sessions['taskOutput']>) => sessions.taskOutput(...args),
     'chat:assignEmployee': (...args: Parameters<Sessions['assignEmployee']>) => sessions.assignEmployee(...args),
+    'chat:tag': (ids: readonly ChatSession['id'][], change: TagChange) => {
+      const settings = getSettings()
+      const made = createTags(settings.taskTags, change.create ?? [], Date.now())
+      const add = [...(change.add ?? []).filter((id) => made.catalog.some((one) => one.id === id)), ...made.tags.map((one) => one.id)]
+      sessions.setTags(ids, add, change.remove ?? [])
+      setSettings({ taskTags: usedTags(made.catalog, add, Date.now()) })
+      return made.tags
+    },
+    'tags:edit': (id: TaskTag['id'], change: { readonly name?: string; readonly color?: number }) => {
+      const taskTags = editTag(getSettings().taskTags, id, change)
+      setSettings({ taskTags })
+      return taskTags.find((one) => one.id === id)
+    },
+    'tags:delete': (id: TaskTag['id']) => {
+      const settings = getSettings()
+      const removedFrom = sessions.stripTag(id)
+      const { catalog, filter } = deleteTag(settings.taskTags, settings.tagFilter, id)
+      setSettings({ taskTags: catalog, tagFilter: filter })
+      return { removedFrom }
+    },
     'chat:snapshot': (...args: Parameters<Sessions['snapshot']>) => sessions.snapshot(...args),
     'chat:prepare': (...args: Parameters<Sessions['prepare']>) => sessions.prepare(...args),
     'manager:pause': (...args: Parameters<typeof manager.pause>) => manager.pause(...args),

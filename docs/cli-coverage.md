@@ -214,6 +214,9 @@ Local/target availability and native boundaries inherit the area table. Protocol
 | `chat:clearTask` | `sessions clear-task` |
 | `chat:taskOutput` | `sessions task-output` |
 | `chat:assignEmployee` | `sessions assign` |
+| `chat:tag` | `sessions tag` |
+| `tags:edit` | Desktop and phone tag picker; tags are renamed and recoloured where they are used |
+| `tags:delete` | Desktop and phone tag picker, confirmed with how many tasks lose the tag |
 | `chat:snapshot` | `sessions show/export` |
 | `chat:prepare` | `sessions prepare` |
 | `manager:pause` | `manager` commands above; same common dispatcher |

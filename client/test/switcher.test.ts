@@ -7,7 +7,7 @@ import type { ChatSession } from '../src/shared/api'
 vi.stubGlobal('window', { geckit: {}, setTimeout, clearTimeout })
 vi.stubGlobal('document', { documentElement: { classList: { contains: () => false } } })
 
-const { seeks } = await import('../src/renderer/src/chat/Switcher')
+const { named, seeks } = await import('../src/renderer/src/chat/Switcher')
 
 const session = { id: 'a', root: '/Users/alex/Projects/mine/geckit', title: 'Add mobile push notifications', stands: 'Done', state: 'idle', at: 0, here: true, mode: 'manual' } as ChatSession
 const hit = { id: 'a', root: session.root, said: 'the push notifications arrive', count: 3 }
@@ -27,6 +27,17 @@ describe('seeks', () => {
 
   it('opens at the latest message when nothing was found inside', () => {
     expect(seeks({ session }, ['push'])).toBe(false)
+  })
+})
+
+describe('tag names in search', () => {
+  it('finds a task by the name of its tag', () => {
+    expect(named(session, ['urgent'], 'Urgent Client')).toBe(true)
+    expect(named(session, ['urgent'])).toBe(false)
+  })
+
+  it('opens at the latest message when a tag answers', () => {
+    expect(seeks({ session, hit, tagged: 'Urgent' }, ['urgent'])).toBe(false)
   })
 })
 

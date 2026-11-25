@@ -113,7 +113,7 @@ function Preview(): React.JSX.Element {
   const asks = items.some((item) => item.kind === 'card' && item.card.answered === undefined)
   const session: ChatSession = { id: 'codex:preview', root: '/Users/alex/Projects/mine/geckit', title: 'Review GeckIt Local', stands: asks ? 'Needs your approval' : 'Ready', state: asks ? 'asks' : 'idle', at, here: true, mode, model: 'gpt-preview' }
   const chat: Chat = {
-    employees: [], employeesById: new Map(),
+    employees: [], employeesById: new Map(), tagsOf: () => [],
     settings: { ...DEFAULT_SETTINGS, phrases: [], chatView: 'list' }, hosts: [], prompts: [], lineup: { working: 0, limit: 6 }, full: false, change: noop,
     root: session.root, scope: session.root, sessions: [session], listed: true, listLoading: false, listProblem: undefined, listStatus: [], everyone: [session], questions: [], waiting: asks ? [session] : [], notices: [], shown: { kind: 'session', id: session.id }, session,
     items, itemsFor: session.id, earlier: 0, showEarlier: () => Promise.resolve(), loadSteps: noop, draft, pictures: [], trouble: '', checkingIp: false, retrying: false, retry: noop, uploading: false,
