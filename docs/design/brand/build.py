@@ -106,7 +106,7 @@ subprocess.run(["iconutil", "-c", "icns", iconset, "-o", p("app-icon", "macos", 
 png(ms, p("app-icon", "macos", "icon.png"), 1024)
 
 # Dock icon of the build run from source: the same tile with an orange LOCAL band
-dev = (mac.replace("</defs>", f'<clipPath id="t"><path d="{tile}"/></clipPath></defs>')
+dev = (mac.replace(joint(WT, GR_DARK, 824, 100, 100), joint(WT, GR_DARK, 824, 100, 12)).replace("</defs>", f'<clipPath id="t"><path d="{tile}"/></clipPath></defs>')
        + f'<rect x="100" y="748" width="824" height="116" fill="#E8701A" clip-path="url(#t)"/>'
        + '<text x="512" y="836" font-family="Helvetica Neue, Helvetica, Arial" font-size="88" font-weight="700" fill="#FFFFFF" text-anchor="middle">LOCAL</text>')
 png(write(p("app-icon", "macos", "icon-dev.svg"), svg(dev, 1024, 1024, "GeckIt local build icon")), p("app-icon", "macos", "icon-dev.png"), 1024)
