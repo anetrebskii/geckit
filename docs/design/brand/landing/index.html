@@ -1,0 +1,67 @@
+<title>GeckIt</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20256%20256%22%20width%3D%22256%22%20height%3D%22256%22%3E%3Crect%20x%3D%220%22%20y%3D%220%22%20width%3D%22256%22%20height%3D%22256%22%20rx%3D%2258.00%22%20fill%3D%22%2316191D%22/%3E%3Cg%20transform%3D%22translate%28128.00%20128.00%29%20scale%281.53600%29%20translate%28-64%20-62%29%22%3E%3Cpath%20d%3D%22M22%2028H68V50L47%2045V89L68%2084V106H22Q14%20106%2014%2098V36Q14%2028%2022%2028Z%22%20fill%3D%22%23FFFFFF%22/%3E%3Cpath%20d%3D%22M80%2018H106Q114%2018%20114%2026V81Q114%2089%20106%2089H80V74L58%2079V56L80%2061Z%22%20fill%3D%22%234AC85C%22/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+/* Centered product hero: name, one claim, one action, then the real board */
+:root {
+  --bg: #FFFFFF; --fg: #16191D; --muted: #5C636B; --line: #E7E9EC; --stage: #F3F4F2;
+  --btn-bg: #16191D; --btn-fg: #FFFFFF; --focus: #1F8031;
+  --font-ui: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0F1114; --fg: #F2F4F5; --muted: #9BA3AB; --line: #24282E; --stage: #181B1F;
+  --btn-bg: #F2F4F5; --btn-fg: #16191D; --focus: #4AC85C; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0F1114; --fg: #F2F4F5; --muted: #9BA3AB; --line: #24282E; --stage: #181B1F;
+  --btn-bg: #F2F4F5; --btn-fg: #16191D; --focus: #4AC85C; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 16px; -webkit-font-smoothing: antialiased }
+a { color: inherit; text-decoration: none }
+a:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 8px }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+header { border-bottom: 1px solid var(--line) }
+header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 18px }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 22px; letter-spacing: -0.01em }
+.brand svg { width: 36px; height: 36px; flex: none }
+nav { display: flex; align-items: center; gap: 28px; font-size: 15px; font-weight: 500 }
+nav .link { color: var(--fg); opacity: .85 }
+nav .link:hover { opacity: 1 }
+.btn { display: inline-flex; align-items: center; background: var(--btn-bg); color: var(--btn-fg); font-weight: 600; border-radius: 10px; padding: 10px 18px }
+.btn:hover { opacity: .9 }
+.hero { text-align: center; padding-block: 88px 44px }
+h1 { font-size: clamp(34px, 5.4vw, 64px); line-height: 1.05; letter-spacing: -0.03em; font-weight: 800; margin: 0 auto; max-width: 16ch; text-wrap: balance }
+.lede { color: var(--muted); font-size: clamp(17px, 1.7vw, 21px); line-height: 1.5; margin: 22px auto 0; max-width: 56ch; text-wrap: balance }
+.cta { margin-top: 34px; display: flex; flex-direction: column; align-items: center; gap: 12px }
+.cta .btn { font-size: 18px; padding: 15px 30px; border-radius: 12px }
+.note { color: var(--muted); font-size: 14px }
+.others { color: var(--muted); font-size: 14px; display: flex; gap: 14px; flex-wrap: wrap; justify-content: center }
+.others a { text-decoration: underline; text-underline-offset: 3px }
+.stage { background: var(--stage); border-radius: 22px; padding: clamp(14px, 3.5vw, 48px) clamp(14px, 3.5vw, 48px) 0; overflow: hidden; margin-bottom: 64px }
+.stage img { display: block; width: 100%; height: auto; border-radius: 12px 12px 0 0; box-shadow: 0 18px 50px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.06) }
+footer { border-top: 1px solid var(--line) }
+footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-block: 24px; color: var(--muted); font-size: 14px }
+@media (max-width: 640px) { nav .link { display: none } .hero { padding-block: 56px 32px } }
+</style>
+<header><div class="wrap">
+  <a class="brand" href="#" aria-label="GeckIt"><svg viewBox="0 0 256 256" aria-hidden="true"><rect x="0" y="0" width="256" height="256" rx="58.00" fill="#16191D"/><g transform="translate(128.00 128.00) scale(1.53600) translate(-64 -62)"><path d="M22 32H66V50L46 46V90L66 86V104H22Q14 104 14 96V40Q14 32 22 32Z" fill="#FFFFFF"/><path d="M76 20H106Q114 20 114 28V84Q114 92 106 92H76V74L56 78V58L76 62Z" fill="#4AC85C"/></g></svg>GeckIt</a>
+  <nav>
+    <a class="link" href="https://github.com/anetrebskii/geckit#readme">Features</a>
+    <a class="link" href="https://github.com/anetrebskii/geckit">GitHub</a>
+    <a class="btn" href="https://github.com/anetrebskii/geckit/releases/latest">Download</a>
+  </nav>
+</div></header>
+<main>
+  <section class="hero wrap">
+    <h1>A Kanban board for Codex and Claude Code</h1>
+    <p class="lede">See which conversations are working, which are waiting for you and which are done.</p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-arm64.dmg">Download for macOS</a>
+      <span class="note">Free, with the source public.</span>
+      <span class="others"><a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-x64.dmg">Intel Mac</a><a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt-Setup.exe">Windows</a><a href="https://github.com/anetrebskii/geckit/releases/latest/download/GeckIt.AppImage">Linux</a></span>
+    </div>
+  </section>
+  <div class="wrap"><div class="stage"><img src="board.png" alt="The GeckIt board: tasks in To do, In progress, Done and Archived columns, with Claude working on two of them" width="2696" height="1736"></div></div>
+</main>
+<footer><div class="wrap"><span>GeckIt</span><a href="https://github.com/anetrebskii/geckit">github.com/anetrebskii/geckit</a></div></footer>

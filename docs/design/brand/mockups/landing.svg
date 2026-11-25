@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1440" height="900"><rect width="1440" height="900" fill="#FFFFFF"/>
+<svg x="68" y="28" width="44" height="44" viewBox="0 0 256 256"><rect x="0" y="0" width="256" height="256" rx="58.00" fill="#16191D"/><g transform="translate(128.00 128.00) scale(1.53600) translate(-64 -62)"><path d="M22 32H66V50L46 46V90L66 86V104H22Q14 104 14 96V40Q14 32 22 32Z" fill="#FFFFFF"/><path d="M76 20H106Q114 20 114 28V84Q114 92 106 92H76V74L56 78V58L76 62Z" fill="#4AC85C"/></g></svg><text x="124" y="60" font-family="Helvetica Neue, Helvetica, Arial" font-size="26" font-weight="700" fill="#16191D">GeckIt</text>
+<text x="1080" y="62" font-family="Helvetica, Arial" font-size="16" font-weight="500" fill="#16191D" text-anchor="start">Features</text><text x="1180" y="62" font-family="Helvetica, Arial" font-size="16" font-weight="500" fill="#16191D" text-anchor="start">GitHub</text>
+<rect x="1260" y="36" width="120" height="40" rx="8" fill="#16191D"/><text x="1320" y="62" font-family="Helvetica, Arial" font-size="15" font-weight="600" fill="#FFFFFF" text-anchor="middle">Download</text>
+<line x1="0" y1="104" x2="1440" y2="104" stroke="#ECECEC"/>
+<text x="720" y="220" font-family="Helvetica, Arial" font-size="52" font-weight="700" fill="#16191D" text-anchor="middle">A Kanban board for Codex and Claude Code</text>
+<text x="720" y="272" font-family="Helvetica, Arial" font-size="20" font-weight="400" fill="#555" text-anchor="middle">See which conversations are working, which are waiting for you and which are done.</text>
+<rect x="600" y="306" width="240" height="52" rx="10" fill="#16191D"/><text x="720" y="339" font-family="Helvetica, Arial" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Download for macOS</text>
+<text x="720" y="386" font-family="Helvetica, Arial" font-size="14" font-weight="400" fill="#888" text-anchor="middle">Free, with the source public.</text>
+<rect x="219" y="424" width="1002" height="476" rx="12" fill="#F4F4F2"/>
+<image href="board.png" x="230" y="434" width="980" height="560" preserveAspectRatio="xMidYMin slice"/>
+</svg>

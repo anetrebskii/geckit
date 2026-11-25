@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/icon-walk.svg" width="112" alt=""></p>
+<p align="center"><img src="docs/icon.svg" width="112" alt=""></p>
 
 <h1 align="center">GeckIt, a Kanban board for Codex and Claude Code</h1>
 

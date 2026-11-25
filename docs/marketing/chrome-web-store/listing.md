@@ -7,6 +7,7 @@ What goes into each field of the Chrome Web Store Developer Dashboard. The packa
 - Item id `mjllmbfhnbeihgghghnbbkfcpahljnkp`, in `STORE_EXTENSION_IDS` since 2e4f172. Publisher anetrebskii (aleks.netrebskiy@gmail.com). Dashboard: https://chrome.google.com/webstore/devconsole/f007196f-178b-4e16-ae41-a707601105aa/mjllmbfhnbeihgghghnbbkfcpahljnkp/edit
 - 2026-11-04: version 1.3.0 submitted for review, Unlisted, all regions, published automatically once it passes. The store warned of an in-depth review because of `<all_urls>`; it was kept, since a conversation works on whatever site the person asks about.
 - 2026-11-18: version 1.3.2 (real mouse clicks, key-by-key typing) submitted for review, published automatically once it passes. Uploaded through the `geckit:cws-publisher` test profile; its file input was filled from `eval`, since no browser command chooses a file.
+- 2026-11-25: version 1.3.6 (the Joint logo in place of the gecko) submitted for review over published 1.3.5, published automatically once it passes. Store icon (`store-icon-128.png`), screenshot and small promo tile replaced. The images render from `screenshot.html` and `promo.html` with `icon.png`, `mark.svg` and `panel.png` beside them. Uploaded through the `geckit:cws-publisher` test profile; the hover-only Remove buttons were pressed from `eval`.
 - Every Web Store dashboard page is closed to extensions, GeckIt Browser included; it was filled through a separate test browser, which is what test browsers (`geckit browser start geckit:<name>`) now do.
 
 ## Store listing
@@ -32,7 +33,7 @@ What goes into each field of the Chrome Web Store Developer Dashboard. The packa
 
   Needs the GeckIt app for macOS or Linux, with Chrome through GeckIt turned on in Settings > Integrations.
 
-- **Icon**: `client/extension/icons/128.png`
+- **Icon**: `store-icon-128.png` (96 px tile with a 16 px clear margin)
 - **Screenshot**: `screenshot-1280x800.png`
 - **Small promo tile**: `promo-440x280.png`
 - **Homepage**: https://github.com/anetrebskii/geckit
