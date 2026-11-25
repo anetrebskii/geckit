@@ -3717,3 +3717,25 @@ describe('Manager token economy', () => {
     expect(f.sent.find((one) => one.id === main && one.text.includes('How is it going?'))?.text).toContain('usage limit reset')
   })
 })
+
+describe('Manager sees and sets task tags', () => {
+  it('tags a worker, lists tag names, filters by a tag and shows them', async () => {
+    const f = await fixture()
+    await f.manager.configure({ enabled: true })
+    const managerSession = await f.manager.open()
+    const tagged = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Tagged work' }, 'manager', 'tagged-worker')
+    const plain = await f.sessions.startManaged({ root: f.root, mode: 'manual', text: 'Plain work' }, 'manager', 'plain-worker')
+    let settings = f.settings()
+    const ops = new ManagerOperations({ sessions: f.sessions, notes: f.notes, settings: () => settings, saveSettings: (change) => (settings = { ...settings, ...change }), owner: 'manager', managed: (id) => f.manager.manages(id), managerSession: () => managerSession, authorized: () => true })
+    expect(JSON.parse(await ops.run(['sessions', 'tag', '--id', tagged, '--add', 'Release'], 'tag-add'))).toEqual({ id: tagged, tags: ['Release'] })
+    const rows = JSON.parse(await ops.run(['sessions', 'list'], 'tag-list')) as { id: string; tags: string[] }[]
+    expect(rows.find((one) => one.id === tagged)?.tags).toEqual(['Release'])
+    expect(rows.find((one) => one.id === plain)?.tags).toEqual([])
+    const filtered = JSON.parse(await ops.run(['sessions', 'list', '--tag', 'release'], 'tag-filter')) as { id: string }[]
+    expect(filtered.map((one) => one.id)).toEqual([tagged])
+    await expect(ops.run(['sessions', 'list', '--tag', 'Nope'], 'tag-unknown')).rejects.toThrow('No tag named "Nope".')
+    expect(JSON.parse(await ops.run(['sessions', 'show', '--id', tagged], 'tag-show'))).toMatchObject({ id: tagged, tags: ['Release'] })
+    expect(JSON.parse(await ops.run(['sessions', 'tag', '--id', tagged, '--remove', 'release'], 'tag-remove'))).toEqual({ id: tagged, tags: [] })
+    expect(await ops.run(['capabilities'], 'tag-capabilities')).toContain('sessions list [--managed] [--tag <tag name>]')
+  })
+})

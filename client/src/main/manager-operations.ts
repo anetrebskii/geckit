@@ -110,8 +110,8 @@ export const MANAGER_CAPABILITIES = {
     'employees show <employee-id>',
     'employees memory <employee-id> [--cursor <next>]',
     'sessions assign --id <managed-worker-id> --employee <active-employee-id|none>',
-    'sessions tag --id <managed-worker-id> [--add <tag name>] [--remove <tag name>] (only when the user asks to tag; --add makes a missing tag; list rows show tag ids, settings show taskTags names them)',
-    'sessions list [--managed]',
+    'sessions tag --id <managed-worker-id> [--add <tag name>] [--remove <tag name>] (only when the user asks to tag; --add makes a missing tag)',
+    'sessions list [--managed] [--tag <tag name>] (rows carry tag names)',
     'sessions show --id <full-session-id> [--last <1-30>]',
     'sessions checklist --id <managed-worker-id> --items <JSON array> (replaces the task\'s own checklist copy; an item whose title is unchanged keeps whether it passed; items with check person are approved only by the person, never by Manager)',
     'sessions start --project <project> --text <self-contained-assignment> (--goal <completion-condition>|--checklist <saved-checklist-id-or-name>|--items <JSON array of results>; one of them, or the folder default checklist applies) [--title <title>] [--provider <enabled-provider-id>] [--employee <active-employee-id>] [--model <available-model-id>]',
@@ -169,7 +169,7 @@ const SHAPES: readonly CommandShape[] = [
   { domain: 'projects', command: 'remove', flags: ['--project'] },
   { domain: 'projects', command: 'provider', flags: ['--project', '--provider', '--clear'] },
   ...['list', 'read', 'write', 'mkdir', 'move', 'remove'].map((command) => ({ domain: 'files', command, flags: ['--project', '--path', ...(command === 'write' ? ['--text'] : []), ...(command === 'move' ? ['--to'] : [])] })),
-  { domain: 'sessions', command: 'list', flags: ['--managed'] },
+  { domain: 'sessions', command: 'list', flags: ['--managed', '--tag'] },
   { domain: 'sessions', command: 'show', flags: ['--id', '--last'] },
   { domain: 'sessions', command: 'checklist', flags: ['--id', '--items'] },
   { domain: 'sessions', command: 'start', flags: ['--project', '--text', '--goal', '--checklist', '--items', '--title', '--provider', '--employee', '--model'] },
@@ -569,8 +569,11 @@ export class ManagerOperations {
     }
     if (domain === 'sessions') {
       if (command === 'list') {
-        const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)) && (!team || this.#deps.notes.all()[one.id]?.managerThread === this.#deps.managerThread?.()))
-        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0, ...(one.checklist === undefined ? {} : { checklist: checklistSummary(one.checklist, false) }) })))
+        const asked = flags.has('--tag') ? required(flags, '--tag') : undefined
+        const tag = asked === undefined ? undefined : findTag(settings.taskTags, asked)
+        if (asked !== undefined && tag === undefined) throw new Error(`No tag named "${asked.trim()}".`)
+        const all = (await this.#deps.sessions.list(managerProjects(settings))).filter((one) => one.question !== true && (!flags.has('--managed') || this.#deps.managed(one.id)) && (tag === undefined || one.tags?.includes(tag.id) === true) && (!team || this.#deps.notes.all()[one.id]?.managerThread === this.#deps.managerThread?.()))
+        return JSON.stringify(all.map((one) => ({ observedAt: Date.now(), id: one.id, root: one.root, title: one.title, state: one.state, status: one.status, provider: providerOf(one.id), summary: one.stands, employeeId: one.employeeId, tags: knownTags(one.tags, settings.taskTags).map((tag) => tag.name), delivery: one.delivery, tasks: one.tasks, canStopTasks: one.canStopTasks === true, canInject: one.canInject === true, managed: this.#deps.managed(one.id), queued: one.queued?.length ?? 0, ...(one.checklist === undefined ? {} : { checklist: checklistSummary(one.checklist, false) }) })))
       }
       if (command === 'start') {
         const root = this.#project(required(flags, '--project'))
@@ -649,7 +652,7 @@ export class ManagerOperations {
       if (command === 'show') {
         const count = Number(flags.get('--last') ?? 10)
         if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error('--last must be an integer from 1 to 30.')
-        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, state: worker.state, status: worker.status, history: (worker.moves ?? []).map(formatStatusMove), moves: worker.moves ?? [], delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, ...(worker.checklist === undefined ? {} : { checklist: checklistSummary(worker.checklist, true) }), items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
+        return JSON.stringify({ observedAt: Date.now(), id, employeeId: worker.employeeId, tags: knownTags(worker.tags, settings.taskTags).map((tag) => tag.name), state: worker.state, status: worker.status, history: (worker.moves ?? []).map(formatStatusMove), moves: worker.moves ?? [], delivery: worker.delivery, tasks: worker.tasks, canStopTasks: worker.canStopTasks === true, canInject: worker.canInject === true, ...(worker.checklist === undefined ? {} : { checklist: checklistSummary(worker.checklist, true) }), items: (await this.#deps.sessions.items(id)).filter((item) => item.kind === 'mine' || item.kind === 'theirs' || item.kind === 'card' || item.kind === 'note').slice(-count) })
       }
       if (command === 'checklist') {
         const was = worker.checklist?.items ?? []

@@ -12,7 +12,8 @@ An employee can run several tasks in parallel. Each task has its own GeckIt chat
 
 | Need | Arguments |
 | --- | --- |
-| Find candidates | `sessions list` or `sessions list --managed` |
+| Find candidates | `sessions list` or `sessions list --managed`; rows carry tag names |
+| Find workers with a tag | `sessions list --tag <tag name>` |
 | Read candidate | `sessions show --id <full-id> --last 30` |
 | Inspect employees | `employees list`, then `employees show <employee-id>` if advertised |
 | Inspect projects/providers | `projects list`, `providers list`, `providers models --provider <provider-id>` |
