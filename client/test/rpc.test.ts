@@ -165,6 +165,21 @@ it('rejects pending calls on disconnect without replaying them after reconnect',
   await next.closed
 })
 
+it('rejects an oversized reply without disconnecting other calls', async () => {
+  const path = await directory()
+  const table = { ...methods(), history: () => Buffer.alloc(64 * 1024 * 1024) }
+  const server = listenRpc<typeof table, Events>(path, 'secret', table)
+  cleanup.push(server.close)
+  await server.ready
+  const client = await connectRpc<typeof table, Events>(path, 'secret')
+  cleanup.push(async () => { client.close(); await client.closed })
+  await Promise.all([
+    expect(client.call('history')).rejects.toThrow('GeckIt service frame is too large.'),
+    expect(client.call('increment')).resolves.toBe(1),
+  ])
+  await expect(client.call('increment')).resolves.toBe(2)
+})
+
 it('rejects malformed and oversized frames and accepts split frames on another connection', async () => {
   const path = await directory()
   const server = listenRpc<Methods, Events>(path, 'secret', methods())

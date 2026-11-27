@@ -77,8 +77,13 @@ function updateKey(value: Frame): string | undefined {
 function send(socket: Socket, value: Frame, flushed?: () => void): boolean {
   if (socket.destroyed || !socket.writable) return false
   try {
-    const body = serialize(value)
-    if (body.length > MAX_FRAME) throw new Error('GeckIt service frame is too large.')
+    let body = serialize(value)
+    const oversized = body.length > MAX_FRAME
+    if (oversized) {
+      const error = 'GeckIt service frame is too large.'
+      if (value.kind !== 'result') throw new Error(error)
+      body = serialize({ kind: 'failure', id: value.id, error } satisfies ReplyFrame)
+    }
     const size = Buffer.allocUnsafe(4)
     size.writeUInt32BE(body.length)
     let output = outputs.get(socket)
@@ -88,7 +93,7 @@ function send(socket: Socket, value: Frame, flushed?: () => void): boolean {
       })
       outputs.set(socket, output)
     }
-    output.send(Buffer.concat([size, body]), updateKey(value), flushed)
+    output.send(Buffer.concat([size, body]), updateKey(value), oversized ? undefined : flushed)
     return true
   } catch (error) {
     socket.destroy(error instanceof Error ? error : new Error(String(error)))
