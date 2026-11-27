@@ -48,6 +48,20 @@ describe('tag names in search', () => {
   })
 })
 
+describe('folders in search', () => {
+  const inWorktree = { ...session, root: '/Users/alex/.geckit/worktrees/a1b2', project: '/Users/alex/Projects/formula/formula-business' } as ChatSession
+
+  it('finds a task by the folder its card shows, though it runs elsewhere', () => {
+    expect(named(inWorktree, ['formula-business'])).toBe(true)
+    expect(named(inWorktree, ['formula', 'push'])).toBe(true)
+    expect(named(inWorktree, ['a1b2'])).toBe(true)
+  })
+
+  it('opens at the latest message when the folder answers', () => {
+    expect(seeks({ session: inWorktree, hit }, ['formula-business'])).toBe(false)
+  })
+})
+
 describe('folder display names', () => {
   it.each([
     ['/Users/alex/Projects/geckit', 'geckit'],

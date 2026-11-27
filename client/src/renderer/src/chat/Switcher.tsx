@@ -42,9 +42,10 @@ const MOST = 50
 const used = (session: ChatSession): number => Math.max(session.seen ?? 0, session.at)
 
 /** Whether the words are all in its name, folder, last line or the names of its tags; a word starting with # is looked for in the tags alone. */
-export const named = (session: ChatSession, words: readonly string[], tags = ''): boolean => {
+export const named = (session: Pick<ChatSession, 'title' | 'root' | 'project' | 'stands'>, words: readonly string[], tags = ''): boolean => {
   const tagged = tags.toLowerCase()
-  const against = `${session.title} ${projectLabel(session.root)} ${session.root} ${session.stands} ${tagged}`.toLowerCase()
+  const home = homeOf(session)
+  const against = `${session.title} ${projectLabel(home)} ${home} ${session.root} ${session.stands} ${tagged}`.toLowerCase()
   return words.every((word) => (word.startsWith('#') && word.length > 1 ? tagged.includes(word.slice(1)) : against.includes(word)))
 }
 
@@ -73,10 +74,11 @@ function Status({ session }: { readonly session: ChatSession }): React.JSX.Eleme
 }
 
 /** The folder, where it is the folder that was typed rather than the project's name. */
-function place(root: string, words: readonly string[]): string {
-  const name = projectLabel(root)
-  const byPath = words.some((word) => !name.toLowerCase().includes(word) && root.toLowerCase().includes(word))
-  return byPath ? homePath(root) : name
+function place(home: string, root: string, words: readonly string[]): string {
+  const name = projectLabel(home)
+  const path = words.find((word) => !name.toLowerCase().includes(word) && (home.toLowerCase().includes(word) || root.toLowerCase().includes(word)))
+  if (path === undefined) return name
+  return homePath(home.toLowerCase().includes(path) ? home : root)
 }
 
 export function Marked({ text, words }: { readonly text: string; readonly words: readonly string[] }): React.JSX.Element {
@@ -278,7 +280,7 @@ const FoundRow = memo(function FoundRow({
             <Status session={row.session} />
             {row.tags === undefined ? null : <TagChips tags={row.tags} />}
             <span className="where tinted" style={tint(color)}>
-              <Marked text={place(row.session.root, words)} words={words} />
+              <Marked text={place(homeOf(row.session), row.session.root, words)} words={words} />
             </span>
             {row.hit === undefined ? (
               row.session.stands === '' ? null : <span>{row.session.stands}</span>
@@ -442,7 +444,7 @@ export function BoardSearch({ chat, onSeek }: { readonly chat: Chat; readonly on
           className="board-search-field"
           value={asked}
           placeholder={asks(within, true)}
-          title={`Search tasks by name, #tag or what was said (${MOD}+P, or ${MOD}+Alt+P from any app)`}
+          title={`Search tasks by name, #tag, folder or what was said (${MOD}+P, or ${MOD}+Alt+P from any app)`}
           onFocus={() => {
             setNow(Date.now())
             setOpen(true)
