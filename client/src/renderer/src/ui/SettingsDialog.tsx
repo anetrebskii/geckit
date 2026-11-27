@@ -88,7 +88,7 @@ const ANYWHERE_SAID: readonly (readonly [Anywhere, string])[] = [
   ['record', 'Record the screen'],
   ['screenshot', 'Screenshot into a task or question'],
   ['orders', 'Say what to do'],
-  ['search', 'Search conversations'],
+  ['search', 'Search tasks'],
 ]
 
 export function SettingsDialog({

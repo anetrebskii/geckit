@@ -17,7 +17,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
     keys: [
       [said(ANYWHERE.correct), `Correct the selected text: hold ${MOD}, press C, then D`],
       [said(ANYWHERE.dictate), 'Dictate into what you are typing in; again to stop and paste'],
-      [said(ANYWHERE.search), 'Search conversations; again to put the search away'],
+      [said(ANYWHERE.search), 'Search tasks; again to put the search away'],
       [said(ANYWHERE.orders), 'Say what to do: start a conversation, answer one, mark one; again to stop talking'],
       [said(ANYWHERE.record), 'Record the screen while you talk, then ask about it or make it a task; again to stop'],
       [said(ANYWHERE.screenshot), 'Take a screenshot of the screen under the pointer into a new task or question'],
@@ -28,7 +28,7 @@ const GROUPS: readonly { readonly title: string; readonly keys: readonly (readon
     keys: [
       [`${MOD}+N`, 'New task: the folder, what to do and a goal'],
       [`${MOD}+Shift+N`, 'New quick chat, kept off the board'],
-      [`${MOD}+P`, 'Search conversations, folders and what was said'],
+      [`${MOD}+P`, 'Search tasks, tags, folders and what was said'],
       [`${MOD}+F`, 'Find in this conversation; Enter goes to an earlier match, Shift+Enter a later one'],
       [`${MOD}+K`, 'Switch folder: type a few letters of it, then Enter'],
       [`${MOD}+1 to ${MOD}+9`, `Open the conversation at that place in the list, favorites first; hold ${MOD} to see the numbers`],

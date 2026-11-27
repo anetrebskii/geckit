@@ -7599,6 +7599,13 @@ html.framed .board-head {
   vertical-align: 1px;
 }
 
+.switcher .stands .user-tag,
+.switcher .stands .tag.more,
+.board-search-found .stands .user-tag,
+.board-search-found .stands .tag.more {
+  margin-right: 4px;
+}
+
 .switcher .stands .now,
 .board-search-found .stands .now {
   color: var(--text-dim);

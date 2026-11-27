@@ -4,13 +4,14 @@ import { ProviderIcon } from './ProviderIcon'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
-import type { ChatFound, ChatSession } from '../../../shared/api'
+import type { ChatFound, ChatSession, TaskTag } from '../../../shared/api'
 import { SESSION_STATUSES, homeOf } from '../../../shared/api'
 import { Icon } from '../ui/Icon'
 import { projectColor } from '../../../shared/project-color'
 import { homePath, projectLabel, rootLabel, tint } from './project'
 import { MOD } from '../ui/Shortcuts'
 import { cardSays, Dot } from './Tasks'
+import { TagChips } from './Tags'
 import { ago } from './time'
 import type { Chat } from './useChat'
 import { ALL } from './useChat'
@@ -40,10 +41,11 @@ const MOST = 50
 
 const used = (session: ChatSession): number => Math.max(session.seen ?? 0, session.at)
 
-/** Whether the words are all in its name, folder, last line or the names of its tags. */
+/** Whether the words are all in its name, folder, last line or the names of its tags; a word starting with # is looked for in the tags alone. */
 export const named = (session: ChatSession, words: readonly string[], tags = ''): boolean => {
-  const against = `${session.title} ${projectLabel(session.root)} ${session.root} ${session.stands} ${tags}`.toLowerCase()
-  return words.every((word) => against.includes(word))
+  const tagged = tags.toLowerCase()
+  const against = `${session.title} ${projectLabel(session.root)} ${session.root} ${session.stands} ${tagged}`.toLowerCase()
+  return words.every((word) => (word.startsWith('#') && word.length > 1 ? tagged.includes(word.slice(1)) : against.includes(word)))
 }
 
 /** Whether opening the row goes to what was found in what was said: only when its name did not answer. */
@@ -101,6 +103,7 @@ interface Row {
   readonly session: ChatSession
   /** The names of its tags, which a search matches too. */
   readonly tagged?: string
+  readonly tags?: readonly TaskTag[]
   readonly hit?: ChatFound
   /** The first of those found only by what was said, which starts their own part of the list. */
   readonly heads?: boolean
@@ -138,6 +141,10 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
   return useMemo(() => {
     const all = every.filter((one) => matchesEmployee(one, chat.settings.employeeFilter) && matchesTags(one, chat.settings.tagFilter) && (within === undefined || homeOf(one) === within))
     const tagged = (session: ChatSession): string => tagsOf(session).map((tag) => tag.name).join(' ')
+    const withTags = (session: ChatSession): Row => {
+      const tags = tagsOf(session)
+      return tags.length === 0 ? { session } : { session, tags, tagged: tagged(session) }
+    }
 
     const words = asked.toLowerCase().split(/\s+/).filter((word) => word !== '')
     const byId = new Map(all.map((one) => [one.id, one]))
@@ -148,7 +155,7 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
         .filter((one) => one.id !== front)
         .sort((one, other) => used(other) - used(one))
         .slice(0, MOST)
-        .map((session) => ({ session }))
+        .map((session) => withTags(session))
       return { found: recent, words }
     }
     const byName = [...all]
@@ -159,13 +166,12 @@ export function useFound(chat: Chat, asked: string): { readonly found: readonly 
     const shown = new Set(byName.map((one) => one.id))
     const bySaid = [...said.values()].flatMap((hit) => {
       const session = byId.get(hit.id)
-      return session === undefined || shown.has(hit.id) ? [] : [{ session, hit }]
+      return session === undefined || shown.has(hit.id) ? [] : [{ ...withTags(session), hit }]
     })
     const found = [
       ...byName.map((session) => {
         const hit = said.get(session.id)
-        const tags = tagged(session)
-        return { session, ...(hit === undefined ? {} : { hit }), ...(tags === '' ? {} : { tagged: tags }) }
+        return { ...withTags(session), ...(hit === undefined ? {} : { hit }) }
       }),
       ...bySaid.map((row, index) => (index === 0 && byName.length > 0 ? { ...row, heads: true } : row)),
     ].slice(0, MOST)
@@ -270,6 +276,7 @@ const FoundRow = memo(function FoundRow({
           </span>
           <span className="stands">
             <Status session={row.session} />
+            {row.tags === undefined ? null : <TagChips tags={row.tags} />}
             <span className="where tinted" style={tint(color)}>
               <Marked text={place(row.session.root, words)} words={words} />
             </span>
@@ -295,9 +302,9 @@ const FoundRow = memo(function FoundRow({
  * window, so it says the short of it and leaves the rest to the rows.
  */
 function asks(within: string | undefined, short: boolean): string {
-  if (short) return within === undefined ? 'Search conversations' : `Search ${projectLabel(within)}`
-  if (within !== undefined) return `Search ${projectLabel(within)}: conversations and what was said`
-  return 'Search conversations, folders and what was said'
+  if (short) return within === undefined ? 'Search tasks' : `Search ${projectLabel(within)}`
+  if (within !== undefined) return `Search ${projectLabel(within)}: tasks, tags and what was said`
+  return 'Search tasks, tags, folders and what was said'
 }
 
 /** Walking the rows with the arrows, and opening one with Enter. */
@@ -435,7 +442,7 @@ export function BoardSearch({ chat, onSeek }: { readonly chat: Chat; readonly on
           className="board-search-field"
           value={asked}
           placeholder={asks(within, true)}
-          title={`Search conversations (${MOD}+P, or ${MOD}+Alt+P from any app)`}
+          title={`Search tasks by name, #tag or what was said (${MOD}+P, or ${MOD}+Alt+P from any app)`}
           onFocus={() => {
             setNow(Date.now())
             setOpen(true)

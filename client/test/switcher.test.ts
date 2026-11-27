@@ -36,6 +36,13 @@ describe('tag names in search', () => {
     expect(named(session, ['urgent'])).toBe(false)
   })
 
+  it('looks for a #word in the tags alone', () => {
+    expect(named(session, ['#urgent'], 'Urgent Client')).toBe(true)
+    expect(named(session, ['#urg', 'push'], 'Urgent Client')).toBe(true)
+    expect(named(session, ['#push'], 'Urgent Client')).toBe(false)
+    expect(named(session, ['#urgent'])).toBe(false)
+  })
+
   it('opens at the latest message when a tag answers', () => {
     expect(seeks({ session, hit, tagged: 'Urgent' }, ['urgent'])).toBe(false)
   })
