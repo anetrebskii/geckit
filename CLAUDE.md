@@ -19,7 +19,7 @@ Describe GeckIt's user-visible workflow, not inherited model reasoning, coding o
 - **`client/`**: the app (electron-vite + React 19 + TypeScript, hand-written CSS)
 - **`mobile/`**: the iPhone and Android apps (Capacitor), built from the client's own Chat sources and React
 - **`skills/`**: service-distributed task skills, each with `SKILL.md` and conditional `references/`; discovered and bundled automatically.
-- **`profiles/`**: generated Claude, Codex and headless profile templates; see `docs/standards/agent-profile/STANDARD.md` before editing profiles or distributed skills.
+- **`profiles/`**: generated Claude, Codex and headless profile templates.
 - **`broker/`**: the secrets broker, a Go program shipped inside the app (`client/scripts/broker.sh` builds it into `client/broker/bin/<os>-<arch>/`)
 - **`signal/`**: the Firebase project `geckit-signal`: Firestore rules for the rooms the phone and the Mac meet in, and the `ice` function that hands out the relay
 

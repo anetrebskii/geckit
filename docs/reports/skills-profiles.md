@@ -20,7 +20,7 @@ Profiles retain reporting, goals, employee lookup, browser boundaries and creden
 
 Claude receives the GeckIt plugin. Packaged Codex skills remain in ~/.agents/skills/geckit-<name>. Source Codex skills live in <userData>/codex-skills/geckit-<name>, with absolute paths in the source guide. Source startup preserves global installed-copy skills and guides. Browser disable removes its skill while all other bundled skills remain available.
 
-The profile policy is in [agent-profile](../standards/agent-profile/STANDARD.md). Skill coverage follows Alex's skill-format standard. No audience-specific content type standard matched this internal developer documentation.
+The profile policy was in the agent-profile standard, removed on 2026-11-28. Skill coverage follows Alex's skill-format standard. No audience-specific content type standard matched this internal developer documentation.
 
 ## Verification
 
