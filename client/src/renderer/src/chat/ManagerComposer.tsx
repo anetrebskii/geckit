@@ -77,7 +77,7 @@ function ModelControls({ thread, settings, disabled, onModel }: { readonly threa
     ...(Array.isArray(list) ? list.filter((one) => one.value !== '').map((one) => ({ value: one.value, label: one.name, ...(one.disabled === true ? { disabled: true } : {}), ...(one.says === undefined ? {} : { says: one.says }) })) : [{ value: '__asking', label: list === 'unknown' ? `${assistant} did not say which models it has` : `Asking ${assistant}...` }]),
   ]
   return <>
-    <Picker label={assistant} title="Assistant" chosen={thread.provider} disabled choices={[{ value: thread.provider, label: assistant, says: 'Each Manager conversation keeps the assistant it was started with.' }]} onPick={() => undefined} />
+    <Picker className="picker assistant-picker" label={assistant} title="Assistant" chosen={thread.provider} disabled choices={[{ value: thread.provider, label: assistant, says: 'Each Manager conversation keeps the assistant it was started with.' }]} onPick={() => undefined} />
     <Picker label={named} title="Model" chosen={thread.model} disabled={disabled} choices={choices} {...(thread.session === undefined ? {} : { note: AGAIN })} onOpen={ask} onPick={(value) => { if (value !== '__asking' && value !== thread.model) onModel(value) }} />
   </>
 }

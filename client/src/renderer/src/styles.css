@@ -5272,7 +5272,7 @@ html:not(.phone) .composer-bar > .composer-hint {
 
 @container (max-width: 760px) {
   .composer-bar .model-details-button,
-  .composer-bar > .picker:first-child:disabled {
+  .composer-bar > .assistant-picker:disabled {
     display: none;
   }
 }
