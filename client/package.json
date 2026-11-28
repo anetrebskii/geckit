@@ -40,7 +40,7 @@
     "firebase": "^13.4.0",
     "node-datachannel": "0.33.6",
     "playwright-core": "1.62.0",
-    "pngjs": "5.0.0",
+    "pngjs": "7.0.0",
     "qrcode": "^1.5.4",
     "ws": "^8.23.0"
   },
