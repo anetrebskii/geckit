@@ -1,6 +1,6 @@
 ---
 name: schedule-tasks
-description: Create or revise recurring GeckIt tasks with CRON or built-in timetables. Use for scheduled worker jobs and Manager coordination, checking existing shortcuts, execution timezone, overlap and saved configuration.
+description: Create, describe or revise GeckIt repeating tasks, shortcuts and scheduled prompts - context-only prompt, steps as checklist items with pushes and publications review-checked, CRON or built-in timetables. Use for scheduled worker jobs and Manager coordination, checking existing shortcuts, execution timezone, overlap and saved configuration.
 ---
 
 # Schedule recurring GeckIt work
@@ -17,9 +17,9 @@ Establish the requested outcome, project, frequency, local time, execution compu
 
 1. Check capabilities, projects, employees and existing shortcuts. Compare outcome, project, target, timetable and employee before creating anything. Edit the matching shortcut when the person is revising it. Do not duplicate a schedule because its title differs.
 2. Read `schedulerTimeZone` from local Manager capabilities or the target details in product capabilities. CRON uses that computer's local timezone. Use it for an unqualified local time once you know which computer will execute the shortcut. Clarify a conflicting or ambiguous time and account for daylight-saving changes.
-3. Write a self-contained prompt and checkable result. For a worker, select an active employee or unassigned scope, enabled provider and requested execution settings. For Manager, use `none` as employee and `--target manager`. Worker goal, provider and model fields do not apply. Manager chooses task cards and assignees at run time using `{{lifecycleSkill}}` from {{lifecyclePath}}, honoring any choices in the request. Creating a Manager shortcut does not enable Manager.
+3. Read [how to describe scheduled work](references/describe-work.md). Write the prompt as context only, in sections, and every step as a checklist item, never both. Make every push and publication its own review-checked item. For a worker, select an active employee or unassigned scope, enabled provider and requested execution settings. For Manager, use `none` as employee and `--target manager`. Worker goal, provider and model fields do not apply. Manager chooses task cards and assignees at run time using `{{lifecycleSkill}}` from {{lifecyclePath}}, honoring any choices in the request. Creating a Manager shortcut does not enable Manager.
 4. Use a built-in timetable when it expresses the request; otherwise save a numeric five-field CRON expression. For a one-time request, save a Scheduled prompt with `--at`. On creation pass `--vary off` for a fixed time, or `--vary on` when the person accepts a variable start.
-5. Keep unaffected fields and enabled state during edits. Inspect the saved shortcut after Add, Edit, Pause or Resume. Verify the target, prompt, project, expression, execution settings and actual scheduler timezone.
+5. Keep unaffected fields and enabled state during edits. Inspect the saved shortcut after Add, Edit, Pause or Resume. Verify the target, prompt, checklist items and their checks, project, expression, execution settings and actual scheduler timezone.
 6. Explain missed-run and overlap behavior before promising exact delivery. The app must run for dispatch. After downtime it can dispatch one overdue run. A repeating shortcut skips a timed occurrence while its own previous run is busy. Enabling or changing a timetable starts a new baseline.
 7. Do not invoke Run merely to test saving: it executes real work. Run only when the person requested immediate execution. A saved shortcut proves configuration, not successful execution or external delivery.
 
